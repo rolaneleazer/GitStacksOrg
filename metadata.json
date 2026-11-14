@@ -1,0 +1,6 @@
+{
+  "name": "GitStack",
+  "description": "Enterprise AI Integration, Machine Learning Automation, Custom Software Development, Cloud Infrastructure Management, and Technical Consulting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

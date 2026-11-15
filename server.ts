@@ -8,6 +8,7 @@ import { createServer as createViteServer } from 'vite';
 import { buildAllAgentReports } from './src/shared/agentEngine.ts';
 import { validatePageContentForAdSense } from './src/shared/pageDefaults.ts';
 import { evaluateArticleQuality, slugify } from './src/shared/qualityGate.ts';
+import { DEFAULT_BRANDING, normalizeHexColor } from './src/shared/themePresets.ts';
 import type {
   AdSenseSettings,
   AgentId,
@@ -20,25 +21,37 @@ import type {
   ChatThreadStatus,
   ClientInquiry,
   CommentStatus,
+  HeaderSurface,
   InquiryStatus,
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
+  RoutingRule,
   SiteAuditCheck,
   SiteAuditReport,
-  TaskPriority
+  TaskPriority,
+  ThemePresetId,
+  UserRole,
+  UserStatus,
+  UserWorkflowItem
 } from './src/shared/types.ts';
 import {
   addChatMessage,
   addSubscriber,
+  assignChatThread,
+  assignInquiry,
   autoMigrateSupabaseSchema,
   autoSeedSupabaseIfEmpty,
   checkSupabaseTablesReady,
   createChatThread,
   createComment,
   createInquiry,
+  createTeamUser,
+  createWorkflowItem,
   deleteAgentTask,
   deletePost,
+  deleteTeamUser,
+  deleteWorkflowItem,
   getAdSenseSettings,
   getAnalyticsSummary,
   getPostBySlug,
@@ -52,14 +65,22 @@ import {
   listInquiries,
   listPageContents,
   listPosts,
+  listRoutingRules,
   listSubscribers,
+  listUserDirectory,
+  listUserProfiles,
+  listWorkflowItems,
   recordAnalyticsEvent,
   saveAdSenseSettings,
+  saveRoutingRules,
   seedStarterDataToSupabase,
   signInEditor,
   updateChatThreadStatus,
   updateCommentStatus,
   updateInquiryStatus,
+  updateMyUserProfile,
+  updateTeamUser,
+  updateWorkflowItem,
   upsertAgentTask,
   upsertPageContent,
   upsertPost,
@@ -84,6 +105,22 @@ async function requireEditor(req: AuthReq, res: Response, next: NextFunction) {
   }
   req.editor = session;
   next();
+}
+
+function requireRoles(...allowed: UserRole[]) {
+  return async (req: AuthReq, res: Response, next: NextFunction) => {
+    const session = await verifyEditorToken(getBearerToken(req));
+    if (!session) {
+      return res.status(401).json({ error: 'Authentication required. Please sign in to GitStack Studio.' });
+    }
+    if (!allowed.includes(session.role)) {
+      return res.status(403).json({
+        error: `Access restricted: requires ${allowed.join(' or ')} permissions.`
+      });
+    }
+    req.editor = session;
+    next();
+  };
 }
 
 function getOrigin(req: Request): string {
@@ -409,7 +446,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/supabase/migrate', requireEditor, async (req, res) => {
+  app.post('/api/supabase/migrate', requireRoles('super_admin'), async (req, res) => {
     try {
       const migration = await autoMigrateSupabaseSchema();
       const supabaseTablesReady = await checkSupabaseTablesReady();
@@ -426,7 +463,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/supabase/seed', requireEditor, async (req, res) => {
+  app.post('/api/supabase/seed', requireRoles('super_admin'), async (req, res) => {
     try {
       const result = await seedStarterDataToSupabase(getBearerToken(req));
       res.json(result);
@@ -785,7 +822,15 @@ async function startServer() {
             ad_slots_enabled: settings.ad_slots_enabled,
             ga4_measurement_id: settings.ga4_measurement_id || '',
             ga4_enabled: Boolean(settings.ga4_enabled),
-            ga4_track_events: settings.ga4_track_events !== false
+            ga4_track_events: settings.ga4_track_events !== false,
+            brand_name: settings.brand_name || DEFAULT_BRANDING.brand_name,
+            brand_logo_url: settings.brand_logo_url || '',
+            brand_logo_alt: settings.brand_logo_alt || DEFAULT_BRANDING.brand_logo_alt,
+            theme_preset: settings.theme_preset || DEFAULT_BRANDING.theme_preset,
+            primary_color: settings.primary_color || DEFAULT_BRANDING.primary_color,
+            header_surface: settings.header_surface || DEFAULT_BRANDING.header_surface,
+            header_cta_label: settings.header_cta_label || DEFAULT_BRANDING.header_cta_label,
+            header_cta_href: settings.header_cta_href || DEFAULT_BRANDING.header_cta_href
           }
         });
       }
@@ -795,12 +840,14 @@ async function startServer() {
     }
   });
 
-  app.put('/api/settings/adsense', requireEditor, async (req, res) => {
+  app.put('/api/settings/adsense', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
     try {
       const current = await getAdSenseSettings();
       const payload = req.body as Partial<AdSenseSettings>;
+      const isSuperAdmin = req.editor?.role === 'super_admin';
+
       const pubId =
-        payload.adsense_publisher_id !== undefined
+        isSuperAdmin && payload.adsense_publisher_id !== undefined
           ? payload.adsense_publisher_id.trim()
           : current.adsense_publisher_id;
       if (pubId && !/^(ca-)?pub-\d{10,20}$/.test(pubId)) {
@@ -818,6 +865,41 @@ async function startServer() {
         });
       }
 
+      if (
+        isSuperAdmin &&
+        payload.brand_logo_url &&
+        payload.brand_logo_url.length > 1_300_000
+      ) {
+        return res.status(400).json({ error: 'Logo image must be under 900 KB.' });
+      }
+
+      const validPresets: ThemePresetId[] = ['cobalt', 'emerald', 'indigo', 'slate', 'amber', 'custom'];
+      const themePreset: ThemePresetId =
+        isSuperAdmin && payload.theme_preset && validPresets.includes(payload.theme_preset)
+          ? payload.theme_preset
+          : current.theme_preset || DEFAULT_BRANDING.theme_preset;
+
+      const primaryColor =
+        isSuperAdmin && payload.primary_color !== undefined
+          ? normalizeHexColor(payload.primary_color, current.primary_color || DEFAULT_BRANDING.primary_color)
+          : current.primary_color || DEFAULT_BRANDING.primary_color;
+
+      const headerSurface: HeaderSurface =
+        isSuperAdmin && payload.header_surface
+          ? payload.header_surface === 'tinted'
+            ? 'tinted'
+            : 'white'
+          : current.header_surface || DEFAULT_BRANDING.header_surface;
+
+      const ctaHrefRaw =
+        isSuperAdmin && payload.header_cta_href !== undefined
+          ? payload.header_cta_href.trim()
+          : current.header_cta_href || DEFAULT_BRANDING.header_cta_href;
+      const safeCtaHref =
+        ctaHrefRaw.startsWith('/') || /^https?:\/\//i.test(ctaHrefRaw)
+          ? ctaHrefRaw
+          : DEFAULT_BRANDING.header_cta_href;
+
       const normalizedPub = pubId ? (pubId.startsWith('ca-') ? pubId.slice(3) : pubId) : '';
       const defaultAdsTxt = normalizedPub
         ? `google.com, ${normalizedPub}, DIRECT, f08c47fec0942fa0`
@@ -826,19 +908,19 @@ async function startServer() {
       const next: AdSenseSettings = {
         adsense_publisher_id: pubId,
         ads_txt_content:
-          payload.ads_txt_content !== undefined
+          isSuperAdmin && payload.ads_txt_content !== undefined
             ? payload.ads_txt_content.trim() || defaultAdsTxt
             : current.ads_txt_content || defaultAdsTxt,
         auto_ads_enabled:
-          payload.auto_ads_enabled !== undefined
+          isSuperAdmin && payload.auto_ads_enabled !== undefined
             ? Boolean(payload.auto_ads_enabled)
             : current.auto_ads_enabled,
         ad_slots_enabled:
-          payload.ad_slots_enabled !== undefined
+          isSuperAdmin && payload.ad_slots_enabled !== undefined
             ? Boolean(payload.ad_slots_enabled)
             : current.ad_slots_enabled,
         editorial_review_note:
-          payload.editorial_review_note !== undefined
+          isSuperAdmin && payload.editorial_review_note !== undefined
             ? payload.editorial_review_note.trim() || current.editorial_review_note
             : current.editorial_review_note,
         ga4_measurement_id: ga4Id,
@@ -848,13 +930,33 @@ async function startServer() {
           payload.ga4_track_events !== undefined
             ? Boolean(payload.ga4_track_events)
             : current.ga4_track_events !== false,
+        brand_name:
+          isSuperAdmin && payload.brand_name !== undefined
+            ? payload.brand_name.trim().slice(0, 40) || DEFAULT_BRANDING.brand_name
+            : current.brand_name || DEFAULT_BRANDING.brand_name,
+        brand_logo_url:
+          isSuperAdmin && payload.brand_logo_url !== undefined
+            ? payload.brand_logo_url.trim()
+            : current.brand_logo_url || '',
+        brand_logo_alt:
+          isSuperAdmin && payload.brand_logo_alt !== undefined
+            ? payload.brand_logo_alt.trim().slice(0, 80) || DEFAULT_BRANDING.brand_logo_alt
+            : current.brand_logo_alt || DEFAULT_BRANDING.brand_logo_alt,
+        theme_preset: themePreset,
+        primary_color: primaryColor,
+        header_surface: headerSurface,
+        header_cta_label:
+          isSuperAdmin && payload.header_cta_label !== undefined
+            ? payload.header_cta_label.trim().slice(0, 32) || DEFAULT_BRANDING.header_cta_label
+            : current.header_cta_label || DEFAULT_BRANDING.header_cta_label,
+        header_cta_href: safeCtaHref,
         updated_at: new Date().toISOString()
       };
 
       const saved = await saveAdSenseSettings(next, getBearerToken(req));
       res.json({ settings: saved });
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update AdSense & GA4 settings' });
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update settings' });
     }
   });
 
@@ -1164,13 +1266,288 @@ async function startServer() {
     }
   });
 
-  app.get('/api/analytics/summary', requireEditor, async (req, res) => {
+  app.get('/api/analytics/summary', requireRoles('super_admin', 'editor'), async (req, res) => {
     try {
       const days = Number(req.query.days || 14);
       const summary = await getAnalyticsSummary(days, getBearerToken(req));
       res.json({ summary });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load analytics' });
+    }
+  });
+
+  // --- Team Profile, User Access Management, Per-User Workflows & Routing ---
+
+  app.get('/api/profile/me', requireEditor, async (req: AuthReq, res) => {
+    res.json({ profile: req.editor!.profile });
+  });
+
+  app.put('/api/profile/me', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const { full_name, job_title, bio, avatar_url, phone, timezone } = req.body as {
+        full_name?: string;
+        job_title?: string;
+        bio?: string;
+        avatar_url?: string;
+        phone?: string;
+        timezone?: string;
+      };
+      if (avatar_url && avatar_url.length > 1_300_000) {
+        return res.status(400).json({ error: 'Profile picture must be under 900 KB.' });
+      }
+      const updated = await updateMyUserProfile(
+        req.editor!.userId,
+        {
+          ...(full_name !== undefined ? { full_name: full_name.trim().slice(0, 80) } : {}),
+          ...(job_title !== undefined ? { job_title: job_title.trim().slice(0, 80) } : {}),
+          ...(bio !== undefined ? { bio: bio.trim().slice(0, 600) } : {}),
+          ...(avatar_url !== undefined ? { avatar_url: avatar_url.trim() } : {}),
+          ...(phone !== undefined ? { phone: phone.trim().slice(0, 40) } : {}),
+          ...(timezone !== undefined ? { timezone: timezone.trim().slice(0, 60) || 'UTC' } : {})
+        },
+        getBearerToken(req)
+      );
+      if (!updated) return res.status(404).json({ error: 'Profile not found.' });
+      res.json({ profile: updated });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update profile' });
+    }
+  });
+
+  app.get('/api/users/directory', requireEditor, async (req, res) => {
+    try {
+      const users = await listUserDirectory(getBearerToken(req));
+      res.json({ users });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load user directory' });
+    }
+  });
+
+  app.get('/api/users', requireRoles('super_admin'), async (req, res) => {
+    try {
+      const users = await listUserProfiles(getBearerToken(req));
+      res.json({ users });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load team users' });
+    }
+  });
+
+  app.post('/api/users', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const { email, password, full_name, role, job_title } = req.body as {
+        email?: string;
+        password?: string;
+        full_name?: string;
+        role?: UserRole;
+        job_title?: string;
+      };
+      if (!email || !isValidEmail(email)) {
+        return res.status(400).json({ error: 'Valid email address is required.' });
+      }
+      if (!password || password.trim().length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+      }
+      const validRoles: UserRole[] = ['super_admin', 'editor', 'support_agent'];
+      if (!role || !validRoles.includes(role)) {
+        return res.status(400).json({ error: 'Valid role (super_admin, editor, or support_agent) is required.' });
+      }
+      const user = await createTeamUser(
+        {
+          email,
+          password: password.trim(),
+          full_name: full_name?.trim() || email.split('@')[0],
+          role,
+          job_title,
+          createdByUserId: req.editor!.userId
+        },
+        getBearerToken(req)
+      );
+      res.status(201).json({ user });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to create user' });
+    }
+  });
+
+  app.patch('/api/users/:userId', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const { role, status, full_name, job_title, password } = req.body as {
+        role?: UserRole;
+        status?: UserStatus;
+        full_name?: string;
+        job_title?: string;
+        password?: string;
+      };
+      if (password !== undefined && password.trim().length > 0 && password.trim().length < 8) {
+        return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+      }
+      const updated = await updateTeamUser(
+        req.params.userId,
+        req.editor!.userId,
+        { role, status, full_name, job_title, password },
+        getBearerToken(req)
+      );
+      res.json({ user: updated });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to update user' });
+    }
+  });
+
+  app.delete('/api/users/:userId', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      await deleteTeamUser(req.params.userId, req.editor!.userId, getBearerToken(req));
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : 'Failed to delete user' });
+    }
+  });
+
+  app.get('/api/workflows', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const requestedUserId = typeof req.query.userId === 'string' ? req.query.userId : undefined;
+      const targetUserId =
+        req.editor!.role === 'super_admin' ? requestedUserId : req.editor!.userId;
+      const items = await listWorkflowItems(targetUserId, getBearerToken(req));
+      res.json({ items });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load workflows' });
+    }
+  });
+
+  app.post('/api/workflows', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const payload = req.body as Partial<UserWorkflowItem>;
+      if (!payload.title?.trim()) {
+        return res.status(400).json({ error: 'Workflow task title is required.' });
+      }
+      const targetUserId =
+        req.editor!.role === 'super_admin' && payload.user_id
+          ? payload.user_id
+          : req.editor!.userId;
+      const now = new Date().toISOString();
+      const item: UserWorkflowItem = {
+        id: `wf-${crypto.randomUUID().slice(0, 8)}`,
+        user_id: targetUserId,
+        assigned_by: req.editor!.userId,
+        title: payload.title.trim().slice(0, 160),
+        description: (payload.description || '').trim().slice(0, 800),
+        category:
+          payload.category &&
+          ['onboarding', 'daily_checklist', 'project_task', 'follow_up'].includes(payload.category)
+            ? payload.category
+            : 'project_task',
+        priority:
+          payload.priority && ['high', 'medium', 'low'].includes(payload.priority)
+            ? payload.priority
+            : 'medium',
+        status:
+          payload.status && ['todo', 'in_progress', 'done'].includes(payload.status)
+            ? payload.status
+            : 'todo',
+        due_date: payload.due_date || null,
+        linked_entity_type:
+          payload.linked_entity_type &&
+          ['inquiry', 'chat', 'article', 'none'].includes(payload.linked_entity_type)
+            ? payload.linked_entity_type
+            : 'none',
+        linked_entity_id: payload.linked_entity_id || null,
+        created_at: now,
+        updated_at: now
+      };
+      const saved = await createWorkflowItem(item, getBearerToken(req));
+      res.status(201).json({ item: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to create workflow item' });
+    }
+  });
+
+  app.patch('/api/workflows/:id', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const existingList = await listWorkflowItems(
+        req.editor!.role === 'super_admin' ? undefined : req.editor!.userId,
+        token
+      );
+      const existing = existingList.find((w) => w.id === req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: 'Workflow item not found or access denied.' });
+      }
+      const payload = req.body as Partial<UserWorkflowItem>;
+      const patch: Partial<UserWorkflowItem> = {};
+      if (payload.title !== undefined) patch.title = payload.title.trim().slice(0, 160);
+      if (payload.description !== undefined) patch.description = payload.description.trim().slice(0, 800);
+      if (payload.category !== undefined) patch.category = payload.category;
+      if (payload.priority !== undefined) patch.priority = payload.priority;
+      if (payload.status !== undefined) patch.status = payload.status;
+      if (payload.due_date !== undefined) patch.due_date = payload.due_date;
+      if (req.editor!.role === 'super_admin' && payload.user_id) {
+        patch.user_id = payload.user_id;
+      }
+      const updated = await updateWorkflowItem(req.params.id, patch, token);
+      res.json({ item: updated });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update workflow item' });
+    }
+  });
+
+  app.delete('/api/workflows/:id', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const existingList = await listWorkflowItems(
+        req.editor!.role === 'super_admin' ? undefined : req.editor!.userId,
+        token
+      );
+      const existing = existingList.find((w) => w.id === req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: 'Workflow item not found or access denied.' });
+      }
+      await deleteWorkflowItem(req.params.id, token);
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to delete workflow item' });
+    }
+  });
+
+  app.patch('/api/inquiries/:id/assign', requireRoles('super_admin', 'support_agent'), async (req, res) => {
+    try {
+      const { assigned_to } = req.body as { assigned_to?: string | null };
+      const updated = await assignInquiry(req.params.id, assigned_to || null, getBearerToken(req));
+      if (!updated) return res.status(404).json({ error: 'Inquiry not found.' });
+      res.json({ inquiry: updated });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to assign inquiry' });
+    }
+  });
+
+  app.patch('/api/chat/threads/:id/assign', requireRoles('super_admin', 'support_agent'), async (req, res) => {
+    try {
+      const { assigned_to } = req.body as { assigned_to?: string | null };
+      const updated = await assignChatThread(req.params.id, assigned_to || null, getBearerToken(req));
+      if (!updated) return res.status(404).json({ error: 'Chat thread not found.' });
+      res.json({ thread: updated });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to assign chat thread' });
+    }
+  });
+
+  app.get('/api/routing-rules', requireEditor, async (req, res) => {
+    try {
+      const rules = await listRoutingRules(getBearerToken(req));
+      res.json({ rules });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load routing rules' });
+    }
+  });
+
+  app.put('/api/routing-rules', requireRoles('super_admin'), async (req, res) => {
+    try {
+      const { rules } = req.body as { rules?: RoutingRule[] };
+      if (!Array.isArray(rules)) {
+        return res.status(400).json({ error: 'rules array is required.' });
+      }
+      const saved = await saveRoutingRules(rules, getBearerToken(req));
+      res.json({ rules: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save routing rules' });
     }
   });
 

@@ -145,7 +145,7 @@ export function PolicySafeAdSlot({
         <button
           type="button"
           onClick={onOpenCookiePrefs}
-          className="font-medium text-[#1E40AF] hover:underline whitespace-nowrap shrink-0"
+          className="font-medium text-[var(--gs-primary)] hover:underline whitespace-nowrap shrink-0 min-h-[36px]"
         >
           Manage Cookie Preferences
         </button>
@@ -192,31 +192,40 @@ export function CookieConsentBanner({
     <div
       role="region"
       aria-label="Cookie and Privacy Consent"
-      className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white/95 backdrop-blur-sm px-5 py-3.5 shadow-lg"
+      className="fixed bottom-3 left-3 right-3 sm:bottom-4 sm:left-4 sm:right-4 z-50 mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white/95 backdrop-blur-sm px-4 py-3 sm:px-5 sm:py-3.5 shadow-lg"
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#1E40AF]" />
-          <div className="text-xs leading-relaxed text-slate-600">
-            <span className="font-semibold text-slate-900">Privacy &amp; AdSense Transparency:</span>{' '}
-            GitStack uses essential cookies for site security and, with your consent, advertising
-            cookies to support free technical guides.{' '}
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-2.5 sm:gap-3">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[var(--gs-primary)]" />
+          <div className="text-xs leading-snug sm:leading-relaxed text-slate-600">
+            <span className="font-semibold text-slate-900">Privacy &amp; AdSense:</span>{' '}
+            Essential security cookies plus optional ad cookies.{' '}
             <button
               type="button"
               onClick={() => onNavigate('/cookie-policy')}
-              className="font-medium text-[#1E40AF] underline underline-offset-2 hover:text-blue-800"
+              className="font-medium text-[var(--gs-primary)] underline underline-offset-2"
             >
               Cookie Policy
             </button>
           </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
           {modalOpen && (
             <button
               type="button"
               onClick={onCloseModal}
               aria-label="Close cookie preferences"
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="ml-auto sm:hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
+          {modalOpen && (
+            <button
+              type="button"
+              onClick={onCloseModal}
+              aria-label="Close cookie preferences"
+              className="hidden sm:inline-flex rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
             >
               <X className="h-4 w-4" />
             </button>
@@ -224,14 +233,14 @@ export function CookieConsentBanner({
           <button
             type="button"
             onClick={onAcceptEssential}
-            className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap"
           >
             Essential Only
           </button>
           <button
             type="button"
             onClick={onAcceptAll}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E40AF] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] transition-colors whitespace-nowrap shrink-0"
+            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--gs-primary)] hover:bg-[var(--gs-primary-hover)] px-3.5 py-2 text-xs font-semibold text-white transition-colors whitespace-nowrap"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
             <span>Accept All</span>

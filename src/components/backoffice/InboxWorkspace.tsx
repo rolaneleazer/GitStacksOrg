@@ -22,6 +22,7 @@ import type {
   ArticleComment,
   ClientInquiry,
   CommentStatus,
+  DirectoryUser,
   InquiryStatus,
   NewsletterSubscriber
 } from '../../shared/types.ts';
@@ -30,6 +31,8 @@ interface InboxWorkspaceProps {
   inquiries: ClientInquiry[];
   comments: ArticleComment[];
   subscribers: NewsletterSubscriber[];
+  teamUsers?: DirectoryUser[];
+  onAssignInquiry?: (id: string, assignedTo: string | null) => Promise<void>;
   onUpdateInquiryStatus: (id: string, status: InquiryStatus) => Promise<void>;
   onUpdateCommentStatus: (id: string, status: CommentStatus) => Promise<void>;
   onExportSubscribersCsv: () => void;
@@ -41,6 +44,8 @@ export function InboxWorkspace({
   inquiries,
   comments,
   subscribers,
+  teamUsers = [],
+  onAssignInquiry,
   onUpdateInquiryStatus,
   onUpdateCommentStatus,
   onExportSubscribersCsv
@@ -197,11 +202,11 @@ export function InboxWorkspace({
           </p>
         </div>
 
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+        <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 w-full sm:w-fit">
           <button
             type="button"
             onClick={() => setSubTab('gmail')}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
+            className={`min-h-[38px] flex-1 sm:flex-none rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
               subTab === 'gmail' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
@@ -210,7 +215,7 @@ export function InboxWorkspace({
           <button
             type="button"
             onClick={() => setSubTab('inquiries')}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
+            className={`min-h-[38px] flex-1 sm:flex-none rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
               subTab === 'inquiries' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
@@ -219,7 +224,7 @@ export function InboxWorkspace({
           <button
             type="button"
             onClick={() => setSubTab('community')}
-            className={`rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
+            className={`min-h-[38px] flex-1 sm:flex-none rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
               subTab === 'community' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
             }`}
           >
@@ -232,8 +237,8 @@ export function InboxWorkspace({
       {subTab === 'gmail' && (
         <div className="space-y-4">
           {!gmailToken ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center max-w-xl mx-auto">
-              <Mail className="mx-auto h-8 w-8 text-[#1E40AF]" />
+            <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8 text-center max-w-xl mx-auto">
+              <Mail className="mx-auto h-8 w-8 text-[var(--gs-primary)]" />
               <h3 className="mt-3 font-display text-base font-bold text-slate-900">
                 Connect Your Gmail Account to Read &amp; Send Client Emails
               </h3>
@@ -251,7 +256,7 @@ export function InboxWorkspace({
                   type="button"
                   disabled={connectingGmail}
                   onClick={handleConnectGoogle}
-                  className="inline-flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xs font-semibold text-slate-800 shadow-xs hover:bg-slate-50 disabled:opacity-60"
+                  className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xs font-semibold text-slate-800 shadow-xs hover:bg-slate-50 disabled:opacity-60"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -282,37 +287,37 @@ export function InboxWorkspace({
           ) : (
             <div className="space-y-4">
               {/* Connected Gmail Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3.5">
-                <div className="flex items-center gap-2 text-xs">
-                  <CheckCircle2 className="h-4 w-4 text-[#16A34A]" />
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 sm:px-5 py-3.5">
+                <div className="flex flex-wrap items-center gap-2 text-xs min-w-0">
+                  <CheckCircle2 className="h-4 w-4 text-[#16A34A] shrink-0" />
                   <span className="font-semibold text-slate-900">Gmail Connected</span>
                   <span aria-hidden="true" className="text-slate-300">
                     ·
                   </span>
-                  <span className="font-mono text-slate-600">{gmailUserEmail}</span>
+                  <span className="font-mono text-slate-600 truncate">{gmailUserEmail}</span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       loadInbox(gmailToken, searchQuery);
                     }}
-                    className="flex items-center gap-1.5"
+                    className="flex items-center gap-1.5 w-full sm:w-auto"
                   >
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+                    <div className="relative flex-1 sm:flex-none">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                       <input
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         placeholder="Search Gmail..."
-                        className="rounded-lg border border-slate-200 pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+                        className="min-h-[40px] w-full rounded-lg border border-slate-200 pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                       />
                     </div>
                     <button
                       type="submit"
-                      className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      className="min-h-[40px] rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
                       Search
                     </button>
@@ -320,7 +325,7 @@ export function InboxWorkspace({
                   <button
                     type="button"
                     onClick={() => loadInbox(gmailToken, searchQuery)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    className="min-h-[40px] inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${loadingMessages ? 'animate-spin' : ''}`} />
                     <span>Sync</span>
@@ -334,7 +339,7 @@ export function InboxWorkspace({
                       setComposeBody('');
                       setComposeThreadId(undefined);
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg bg-[#1E40AF] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
+                    className="min-h-[40px] inline-flex items-center gap-1 rounded-lg bg-[var(--gs-primary)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
                   >
                     <Send className="h-3.5 w-3.5" />
                     <span>Compose</span>
@@ -342,7 +347,7 @@ export function InboxWorkspace({
                   <button
                     type="button"
                     onClick={handleDisconnectGoogle}
-                    className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    className="min-h-[40px] rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
                   >
                     Disconnect
                   </button>
@@ -404,17 +409,17 @@ export function InboxWorkspace({
                     placeholder="Write your reply..."
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-900"
                   />
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => setComposeOpen(false)}
-                      className="rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-700"
+                      className="min-h-[42px] rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-700"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E40AF] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
+                      className="min-h-[42px] inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
                     >
                       <Send className="h-3.5 w-3.5" />
                       <span>Review &amp; Send Email</span>
@@ -443,7 +448,7 @@ export function InboxWorkspace({
                           type="button"
                           onClick={() => setSelectedEmail(msg)}
                           className={`w-full p-4 text-left transition-colors ${
-                            active ? 'bg-blue-50/50' : 'hover:bg-slate-50'
+                            active ? 'bg-[var(--gs-soft-bg)]' : 'hover:bg-slate-50'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 text-xs">
@@ -455,7 +460,7 @@ export function InboxWorkspace({
                               {msg.from}
                             </span>
                             {msg.unread && (
-                              <span className="text-[11px] font-semibold text-[#1E40AF] shrink-0">
+                              <span className="text-[11px] font-semibold text-[var(--gs-primary)] shrink-0">
                                 Unread
                               </span>
                             )}
@@ -472,15 +477,15 @@ export function InboxWorkspace({
                   )}
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-7 min-h-[360px]">
+                <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 lg:col-span-7 min-h-[360px]">
                   {selectedEmail ? (
                     <div>
                       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
-                        <div>
+                        <div className="min-w-0">
                           <h3 className="font-display text-base font-bold text-slate-900">
                             {selectedEmail.subject}
                           </h3>
-                          <div className="mt-1 text-xs text-slate-500">
+                          <div className="mt-1 text-xs text-slate-500 break-all">
                             From: <span className="text-slate-800">{selectedEmail.from}</span>
                             {selectedEmail.date && ` · ${selectedEmail.date}`}
                           </div>
@@ -488,7 +493,7 @@ export function InboxWorkspace({
                         <button
                           type="button"
                           onClick={() => openReplyToGmail(selectedEmail)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-[#1E40AF] px-3 py-1.5 text-xs font-semibold text-[#1E40AF] hover:bg-blue-50 whitespace-nowrap shrink-0"
+                          className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg border border-[var(--gs-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-primary)] hover:bg-[var(--gs-soft-bg)] whitespace-nowrap shrink-0"
                         >
                           <Send className="h-3.5 w-3.5" />
                           <span>Reply</span>
@@ -512,10 +517,10 @@ export function InboxWorkspace({
 
       {/* TAB 2: SUPABASE CLIENT INQUIRIES */}
       {subTab === 'inquiries' && (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
           <div className="flex items-center justify-between border-b border-slate-200 pb-4">
             <div className="flex items-center gap-2">
-              <Inbox className="h-4 w-4 text-[#1E40AF]" />
+              <Inbox className="h-4 w-4 text-[var(--gs-primary)]" />
               <h3 className="font-display text-sm font-bold text-slate-900">
                 Client Project Inquiries ({inquiries.length})
               </h3>
@@ -527,23 +532,40 @@ export function InboxWorkspace({
             ) : (
               inquiries.map((inq) => (
                 <div key={inq.id} className="py-4 space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="min-w-0">
                       <div className="font-semibold text-sm text-slate-900">
                         {inq.full_name} · {inq.company}
                       </div>
-                      <div className="text-xs text-slate-500 font-mono tabular-nums">
+                      <div className="text-xs text-slate-500 font-mono tabular-nums break-words">
                         {inq.reference_code} · {inq.work_email} · {inq.service_interest} ·{' '}
                         {inq.budget_range} · {inq.timeline}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      {teamUsers.length > 0 && onAssignInquiry && (
+                        <select
+                          aria-label={`Assign inquiry ${inq.reference_code}`}
+                          value={inq.assigned_to || ''}
+                          onChange={(e) =>
+                            onAssignInquiry(inq.id, e.target.value ? e.target.value : null)
+                          }
+                          className="min-h-[38px] rounded border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700"
+                        >
+                          <option value="">Unassigned</option>
+                          {teamUsers.map((u) => (
+                            <option key={u.user_id} value={u.user_id}>
+                              Owner: {u.full_name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                       <select
                         value={inq.status}
                         onChange={(e) =>
                           onUpdateInquiryStatus(inq.id, e.target.value as InquiryStatus)
                         }
-                        className="rounded border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700"
+                        className="min-h-[38px] rounded border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700"
                       >
                         <option value="new">New</option>
                         <option value="reviewed">Reviewed</option>
@@ -552,7 +574,7 @@ export function InboxWorkspace({
                       <button
                         type="button"
                         onClick={() => openComposeForInquiry(inq)}
-                        className="inline-flex items-center gap-1 rounded border border-[#1E40AF] px-2.5 py-1.5 text-xs font-semibold text-[#1E40AF] hover:bg-blue-50 whitespace-nowrap shrink-0"
+                        className="min-h-[38px] inline-flex items-center gap-1 rounded border border-[var(--gs-primary)] px-2.5 py-1.5 text-xs font-semibold text-[var(--gs-primary)] hover:bg-[var(--gs-soft-bg)] whitespace-nowrap shrink-0"
                       >
                         <Mail className="h-3.5 w-3.5" />
                         <span>Reply via Gmail</span>
@@ -570,7 +592,7 @@ export function InboxWorkspace({
       {/* TAB 3: READER COMMENTS & NEWSLETTER */}
       {subTab === 'community' && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-7">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 lg:col-span-7">
             <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-3">
               Reader Comments Moderation ({comments.length})
             </h3>
@@ -599,7 +621,7 @@ export function InboxWorkspace({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-6 lg:col-span-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 lg:col-span-5">
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h3 className="font-display text-sm font-bold text-slate-900">
                 Newsletter Subscribers ({subscribers.length})
@@ -607,7 +629,7 @@ export function InboxWorkspace({
               <button
                 type="button"
                 onClick={onExportSubscribersCsv}
-                className="inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                className="min-h-[36px] inline-flex items-center gap-1 rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
               >
                 <Download className="h-3 w-3" />
                 <span>CSV</span>
@@ -635,7 +657,7 @@ export function InboxWorkspace({
           aria-label="Confirm Send Email"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
         >
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl space-y-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xl space-y-4">
             <h3 className="font-display text-base font-bold text-slate-900">
               Confirm Sending Email via Gmail
             </h3>
@@ -654,11 +676,11 @@ export function InboxWorkspace({
                 {composeBody}
               </p>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setConfirmSendOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="min-h-[42px] rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Cancel
               </button>
@@ -666,7 +688,7 @@ export function InboxWorkspace({
                 type="button"
                 disabled={sendingEmail}
                 onClick={handleConfirmedSend}
-                className="rounded-lg bg-[#1E40AF] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+                className="min-h-[42px] rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60"
               >
                 {sendingEmail ? 'Sending...' : 'Confirm & Send Email'}
               </button>

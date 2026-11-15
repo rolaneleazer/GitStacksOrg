@@ -68,7 +68,7 @@ function renderInline(text: string): React.ReactNode[] {
             href={safeHref}
             target={safeHref.startsWith('http') ? '_blank' : undefined}
             rel={safeHref.startsWith('http') ? 'noopener noreferrer' : undefined}
-            className="text-[#1E40AF] underline decoration-[#1E40AF]/30 underline-offset-4 hover:decoration-[#1E40AF]"
+            className="text-[var(--gs-primary)] underline decoration-[var(--gs-primary)]/30 underline-offset-4 hover:decoration-[var(--gs-primary)]"
           >
             {label}
           </a>
@@ -305,5 +305,5 @@ export function MarkdownRenderer({ markdown, midArticleSlot }: MarkdownRendererP
     );
   }
 
-  return <div className="max-w-[68ch]">{blocks}</div>;
+  return <div className="w-full min-w-0 max-w-[68ch]">{blocks}</div>;
 }

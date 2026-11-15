@@ -69,7 +69,7 @@ export function InquiryForm({
 
   if (submitted) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8">
         <div className="flex items-start gap-3">
           <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-[#16A34A]" />
           <div>
@@ -92,7 +92,7 @@ export function InquiryForm({
               <button
                 type="button"
                 onClick={() => setSubmitted(null)}
-                className="text-xs font-semibold text-[#1E40AF] hover:underline"
+                className="min-h-[44px] inline-flex items-center text-xs font-semibold text-[var(--gs-primary)] hover:underline"
               >
                 Submit another inquiry
               </button>
@@ -106,7 +106,7 @@ export function InquiryForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className={`rounded-xl border border-slate-200 bg-white ${compact ? 'p-6' : 'p-8'}`}
+      className={`rounded-xl border border-slate-200 bg-white ${compact ? 'p-5 sm:p-6' : 'p-5 sm:p-8'}`}
       noValidate
     >
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -121,7 +121,7 @@ export function InquiryForm({
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
             placeholder="Alex Rivera"
-            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
           />
         </div>
         <div>
@@ -135,7 +135,7 @@ export function InquiryForm({
             value={company}
             onChange={(e) => setCompany(e.target.value)}
             placeholder="Acme Logistics Inc."
-            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
           />
         </div>
         <div>
@@ -149,7 +149,7 @@ export function InquiryForm({
             value={workEmail}
             onChange={(e) => setWorkEmail(e.target.value)}
             placeholder="alex@company.com"
-            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
           />
         </div>
         <div>
@@ -160,7 +160,7 @@ export function InquiryForm({
             id="inq-service"
             value={serviceInterest}
             onChange={(e) => setServiceInterest(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
           >
             <option value="AI Integration">AI Integration &amp; Enterprise RAG</option>
             <option value="ML Automation">Machine Learning Automation &amp; MLOps</option>
@@ -178,7 +178,7 @@ export function InquiryForm({
             id="inq-budget"
             value={budgetRange}
             onChange={(e) => setBudgetRange(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
           >
             <option value="$15k – $35k">$15k – $35k (Discovery / Pilot)</option>
             <option value="$35k – $75k">$35k – $75k (Production Build)</option>
@@ -194,7 +194,7 @@ export function InquiryForm({
             id="inq-timeline"
             value={timeline}
             onChange={(e) => setTimeline(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+            className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
           >
             <option value="Immediate (1–2 weeks)">Immediate (1–2 weeks)</option>
             <option value="Within 30 days">Within 30 days</option>
@@ -215,7 +215,7 @@ export function InquiryForm({
           value={projectBrief}
           onChange={(e) => setProjectBrief(e.target.value)}
           placeholder="Describe your current stack, target workflows for AI/ML automation or cloud migration, and security or compliance constraints..."
-          className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+          className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
         />
       </div>
 
@@ -235,7 +235,7 @@ export function InquiryForm({
         <button
           type="submit"
           disabled={submitting}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1E40AF] px-6 py-3 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+          className="inline-flex w-full sm:w-auto min-h-[44px] items-center justify-center gap-2 rounded-lg bg-[var(--gs-primary)] hover:bg-[var(--gs-primary-hover)] px-6 py-3 text-sm font-semibold text-white disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
         >
           <span>{submitting ? 'Submitting...' : 'Request Architecture Review'}</span>
           <ArrowRight className="h-4 w-4" />

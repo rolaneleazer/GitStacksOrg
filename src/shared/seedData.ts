@@ -436,8 +436,141 @@ export const DEFAULT_ADSENSE_SETTINGS: AdSenseSettings = {
   ga4_measurement_id: '',
   ga4_enabled: false,
   ga4_track_events: true,
+  brand_name: 'GitStack',
+  brand_logo_url: '',
+  brand_logo_alt: 'GitStack logo',
+  theme_preset: 'cobalt',
+  primary_color: '#1E40AF',
+  header_surface: 'white',
+  header_cta_label: 'Book Consultation',
+  header_cta_href: '/contact',
   updated_at: '2026-11-10T00:00:00Z'
 };
+
+export const SEED_USER_PROFILES = [
+  {
+    user_id: 'usr-primary-admin',
+    email: 'gitstackitsolution@gmail.com',
+    full_name: 'GitStack Founder',
+    role: 'super_admin' as const,
+    job_title: 'Principal Architect & Founder',
+    bio: 'Leads enterprise AI integration, MLOps architecture, and cloud infrastructure strategy.',
+    avatar_url: '',
+    phone: '',
+    timezone: 'UTC',
+    status: 'active' as const,
+    created_at: '2026-11-01T08:00:00Z',
+    updated_at: '2026-11-12T08:00:00Z'
+  }
+];
+
+export const SEED_USER_WORKFLOWS = [
+  {
+    id: 'wf-seed-1',
+    user_id: 'usr-primary-admin',
+    assigned_by: 'usr-primary-admin',
+    title: 'Review Veridian Supply Chain RAG architecture proposal',
+    description: 'Confirm VPC deployment constraints and pgvector ACL latency benchmarks before discovery call.',
+    category: 'project_task' as const,
+    priority: 'high' as const,
+    status: 'in_progress' as const,
+    due_date: '2026-11-20',
+    linked_entity_type: 'inquiry' as const,
+    linked_entity_id: 'inq-1',
+    created_at: '2026-11-10T09:00:00Z',
+    updated_at: '2026-11-12T09:00:00Z'
+  },
+  {
+    id: 'wf-seed-2',
+    user_id: 'usr-primary-admin',
+    assigned_by: 'usr-primary-admin',
+    title: 'Customize GitStack header logo & brand color theme in Branding & Theme',
+    description: 'Upload vector/PNG mark and verify WCAG AA contrast ratio across public pages.',
+    category: 'daily_checklist' as const,
+    priority: 'medium' as const,
+    status: 'todo' as const,
+    due_date: null,
+    linked_entity_type: 'none' as const,
+    linked_entity_id: null,
+    created_at: '2026-11-11T10:00:00Z',
+    updated_at: '2026-11-12T10:00:00Z'
+  }
+];
+
+export const SEED_ROUTING_RULES = [
+  {
+    id: 'route-inq-ai',
+    source_type: 'inquiry' as const,
+    match_key: 'AI Integration',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-inq-ml',
+    source_type: 'inquiry' as const,
+    match_key: 'ML Automation',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-inq-custom',
+    source_type: 'inquiry' as const,
+    match_key: 'Custom Software',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-inq-cloud',
+    source_type: 'inquiry' as const,
+    match_key: 'Cloud Infrastructure',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-inq-consult',
+    source_type: 'inquiry' as const,
+    match_key: 'Technical Consulting',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-inq-default',
+    source_type: 'inquiry' as const,
+    match_key: 'default',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-chat-inquiry',
+    source_type: 'chat' as const,
+    match_key: 'inquiry',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-chat-comment',
+    source_type: 'chat' as const,
+    match_key: 'comment',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  },
+  {
+    id: 'route-chat-default',
+    source_type: 'chat' as const,
+    match_key: 'default',
+    assignee_user_id: null,
+    enabled: true,
+    updated_at: '2026-11-12T08:00:00Z'
+  }
+];
 
 export const SEED_AGENT_TASKS = [
   {

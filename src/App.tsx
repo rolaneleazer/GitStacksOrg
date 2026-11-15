@@ -22,6 +22,7 @@ import {
 import { ServicesPage } from './pages/ServicesPage.tsx';
 import { StudioPage } from './pages/StudioPage.tsx';
 import { SEED_ARTICLES } from './shared/seedData.ts';
+import { applyThemeToDocument } from './shared/themePresets.ts';
 import type { AdSenseSettings, Article, PageContentConfig } from './shared/types.ts';
 
 function getCurrentRoute(): string {
@@ -66,6 +67,10 @@ export default function App() {
   useEffect(() => {
     refreshPublicData();
   }, [refreshPublicData]);
+
+  useEffect(() => {
+    applyThemeToDocument(adSenseSettings);
+  }, [adSenseSettings]);
 
   useEffect(() => {
     if (!route.startsWith('/obama') && !route.startsWith('/studio')) {
@@ -196,12 +201,12 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAFAFC] text-slate-900">
+    <div className="min-h-screen flex flex-col bg-[var(--gs-canvas-bg)] text-slate-900">
       <AdSenseScriptLoader settings={adSenseSettings} consent={consent} />
       <GoogleAnalyticsLoader settings={adSenseSettings} consent={consent} route={route} />
-      <Header currentPath={route} onNavigate={navigate} />
+      <Header currentPath={route} settings={adSenseSettings} onNavigate={navigate} />
       <main className="flex-1">{renderPage()}</main>
-      <Footer onNavigate={navigate} onOpenCookiePrefs={openPreferences} />
+      <Footer settings={adSenseSettings} onNavigate={navigate} onOpenCookiePrefs={openPreferences} />
       <CookieConsentBanner
         consent={consent}
         modalOpen={modalOpen}

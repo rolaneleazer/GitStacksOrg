@@ -12,12 +12,18 @@ import type {
   ChatThreadStatus,
   ClientInquiry,
   CommentStatus,
+  DirectoryUser,
   InquiryStatus,
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
+  RoutingRule,
   SiteAuditReport,
-  TaskPriority
+  TaskPriority,
+  UserProfile,
+  UserRole,
+  UserStatus,
+  UserWorkflowItem
 } from '../shared/types.ts';
 
 const TOKEN_KEY = 'gitstack_studio_token';
@@ -90,7 +96,13 @@ export const api = {
   async login(email: string, password: string) {
     const res = await request<{
       token: string;
-      editor: { email: string; provider: 'supabase' | 'local' };
+      editor: {
+        userId: string;
+        email: string;
+        provider: 'supabase' | 'local';
+        role: UserRole;
+        profile: UserProfile;
+      };
       storageBackend: 'supabase' | 'local-json';
       supabaseUrl: string | null;
       supabaseTablesReady: boolean;
@@ -106,7 +118,13 @@ export const api = {
   async getSession() {
     return request<{
       authenticated: boolean;
-      editor: { email: string; provider: 'supabase' | 'local' } | null;
+      editor: {
+        userId: string;
+        email: string;
+        provider: 'supabase' | 'local';
+        role: UserRole;
+        profile: UserProfile;
+      } | null;
       storageBackend: 'supabase' | 'local-json';
       supabaseUrl: string | null;
       supabaseTablesReady: boolean;
@@ -353,5 +371,112 @@ export const api = {
 
   async getAnalyticsSummary(days: 7 | 14 | 30 = 14) {
     return request<{ summary: AnalyticsSummary }>(`/api/analytics/summary?days=${days}`);
+  },
+
+  // --- Profile, Team Access, Workflows & Routing ---
+  async getMyProfile() {
+    return request<{ profile: UserProfile }>('/api/profile/me');
+  },
+
+  async updateMyProfile(
+    payload: Partial<Pick<UserProfile, 'full_name' | 'job_title' | 'bio' | 'avatar_url' | 'phone' | 'timezone'>>
+  ) {
+    return request<{ profile: UserProfile }>('/api/profile/me', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getUserDirectory() {
+    return request<{ users: DirectoryUser[] }>('/api/users/directory');
+  },
+
+  async listUsers() {
+    return request<{ users: UserProfile[] }>('/api/users');
+  },
+
+  async createUser(payload: {
+    email: string;
+    password: string;
+    full_name: string;
+    role: UserRole;
+    job_title?: string;
+  }) {
+    return request<{ user: UserProfile }>('/api/users', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async updateUser(
+    userId: string,
+    payload: {
+      role?: UserRole;
+      status?: UserStatus;
+      full_name?: string;
+      job_title?: string;
+      password?: string;
+    }
+  ) {
+    return request<{ user: UserProfile }>(`/api/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteUser(userId: string) {
+    return request<{ ok: boolean }>(`/api/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async listWorkflows(userId?: string) {
+    const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+    return request<{ items: UserWorkflowItem[] }>(`/api/workflows${qs}`);
+  },
+
+  async createWorkflow(payload: Partial<UserWorkflowItem>) {
+    return request<{ item: UserWorkflowItem }>('/api/workflows', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async updateWorkflow(id: string, payload: Partial<UserWorkflowItem>) {
+    return request<{ item: UserWorkflowItem }>(`/api/workflows/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteWorkflow(id: string) {
+    return request<{ ok: boolean }>(`/api/workflows/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async assignInquiry(id: string, assigned_to: string | null) {
+    return request<{ inquiry: ClientInquiry }>(`/api/inquiries/${encodeURIComponent(id)}/assign`, {
+      method: 'PATCH',
+      body: JSON.stringify({ assigned_to })
+    });
+  },
+
+  async assignChatThread(id: string, assigned_to: string | null) {
+    return request<{ thread: ChatThread }>(`/api/chat/threads/${encodeURIComponent(id)}/assign`, {
+      method: 'PATCH',
+      body: JSON.stringify({ assigned_to })
+    });
+  },
+
+  async listRoutingRules() {
+    return request<{ rules: RoutingRule[] }>('/api/routing-rules');
+  },
+
+  async saveRoutingRules(rules: RoutingRule[]) {
+    return request<{ rules: RoutingRule[] }>('/api/routing-rules', {
+      method: 'PUT',
+      body: JSON.stringify({ rules })
+    });
   }
 };

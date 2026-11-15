@@ -13,7 +13,10 @@ import {
   SEED_CHAT_THREADS,
   SEED_COMMENTS,
   SEED_INQUIRIES,
-  SEED_SUBSCRIBERS
+  SEED_ROUTING_RULES,
+  SEED_SUBSCRIBERS,
+  SEED_USER_PROFILES,
+  SEED_USER_WORKFLOWS
 } from '../shared/seedData.ts';
 import type {
   AdSenseSettings,
@@ -27,10 +30,16 @@ import type {
   ChatThreadStatus,
   ClientInquiry,
   CommentStatus,
+  DirectoryUser,
   InquiryStatus,
   NewsletterSubscriber,
   PageContentConfig,
-  PageKey
+  PageKey,
+  RoutingRule,
+  UserProfile,
+  UserRole,
+  UserStatus,
+  UserWorkflowItem
 } from '../shared/types.ts';
 
 interface LocalDatabase {
@@ -44,6 +53,9 @@ interface LocalDatabase {
   chat_threads?: ChatThread[];
   chat_messages?: ChatMessage[];
   analytics_events?: AnalyticsEvent[];
+  user_profiles?: UserProfile[];
+  user_workflow_items?: UserWorkflowItem[];
+  routing_rules?: RoutingRule[];
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -53,7 +65,8 @@ const LOCAL_TOKEN_SECRET =
   process.env.STUDIO_SESSION_SECRET ||
   crypto.createHash('sha256').update(process.cwd() + '_gitstack_studio_v1').digest('hex');
 
-const FALLBACK_ADMIN_EMAIL = (process.env.STUDIO_ADMIN_EMAIL || 'admin@gitstack.io').toLowerCase();
+const PRIMARY_ADMIN_EMAIL = (process.env.STUDIO_ADMIN_EMAIL || 'gitstackitsolution@gmail.com').trim().toLowerCase();
+const FALLBACK_ADMIN_EMAIL = (process.env.STUDIO_ADMIN_EMAIL || 'gitstackitsolution@gmail.com').trim().toLowerCase();
 const FALLBACK_ADMIN_PASSWORD = process.env.STUDIO_ADMIN_PASSWORD || 'gitstack-studio-2026';
 
 export function getSupabaseUrl(): string | undefined {
@@ -147,11 +160,20 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
   try {
     const client = getSupabaseClient();
-    const [postsRes, pagesRes] = await Promise.all([
+    const [postsRes, pagesRes, profilesRes, wfRes, rulesRes] = await Promise.all([
       client.from('posts').select('id').limit(1),
-      client.from('page_contents').select('page_key').limit(1)
+      client.from('page_contents').select('page_key').limit(1),
+      client.from('user_profiles').select('user_id').limit(1),
+      client.from('user_workflow_items').select('id').limit(1),
+      client.from('routing_rules').select('id').limit(1)
     ]);
-    return !postsRes.error && !pagesRes.error;
+    return (
+      !postsRes.error &&
+      !pagesRes.error &&
+      !profilesRes.error &&
+      !wfRes.error &&
+      !rulesRes.error
+    );
   } catch {
     return false;
   }
@@ -298,7 +320,10 @@ function ensureLocalShape(db: LocalDatabase): LocalDatabase {
     agent_tasks: db.agent_tasks || [...SEED_AGENT_TASKS],
     chat_threads: db.chat_threads || [...SEED_CHAT_THREADS],
     chat_messages: db.chat_messages || [...SEED_CHAT_MESSAGES],
-    analytics_events: db.analytics_events || [...SEED_ANALYTICS_EVENTS]
+    analytics_events: db.analytics_events || [...SEED_ANALYTICS_EVENTS],
+    user_profiles: db.user_profiles || [...SEED_USER_PROFILES],
+    user_workflow_items: db.user_workflow_items || [...SEED_USER_WORKFLOWS],
+    routing_rules: db.routing_rules || [...SEED_ROUTING_RULES]
   };
 }
 
@@ -325,8 +350,127 @@ async function writeLocalDb(data: LocalDatabase): Promise<void> {
 }
 
 export interface EditorSession {
+  userId: string;
   email: string;
   provider: 'supabase' | 'local';
+  role: UserRole;
+  profile: UserProfile;
+}
+
+async function resolveOrBootstrapUserProfile(
+  userId: string,
+  email: string,
+  userToken?: string
+): Promise<UserProfile | null> {
+  const cleanEmail = email.trim().toLowerCase();
+  const isPrimaryAdmin = cleanEmail === PRIMARY_ADMIN_EMAIL;
+  const now = new Date().toISOString();
+
+  if (isSupabaseConfigured()) {
+    const sb = getSupabaseClient(userToken);
+    const { data: existingById, error: idErr } = await sb
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .limit(1);
+
+    if (!idErr && existingById && existingById[0]) {
+      const profile = existingById[0] as UserProfile;
+      if (isPrimaryAdmin && profile.role !== 'super_admin') {
+        const { data: upgraded } = await sb
+          .from('user_profiles')
+          .update({ role: 'super_admin', status: 'active', updated_at: now })
+          .eq('user_id', userId)
+          .select()
+          .single();
+        return (upgraded as UserProfile) || { ...profile, role: 'super_admin', status: 'active' };
+      }
+      if (profile.status === 'suspended') return null;
+      return profile;
+    }
+
+    if (!idErr) {
+      // Check if an account exists by email (for first bootstrap) or count super_admins
+      const { data: byEmail } = await sb
+        .from('user_profiles')
+        .select('*')
+        .eq('email', cleanEmail)
+        .limit(1);
+
+      if (byEmail && byEmail[0]) {
+        const prev = byEmail[0] as UserProfile;
+        const { data: migrated } = await sb
+          .from('user_profiles')
+          .upsert({ ...prev, user_id: userId, updated_at: now }, { onConflict: 'user_id' })
+          .select()
+          .single();
+        if (prev.status === 'suspended' && !isPrimaryAdmin) return null;
+        return (migrated as UserProfile) || { ...prev, user_id: userId };
+      }
+
+      const { count: adminCount } = await sb
+        .from('user_profiles')
+        .select('user_id', { count: 'exact', head: true })
+        .eq('role', 'super_admin');
+
+      const assignedRole: UserRole = isPrimaryAdmin || (adminCount ?? 0) === 0 ? 'super_admin' : 'editor';
+      const newProfile: UserProfile = {
+        user_id: userId,
+        email: cleanEmail,
+        full_name: isPrimaryAdmin ? 'GitStack Founder' : cleanEmail.split('@')[0],
+        role: assignedRole,
+        job_title: assignedRole === 'super_admin' ? 'Principal Architect & Founder' : 'Editorial Operator',
+        bio: '',
+        avatar_url: '',
+        phone: '',
+        timezone: 'UTC',
+        status: 'active',
+        created_at: now,
+        updated_at: now
+      };
+      const { data: inserted, error: insertErr } = await sb
+        .from('user_profiles')
+        .upsert(newProfile, { onConflict: 'user_id' })
+        .select()
+        .single();
+      if (!insertErr && inserted) return inserted as UserProfile;
+      return newProfile;
+    }
+
+    if (!isFallbackableDbError(idErr)) {
+      throw new Error(idErr.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  const profiles = db.user_profiles || [];
+  let found = profiles.find((p) => p.user_id === userId || p.email.toLowerCase() === cleanEmail);
+  if (!found) {
+    const hasAdmin = profiles.some((p) => p.role === 'super_admin' && p.status === 'active');
+    found = {
+      user_id: userId,
+      email: cleanEmail,
+      full_name: isPrimaryAdmin ? 'GitStack Founder' : cleanEmail.split('@')[0],
+      role: isPrimaryAdmin || !hasAdmin ? 'super_admin' : 'editor',
+      job_title: isPrimaryAdmin || !hasAdmin ? 'Principal Architect & Founder' : 'Team Member',
+      bio: '',
+      avatar_url: '',
+      phone: '',
+      timezone: 'UTC',
+      status: 'active',
+      created_at: now,
+      updated_at: now
+    };
+    db.user_profiles = [...profiles, found];
+    await writeLocalDb(db);
+  }
+  if (isPrimaryAdmin && found.role !== 'super_admin') {
+    found.role = 'super_admin';
+    found.status = 'active';
+    await writeLocalDb(db);
+  }
+  if (found.status === 'suspended') return null;
+  return found;
 }
 
 export async function signInEditor(
@@ -343,16 +487,36 @@ export async function signInEditor(
     if (error || !data.session?.access_token || !data.user?.email) {
       return null;
     }
+    const profile = await resolveOrBootstrapUserProfile(
+      data.user.id,
+      data.user.email,
+      data.session.access_token
+    );
+    if (!profile) return null;
     return {
       token: data.session.access_token,
-      session: { email: data.user.email, provider: 'supabase' }
+      session: {
+        userId: profile.user_id,
+        email: data.user.email,
+        provider: 'supabase',
+        role: profile.role,
+        profile
+      }
     };
   }
 
   if (cleanEmail === FALLBACK_ADMIN_EMAIL && password === FALLBACK_ADMIN_PASSWORD) {
+    const profile = await resolveOrBootstrapUserProfile('usr-primary-admin', cleanEmail);
+    if (!profile) return null;
     return {
       token: signLocalToken(cleanEmail),
-      session: { email: cleanEmail, provider: 'local' }
+      session: {
+        userId: profile.user_id,
+        email: cleanEmail,
+        provider: 'local',
+        role: profile.role,
+        profile
+      }
     };
   }
   return null;
@@ -363,11 +527,27 @@ export async function verifyEditorToken(token: string | undefined): Promise<Edit
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient().auth.getUser(token);
     if (error || !data.user?.email) return null;
-    return { email: data.user.email, provider: 'supabase' };
+    const profile = await resolveOrBootstrapUserProfile(data.user.id, data.user.email, token);
+    if (!profile) return null;
+    return {
+      userId: profile.user_id,
+      email: data.user.email,
+      provider: 'supabase',
+      role: profile.role,
+      profile
+    };
   }
   const verified = verifyLocalToken(token);
   if (!verified) return null;
-  return { email: verified.email, provider: 'local' };
+  const profile = await resolveOrBootstrapUserProfile('usr-primary-admin', verified.email);
+  if (!profile) return null;
+  return {
+    userId: profile.user_id,
+    email: verified.email,
+    provider: 'local',
+    role: profile.role,
+    profile
+  };
 }
 
 export async function seedStarterDataToSupabase(userToken?: string): Promise<{ seededPosts: number }> {
@@ -393,6 +573,7 @@ export async function seedStarterDataToSupabase(userToken?: string): Promise<{ s
   await sb.from('chat_threads').upsert(SEED_CHAT_THREADS, { onConflict: 'id', ignoreDuplicates: true });
   await sb.from('chat_messages').upsert(SEED_CHAT_MESSAGES, { onConflict: 'id', ignoreDuplicates: true });
   await sb.from('analytics_events').upsert(SEED_ANALYTICS_EVENTS, { onConflict: 'id', ignoreDuplicates: true });
+  await sb.from('routing_rules').upsert(SEED_ROUTING_RULES, { onConflict: 'id', ignoreDuplicates: true });
 
   return { seededPosts: SEED_ARTICLES.length };
 }
@@ -405,6 +586,11 @@ export async function autoSeedSupabaseIfEmpty(): Promise<boolean> {
   if ((count ?? 0) === 0) {
     await seedStarterDataToSupabase();
     return true;
+  }
+  // Ensure routing_rules has starter rows if table is newly added
+  const { count: rulesCount } = await sb.from('routing_rules').select('id', { count: 'exact', head: true });
+  if ((rulesCount ?? 0) === 0) {
+    await sb.from('routing_rules').upsert(SEED_ROUTING_RULES, { onConflict: 'id', ignoreDuplicates: true });
   }
   return false;
 }
@@ -527,17 +713,9 @@ export async function listComments(
 }
 
 export async function createComment(comment: ArticleComment): Promise<ArticleComment> {
-  if (isSupabaseConfigured()) {
-    const { error } = await getSupabaseClient().from('comments').insert(comment);
-    if (!error) return comment;
-    if (!isFallbackableDbError(error)) throw new Error(error.message);
-  }
-
-  const db = await readLocalDb();
-  db.comments.unshift(comment);
-  // Automatically record historical Q&A thread for Back Office live chat
+  const autoAssignee = await resolveAutoAssignee('chat', 'comment');
   const threadId = `thr-cmt-${comment.id}`;
-  db.chat_threads!.unshift({
+  const thread: ChatThread = {
     id: threadId,
     subject: `Reader Comment: ${comment.body.slice(0, 64)}`,
     source_type: 'comment',
@@ -545,17 +723,39 @@ export async function createComment(comment: ArticleComment): Promise<ArticleCom
     requester_name: comment.author_name,
     requester_email: comment.author_email,
     status: 'open',
+    assigned_to: autoAssignee,
+    assigned_at: autoAssignee ? comment.created_at : null,
     last_message_at: comment.created_at,
     created_at: comment.created_at
-  });
-  db.chat_messages!.push({
+  };
+  const msg: ChatMessage = {
     id: `msg-${crypto.randomUUID().slice(0, 8)}`,
     thread_id: threadId,
     sender_role: 'visitor',
     sender_name: comment.author_name,
     body: comment.body,
     created_at: comment.created_at
-  });
+  };
+
+  if (isSupabaseConfigured()) {
+    const sb = getSupabaseClient();
+    const { error } = await sb.from('comments').insert(comment);
+    if (!error) {
+      try {
+        await sb.from('chat_threads').insert(thread);
+        await sb.from('chat_messages').insert(msg);
+      } catch {
+        // Non-blocking chat thread creation
+      }
+      return comment;
+    }
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.comments.unshift(comment);
+  db.chat_threads!.unshift(thread);
+  db.chat_messages!.push(msg);
   await writeLocalDb(db);
   return comment;
 }
@@ -639,17 +839,15 @@ export async function listInquiries(userToken?: string): Promise<ClientInquiry[]
 }
 
 export async function createInquiry(inquiry: ClientInquiry): Promise<ClientInquiry> {
-  if (isSupabaseConfigured()) {
-    const { error } = await getSupabaseClient().from('inquiries').insert(inquiry);
-    if (!error) return inquiry;
-    if (!isFallbackableDbError(error)) throw new Error(error.message);
-  }
-
-  const db = await readLocalDb();
-  db.inquiries.unshift(inquiry);
-  // Mirror incoming client question into historical chat queue
+  const autoAssignee = await resolveAutoAssignee('inquiry', inquiry.service_interest);
+  const chatAssignee = autoAssignee || (await resolveAutoAssignee('chat', 'inquiry'));
+  const enrichedInquiry: ClientInquiry = {
+    ...inquiry,
+    assigned_to: autoAssignee,
+    assigned_at: autoAssignee ? inquiry.created_at : null
+  };
   const threadId = `thr-inq-${inquiry.id}`;
-  db.chat_threads!.unshift({
+  const thread: ChatThread = {
     id: threadId,
     subject: `${inquiry.service_interest} Inquiry · ${inquiry.company} (${inquiry.reference_code})`,
     source_type: 'inquiry',
@@ -657,19 +855,41 @@ export async function createInquiry(inquiry: ClientInquiry): Promise<ClientInqui
     requester_name: `${inquiry.full_name} (${inquiry.company})`,
     requester_email: inquiry.work_email,
     status: 'open',
+    assigned_to: chatAssignee,
+    assigned_at: chatAssignee ? inquiry.created_at : null,
     last_message_at: inquiry.created_at,
     created_at: inquiry.created_at
-  });
-  db.chat_messages!.push({
+  };
+  const msg: ChatMessage = {
     id: `msg-${crypto.randomUUID().slice(0, 8)}`,
     thread_id: threadId,
     sender_role: 'visitor',
     sender_name: inquiry.full_name,
     body: `${inquiry.project_brief}\n\nBudget: ${inquiry.budget_range} · Timeline: ${inquiry.timeline}`,
     created_at: inquiry.created_at
-  });
+  };
+
+  if (isSupabaseConfigured()) {
+    const sb = getSupabaseClient();
+    const { error } = await sb.from('inquiries').insert(enrichedInquiry);
+    if (!error) {
+      try {
+        await sb.from('chat_threads').insert(thread);
+        await sb.from('chat_messages').insert(msg);
+      } catch {
+        // Non-blocking chat thread creation
+      }
+      return enrichedInquiry;
+    }
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.inquiries.unshift(enrichedInquiry);
+  db.chat_threads!.unshift(thread);
+  db.chat_messages!.push(msg);
   await writeLocalDb(db);
-  return inquiry;
+  return enrichedInquiry;
 }
 
 export async function updateInquiryStatus(
@@ -696,6 +916,32 @@ export async function updateInquiryStatus(
   return item;
 }
 
+export async function assignInquiry(
+  id: string,
+  assignedTo: string | null,
+  userToken?: string
+): Promise<ClientInquiry | null> {
+  const assignedAt = assignedTo ? new Date().toISOString() : null;
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('inquiries')
+      .update({ assigned_to: assignedTo, assigned_at: assignedAt })
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error && data) return data as ClientInquiry;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const item = db.inquiries.find((i) => i.id === id);
+  if (!item) return null;
+  item.assigned_to = assignedTo;
+  item.assigned_at = assignedAt;
+  await writeLocalDb(db);
+  return item;
+}
+
 export async function getAdSenseSettings(): Promise<AdSenseSettings> {
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient()
@@ -715,6 +961,14 @@ export async function getAdSenseSettings(): Promise<AdSenseSettings> {
         ga4_measurement_id: row.ga4_measurement_id || '',
         ga4_enabled: Boolean(row.ga4_enabled),
         ga4_track_events: row.ga4_track_events !== undefined ? Boolean(row.ga4_track_events) : true,
+        brand_name: row.brand_name || DEFAULT_ADSENSE_SETTINGS.brand_name,
+        brand_logo_url: row.brand_logo_url || '',
+        brand_logo_alt: row.brand_logo_alt || DEFAULT_ADSENSE_SETTINGS.brand_logo_alt,
+        theme_preset: row.theme_preset || DEFAULT_ADSENSE_SETTINGS.theme_preset,
+        primary_color: row.primary_color || DEFAULT_ADSENSE_SETTINGS.primary_color,
+        header_surface: row.header_surface === 'tinted' ? 'tinted' : 'white',
+        header_cta_label: row.header_cta_label || DEFAULT_ADSENSE_SETTINGS.header_cta_label,
+        header_cta_href: row.header_cta_href || DEFAULT_ADSENSE_SETTINGS.header_cta_href,
         updated_at: row.updated_at || new Date().toISOString()
       };
     }
@@ -1075,4 +1329,472 @@ export async function getAnalyticsSummary(
       .sort((a, b) => b.visits - a.visits)
       .slice(0, 6)
   };
+}
+
+// --- Chat Thread Assignment ---
+
+export async function assignChatThread(
+  id: string,
+  assignedTo: string | null,
+  userToken?: string
+): Promise<ChatThread | null> {
+  const assignedAt = assignedTo ? new Date().toISOString() : null;
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('chat_threads')
+      .update({ assigned_to: assignedTo, assigned_at: assignedAt })
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error && data) return data as ChatThread;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const thr = (db.chat_threads || []).find((t) => t.id === id);
+  if (!thr) return null;
+  thr.assigned_to = assignedTo;
+  thr.assigned_at = assignedAt;
+  await writeLocalDb(db);
+  return thr;
+}
+
+// --- Team User Profiles & Access Management ---
+
+export async function listUserProfiles(userToken?: string): Promise<UserProfile[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('user_profiles')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (!error && Array.isArray(data)) {
+      return data as UserProfile[];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return db.user_profiles || [...SEED_USER_PROFILES];
+}
+
+export async function listUserDirectory(userToken?: string): Promise<DirectoryUser[]> {
+  const profiles = await listUserProfiles(userToken);
+  return profiles.map((p) => ({
+    user_id: p.user_id,
+    email: p.email,
+    full_name: p.full_name,
+    role: p.role,
+    job_title: p.job_title,
+    avatar_url: p.avatar_url,
+    status: p.status
+  }));
+}
+
+export async function updateMyUserProfile(
+  userId: string,
+  updates: Partial<Pick<UserProfile, 'full_name' | 'job_title' | 'bio' | 'avatar_url' | 'phone' | 'timezone'>>,
+  userToken?: string
+): Promise<UserProfile | null> {
+  const now = new Date().toISOString();
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('user_profiles')
+      .update({ ...updates, updated_at: now })
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (!error && data) return data as UserProfile;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.user_profiles || [...SEED_USER_PROFILES];
+  const idx = list.findIndex((p) => p.user_id === userId);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updates, updated_at: now };
+  db.user_profiles = list;
+  await writeLocalDb(db);
+  return list[idx];
+}
+
+export async function createTeamUser(
+  input: {
+    email: string;
+    password: string;
+    full_name: string;
+    role: UserRole;
+    job_title?: string;
+    createdByUserId: string;
+  },
+  userToken?: string
+): Promise<UserProfile> {
+  const cleanEmail = input.email.trim().toLowerCase();
+  const now = new Date().toISOString();
+  let newUserId = `usr-${crypto.randomUUID().slice(0, 8)}`;
+
+  if (isSupabaseConfigured()) {
+    const serviceKey = getSupabaseServiceKey();
+    if (!serviceKey) {
+      throw new Error(
+        'SUPABASE_SECRET_KEY is required on the server to provision new Supabase Auth users directly.'
+      );
+    }
+    const adminClient = createClient(getSupabaseUrl()!, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+    const { data: authData, error: authErr } = await adminClient.auth.admin.createUser({
+      email: cleanEmail,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: input.full_name.trim(),
+        role: input.role
+      }
+    });
+    if (authErr || !authData.user) {
+      throw new Error(authErr?.message || 'Failed to create user in Supabase Auth.');
+    }
+    newUserId = authData.user.id;
+  }
+
+  const profile: UserProfile = {
+    user_id: newUserId,
+    email: cleanEmail,
+    full_name: input.full_name.trim() || cleanEmail.split('@')[0],
+    role: input.role,
+    job_title: (input.job_title || '').trim() || (
+      input.role === 'super_admin'
+        ? 'Super Admin'
+        : input.role === 'editor'
+          ? 'Technical Editor'
+          : 'Support Specialist'
+    ),
+    bio: '',
+    avatar_url: '',
+    phone: '',
+    timezone: 'UTC',
+    status: 'active',
+    created_at: now,
+    updated_at: now
+  };
+
+  if (isSupabaseConfigured()) {
+    const sb = getSupabaseClient(userToken);
+    const { data, error } = await sb
+      .from('user_profiles')
+      .upsert(profile, { onConflict: 'user_id' })
+      .select()
+      .single();
+    if (!error && data) {
+      await createWorkflowItem(
+        {
+          id: `wf-${crypto.randomUUID().slice(0, 8)}`,
+          user_id: newUserId,
+          assigned_by: input.createdByUserId,
+          title: 'Complete My Profile & timezone settings',
+          description: 'Add your avatar photo, engineering role title, and local timezone in My Profile.',
+          category: 'onboarding',
+          priority: 'medium',
+          status: 'todo',
+          due_date: null,
+          linked_entity_type: 'none',
+          linked_entity_id: null,
+          created_at: now,
+          updated_at: now
+        },
+        userToken
+      ).catch(() => {});
+      return data as UserProfile;
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.user_profiles = [...(db.user_profiles || []), profile];
+  await writeLocalDb(db);
+  return profile;
+}
+
+export async function updateTeamUser(
+  targetUserId: string,
+  actorUserId: string,
+  updates: {
+    role?: UserRole;
+    status?: UserStatus;
+    full_name?: string;
+    job_title?: string;
+    password?: string;
+  },
+  userToken?: string
+): Promise<UserProfile> {
+  const all = await listUserProfiles(userToken);
+  const target = all.find((u) => u.user_id === targetUserId);
+  if (!target) throw new Error('User profile not found.');
+
+  const activeAdmins = all.filter((u) => u.role === 'super_admin' && u.status === 'active');
+  const isTargetLastActiveAdmin =
+    target.role === 'super_admin' && target.status === 'active' && activeAdmins.length <= 1;
+
+  if (isTargetLastActiveAdmin) {
+    if (updates.role && updates.role !== 'super_admin') {
+      throw new Error('Cannot demote the last active Super Admin.');
+    }
+    if (updates.status === 'suspended') {
+      throw new Error('Cannot suspend the last active Super Admin.');
+    }
+  }
+  if (targetUserId === actorUserId && updates.status === 'suspended') {
+    throw new Error('You cannot suspend your own active session.');
+  }
+
+  if (updates.password && updates.password.trim().length >= 8 && isSupabaseConfigured()) {
+    const serviceKey = getSupabaseServiceKey();
+    if (!serviceKey) {
+      throw new Error('SUPABASE_SECRET_KEY is required to reset user passwords.');
+    }
+    const adminClient = createClient(getSupabaseUrl()!, serviceKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+    const { error: pwErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
+      password: updates.password.trim()
+    });
+    if (pwErr) throw new Error(pwErr.message);
+  }
+
+  const now = new Date().toISOString();
+  const patch: Partial<UserProfile> = {
+    ...(updates.role ? { role: updates.role } : {}),
+    ...(updates.status ? { status: updates.status } : {}),
+    ...(updates.full_name !== undefined ? { full_name: updates.full_name.trim() } : {}),
+    ...(updates.job_title !== undefined ? { job_title: updates.job_title.trim() } : {}),
+    updated_at: now
+  };
+
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('user_profiles')
+      .update(patch)
+      .eq('user_id', targetUserId)
+      .select()
+      .single();
+    if (!error && data) return data as UserProfile;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.user_profiles || [];
+  const idx = list.findIndex((u) => u.user_id === targetUserId);
+  if (idx >= 0) {
+    list[idx] = { ...list[idx], ...patch };
+    db.user_profiles = list;
+    await writeLocalDb(db);
+    return list[idx];
+  }
+  throw new Error('User not found.');
+}
+
+export async function deleteTeamUser(
+  targetUserId: string,
+  actorUserId: string,
+  userToken?: string
+): Promise<boolean> {
+  if (targetUserId === actorUserId) {
+    throw new Error('You cannot delete your own active account.');
+  }
+  const all = await listUserProfiles(userToken);
+  const target = all.find((u) => u.user_id === targetUserId);
+  if (!target) throw new Error('User profile not found.');
+
+  const activeAdmins = all.filter((u) => u.role === 'super_admin' && u.status === 'active');
+  if (target.role === 'super_admin' && target.status === 'active' && activeAdmins.length <= 1) {
+    throw new Error('Cannot delete the last active Super Admin.');
+  }
+
+  if (isSupabaseConfigured()) {
+    const serviceKey = getSupabaseServiceKey();
+    if (serviceKey) {
+      const adminClient = createClient(getSupabaseUrl()!, serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false }
+      });
+      const { error: delAuthErr } = await adminClient.auth.admin.deleteUser(targetUserId);
+      if (delAuthErr && !delAuthErr.message.toLowerCase().includes('not found')) {
+        throw new Error(delAuthErr.message);
+      }
+    }
+    const sb = getSupabaseClient(userToken);
+    await sb.from('inquiries').update({ assigned_to: null }).eq('assigned_to', targetUserId);
+    await sb.from('chat_threads').update({ assigned_to: null }).eq('assigned_to', targetUserId);
+    await sb.from('routing_rules').update({ assignee_user_id: null }).eq('assignee_user_id', targetUserId);
+    const { error } = await sb.from('user_profiles').delete().eq('user_id', targetUserId);
+    if (!error) return true;
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.user_profiles = (db.user_profiles || []).filter((u) => u.user_id !== targetUserId);
+  db.user_workflow_items = (db.user_workflow_items || []).filter((w) => w.user_id !== targetUserId);
+  db.inquiries = db.inquiries.map((i) =>
+    i.assigned_to === targetUserId ? { ...i, assigned_to: null } : i
+  );
+  db.chat_threads = (db.chat_threads || []).map((t) =>
+    t.assigned_to === targetUserId ? { ...t, assigned_to: null } : t
+  );
+  await writeLocalDb(db);
+  return true;
+}
+
+// --- Per-User Workflow Items ---
+
+export async function listWorkflowItems(
+  userId?: string,
+  userToken?: string
+): Promise<UserWorkflowItem[]> {
+  if (isSupabaseConfigured()) {
+    let query = getSupabaseClient(userToken)
+      .from('user_workflow_items')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (userId) query = query.eq('user_id', userId);
+    const { data, error } = await query;
+    if (!error && Array.isArray(data)) return data as UserWorkflowItem[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const items = db.user_workflow_items || [...SEED_USER_WORKFLOWS];
+  return userId ? items.filter((w) => w.user_id === userId) : items;
+}
+
+export async function createWorkflowItem(
+  item: UserWorkflowItem,
+  userToken?: string
+): Promise<UserWorkflowItem> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('user_workflow_items')
+      .insert(item)
+      .select()
+      .single();
+    if (!error && data) return data as UserWorkflowItem;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.user_workflow_items = [item, ...(db.user_workflow_items || [])];
+  await writeLocalDb(db);
+  return item;
+}
+
+export async function updateWorkflowItem(
+  id: string,
+  patch: Partial<UserWorkflowItem>,
+  userToken?: string
+): Promise<UserWorkflowItem | null> {
+  const updatedPatch = { ...patch, updated_at: new Date().toISOString() };
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('user_workflow_items')
+      .update(updatedPatch)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error && data) return data as UserWorkflowItem;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.user_workflow_items || [];
+  const idx = list.findIndex((w) => w.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...updatedPatch };
+  db.user_workflow_items = list;
+  await writeLocalDb(db);
+  return list[idx];
+}
+
+export async function deleteWorkflowItem(id: string, userToken?: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('user_workflow_items')
+      .delete()
+      .eq('id', id);
+    if (!error) return true;
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const before = (db.user_workflow_items || []).length;
+  db.user_workflow_items = (db.user_workflow_items || []).filter((w) => w.id !== id);
+  await writeLocalDb(db);
+  return db.user_workflow_items.length < before;
+}
+
+// --- Deterministic Auto-Routing Rules ---
+
+export async function listRoutingRules(userToken?: string): Promise<RoutingRule[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('routing_rules')
+      .select('*')
+      .order('source_type', { ascending: true });
+    if (!error && Array.isArray(data)) {
+      return data.length > 0 ? (data as RoutingRule[]) : [...SEED_ROUTING_RULES];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return db.routing_rules || [...SEED_ROUTING_RULES];
+}
+
+export async function saveRoutingRules(
+  rules: RoutingRule[],
+  userToken?: string
+): Promise<RoutingRule[]> {
+  const now = new Date().toISOString();
+  const normalized = rules.map((r) => ({ ...r, updated_at: now }));
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('routing_rules')
+      .upsert(normalized, { onConflict: 'id' })
+      .select();
+    if (!error && Array.isArray(data)) return data as RoutingRule[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.routing_rules = normalized;
+  await writeLocalDb(db);
+  return normalized;
+}
+
+async function resolveAutoAssignee(
+  sourceType: 'inquiry' | 'chat',
+  matchKey: string
+): Promise<string | null> {
+  try {
+    const [rules, users] = await Promise.all([listRoutingRules(), listUserProfiles()]);
+    const activeIds = new Set(users.filter((u) => u.status === 'active').map((u) => u.user_id));
+    const exact = rules.find(
+      (r) =>
+        r.enabled &&
+        r.source_type === sourceType &&
+        r.match_key.toLowerCase() === matchKey.toLowerCase() &&
+        r.assignee_user_id &&
+        activeIds.has(r.assignee_user_id)
+    );
+    if (exact?.assignee_user_id) return exact.assignee_user_id;
+
+    const fallback = rules.find(
+      (r) =>
+        r.enabled &&
+        r.source_type === sourceType &&
+        r.match_key === 'default' &&
+        r.assignee_user_id &&
+        activeIds.has(r.assignee_user_id)
+    );
+    return fallback?.assignee_user_id || null;
+  } catch {
+    return null;
+  }
 }

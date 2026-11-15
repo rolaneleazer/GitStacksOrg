@@ -161,7 +161,7 @@ export function PageEditorPanel({
         <button
           type="button"
           onClick={() => onPreviewRoute(activeMeta.route)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+          className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
         >
           <Eye className="h-3.5 w-3.5" />
           <span>View Live {activeMeta.label}</span>
@@ -169,7 +169,7 @@ export function PageEditorPanel({
       </div>
 
       {/* Page Selector Tabs */}
-      <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 w-fit">
+      <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 w-full sm:w-fit">
         {PAGE_LABELS.map((p) => (
           <button
             key={p.key}
@@ -178,7 +178,7 @@ export function PageEditorPanel({
               setActiveKey(p.key);
               setStatusMsg(null);
             }}
-            className={`rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+            className={`min-h-[38px] flex-1 sm:flex-none rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
               activeKey === p.key
                 ? 'bg-white text-slate-900 shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
@@ -191,8 +191,8 @@ export function PageEditorPanel({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Main Structured Form (8 cols) */}
-        <div className="space-y-6 lg:col-span-8">
-          <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
+        <div className="space-y-6 lg:col-span-8 min-w-0">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-5">
             <h3 className="font-display text-sm font-bold text-slate-900 border-b border-slate-200 pb-3">
               Core Copy &amp; Hero Section ({activeMeta.route})
             </h3>
@@ -206,7 +206,7 @@ export function PageEditorPanel({
                   type="text"
                   value={current.hero_kicker}
                   onChange={(e) => updateField('hero_kicker', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+                  className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                 />
               </div>
               <div>
@@ -217,7 +217,7 @@ export function PageEditorPanel({
                   type="text"
                   value={current.hero_cta_label}
                   onChange={(e) => updateField('hero_cta_label', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+                  className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                 />
               </div>
               <div className="sm:col-span-2">
@@ -228,7 +228,7 @@ export function PageEditorPanel({
                   type="text"
                   value={current.hero_title}
                   onChange={(e) => updateField('hero_title', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+                  className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                 />
               </div>
               <div className="sm:col-span-2">
@@ -239,7 +239,7 @@ export function PageEditorPanel({
                   rows={3}
                   value={current.hero_subtitle}
                   onChange={(e) => updateField('hero_subtitle', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3.5 py-2 text-xs leading-relaxed text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3.5 py-2 text-xs leading-relaxed text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                 />
               </div>
               <div className="sm:col-span-2">
@@ -250,7 +250,7 @@ export function PageEditorPanel({
                   type="text"
                   value={current.intro_heading}
                   onChange={(e) => updateField('intro_heading', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+                  className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                 />
               </div>
               <div className="sm:col-span-2">
@@ -261,7 +261,7 @@ export function PageEditorPanel({
                   rows={2}
                   value={current.intro_body}
                   onChange={(e) => updateField('intro_body', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                 />
               </div>
             </div>
@@ -347,7 +347,7 @@ export function PageEditorPanel({
           </div>
 
           {/* Add More Content & Picture Blocks */}
-          <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div>
                 <h3 className="font-display text-sm font-bold text-slate-900">
@@ -360,7 +360,7 @@ export function PageEditorPanel({
               <button
                 type="button"
                 onClick={addCustomBlock}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E40AF] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8] whitespace-nowrap shrink-0"
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] whitespace-nowrap shrink-0"
               >
                 <Plus className="h-3.5 w-3.5" />
                 <span>Add Section</span>
@@ -377,7 +377,7 @@ export function PageEditorPanel({
                 {current.custom_blocks.map((block, idx) => (
                   <div
                     key={block.id}
-                    className="rounded-lg border border-slate-200 bg-[#FAFAFC] p-4 space-y-3"
+                    className="rounded-lg border border-slate-200 bg-[var(--gs-canvas-bg)] p-4 space-y-3"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-slate-900">
@@ -423,7 +423,7 @@ export function PageEditorPanel({
                           <label className="text-[11px] font-semibold text-slate-700">
                             Picture URL (Optional)
                           </label>
-                          <label className="cursor-pointer text-[11px] font-semibold text-[#1E40AF] hover:underline">
+                          <label className="cursor-pointer text-[11px] font-semibold text-[var(--gs-primary)] hover:underline">
                             Upload
                             <input
                               type="file"
@@ -497,11 +497,11 @@ export function PageEditorPanel({
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col-reverse sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-3">
             <button
               type="button"
               onClick={handleResetToDefault}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               <span>Reset to Original Copy</span>
@@ -510,7 +510,7 @@ export function PageEditorPanel({
               type="button"
               disabled={saving || !integrity.valid}
               onClick={handleSave}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E40AF] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               <Save className="h-3.5 w-3.5" />
               <span>{saving ? 'Saving...' : `Publish ${activeMeta.label} Changes`}</span>
@@ -520,7 +520,7 @@ export function PageEditorPanel({
 
         {/* Right Sticky Integrity Shield (4 cols) */}
         <aside className="lg:col-span-4 space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-6 sticky top-24">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 sticky top-24">
             <div className="flex items-center justify-between">
               <h3 className="font-display text-sm font-bold text-slate-900">
                 AdSense &amp; Layout Integrity Shield

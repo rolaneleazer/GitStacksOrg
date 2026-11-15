@@ -15,22 +15,31 @@ import {
   Mail,
   Menu,
   MessageSquare,
+  Palette,
   Plus,
   RefreshCw,
   ShieldCheck,
   Trash2,
+  UserCheck,
+  UserCog,
+  Workflow,
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
+import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
+import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
+import { UserAccessPanel } from '../components/backoffice/UserAccessPanel.tsx';
+import { UserWorkflowsPanel } from '../components/backoffice/UserWorkflowsPanel.tsx';
 import { MarkdownRenderer } from '../components/MarkdownRenderer.tsx';
 import { api } from '../lib/api.ts';
 import { applySeoMetadata } from '../lib/seo.ts';
 import { buildArticleJsonLd, evaluateArticleQuality, slugify } from '../shared/qualityGate.ts';
+import { DEFAULT_ADSENSE_SETTINGS } from '../shared/seedData.ts';
 import type {
   AdSenseSettings,
   AgentId,
@@ -45,13 +54,19 @@ import type {
   ChatThreadStatus,
   ClientInquiry,
   CommentStatus,
+  DirectoryUser,
   InquiryStatus,
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
+  RoutingRule,
   ServiceCategory,
   SiteAuditReport,
-  TaskPriority
+  TaskPriority,
+  UserProfile,
+  UserRole,
+  UserStatus,
+  UserWorkflowItem
 } from '../shared/types.ts';
 
 interface StudioPageProps {
@@ -64,11 +79,39 @@ interface StudioPageProps {
 type StudioTab =
   | 'agents'
   | 'pages'
+  | 'branding'
   | 'inbox'
   | 'chat'
+  | 'workflows'
   | 'analytics'
   | 'articles'
-  | 'adsense';
+  | 'users'
+  | 'adsense'
+  | 'profile';
+
+const ROLE_TABS: Record<UserRole, StudioTab[]> = {
+  super_admin: [
+    'agents',
+    'pages',
+    'branding',
+    'inbox',
+    'chat',
+    'workflows',
+    'analytics',
+    'articles',
+    'users',
+    'adsense',
+    'profile'
+  ],
+  editor: ['agents', 'pages', 'articles', 'workflows', 'analytics', 'profile'],
+  support_agent: ['inbox', 'chat', 'workflows', 'profile']
+};
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  super_admin: 'Super Admin',
+  editor: 'Editor',
+  support_agent: 'Support Agent'
+};
 
 const COVER_PRESETS = [
   {
@@ -128,6 +171,9 @@ export function StudioPage({
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [editorEmail, setEditorEmail] = useState('');
+  const [currentUserId, setCurrentUserId] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole>('super_admin');
+  const [currentProfile, setCurrentProfile] = useState<UserProfile | null>(null);
   const [storageBackend, setStorageBackend] = useState<'supabase' | 'local-json'>('local-json');
   const [supabaseUrl, setSupabaseUrl] = useState<string | null>(null);
   const [supabaseTablesReady, setSupabaseTablesReady] = useState(false);
@@ -146,6 +192,7 @@ export function StudioPage({
   const [activeTab, setActiveTab] = useState<StudioTab>('agents');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
+  const [workspaceNotice, setWorkspaceNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [agents, setAgents] = useState<AgentReport[]>([]);
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
@@ -154,22 +201,17 @@ export function StudioPage({
   const [analyticsDays, setAnalyticsDays] = useState<7 | 14 | 30>(14);
   const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
 
+  const [teamDirectory, setTeamDirectory] = useState<DirectoryUser[]>([]);
+  const [teamUsers, setTeamUsers] = useState<UserProfile[]>([]);
+  const [workflows, setWorkflows] = useState<UserWorkflowItem[]>([]);
+  const [routingRules, setRoutingRules] = useState<RoutingRule[]>([]);
+
   const [posts, setPosts] = useState<Article[]>([]);
   const [comments, setComments] = useState<ArticleComment[]>([]);
   const [inquiries, setInquiries] = useState<ClientInquiry[]>([]);
   const [subscribers, setSubscribers] = useState<NewsletterSubscriber[]>([]);
   const [auditReport, setAuditReport] = useState<SiteAuditReport | null>(null);
-  const [adSenseForm, setAdSenseForm] = useState<AdSenseSettings>({
-    adsense_publisher_id: '',
-    ads_txt_content: '',
-    auto_ads_enabled: false,
-    ad_slots_enabled: false,
-    editorial_review_note: '',
-    ga4_measurement_id: '',
-    ga4_enabled: false,
-    ga4_track_events: true,
-    updated_at: ''
-  });
+  const [adSenseForm, setAdSenseForm] = useState<AdSenseSettings>(DEFAULT_ADSENSE_SETTINGS);
 
   // Editor state
   const [draft, setDraft] = useState<Partial<Article>>(createEmptyDraft);
@@ -179,59 +221,85 @@ export function StudioPage({
 
   const [savingAdSense, setSavingAdSense] = useState(false);
   const [adSenseMessage, setAdSenseMessage] = useState<string | null>(null);
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     applySeoMetadata({
       title: 'GitStack Private Back Office',
-      description: 'Protected operator workspace for GitStack pages, agents, inbox, chat, and analytics.',
+      description: 'Protected operator workspace for GitStack pages, agents, inbox, chat, workflows, and analytics.',
       path: '/obama',
       robots: 'noindex, nofollow'
     });
   }, []);
 
-  const loadWorkspaceData = useCallback(async (daysWindow: 7 | 14 | 30 = analyticsDays) => {
-    setLoadingWorkspace(true);
-    try {
-      const [
-        postsRes,
-        commentsRes,
-        inqRes,
-        subRes,
-        settingsRes,
-        auditRes,
-        pagesRes,
-        agentsRes,
-        chatRes,
-        analyticsRes
-      ] = await Promise.all([
-        api.listPosts(true),
-        api.listComments(),
-        api.listInquiries(),
-        api.listSubscribers(),
-        api.getAdSenseSettings(),
-        api.getSiteAudit(),
-        api.listPageContents(),
-        api.getAgentsOverview(),
-        api.listChatThreads(),
-        api.getAnalyticsSummary(daysWindow)
-      ]);
-      setPosts(postsRes.posts);
-      setComments(commentsRes.comments);
-      setInquiries(inqRes.inquiries);
-      setSubscribers(subRes.subscribers);
-      setAdSenseForm(settingsRes.settings);
-      setAuditReport(auditRes.report);
-      setPageContents(pagesRes.pages);
-      setAgents(agentsRes.agents);
-      setAgentTasks(agentsRes.tasks);
-      setChatThreads(chatRes.threads);
-      setAnalyticsSummary(analyticsRes.summary);
-    } catch (err) {
-      console.error('Failed loading studio workspace:', err);
-    } finally {
-      setLoadingWorkspace(false);
-    }
-  }, [analyticsDays]);
+  const loadWorkspaceData = useCallback(
+    async (daysWindow: 7 | 14 | 30 = analyticsDays, roleOverride?: UserRole) => {
+      const effectiveRole = roleOverride || currentUserRole;
+      setLoadingWorkspace(true);
+      try {
+        const [
+          postsRes,
+          commentsRes,
+          inqRes,
+          subRes,
+          settingsRes,
+          auditRes,
+          pagesRes,
+          agentsRes,
+          chatRes,
+          profileRes,
+          dirRes,
+          workflowsRes,
+          rulesRes,
+          analyticsRes,
+          usersRes
+        ] = await Promise.all([
+          api.listPosts(true),
+          api.listComments(),
+          api.listInquiries(),
+          api.listSubscribers(),
+          api.getAdSenseSettings(),
+          api.getSiteAudit(),
+          api.listPageContents(),
+          api.getAgentsOverview(),
+          api.listChatThreads(),
+          api.getMyProfile(),
+          api.getUserDirectory(),
+          api.listWorkflows(),
+          api.listRoutingRules(),
+          effectiveRole === 'super_admin' || effectiveRole === 'editor'
+            ? api.getAnalyticsSummary(daysWindow)
+            : Promise.resolve({ summary: null }),
+          effectiveRole === 'super_admin'
+            ? api.listUsers()
+            : Promise.resolve({ users: [] as UserProfile[] })
+        ]);
+        setPosts(postsRes.posts);
+        setComments(commentsRes.comments);
+        setInquiries(inqRes.inquiries);
+        setSubscribers(subRes.subscribers);
+        setAdSenseForm(settingsRes.settings);
+        onSettingsChanged(settingsRes.settings);
+        setAuditReport(auditRes.report);
+        setPageContents(pagesRes.pages);
+        setAgents(agentsRes.agents);
+        setAgentTasks(agentsRes.tasks);
+        setChatThreads(chatRes.threads);
+        setCurrentProfile(profileRes.profile);
+        setTeamDirectory(dirRes.users);
+        setWorkflows(workflowsRes.items);
+        setRoutingRules(rulesRes.rules);
+        setAnalyticsSummary(analyticsRes.summary);
+        setTeamUsers(usersRes.users);
+      } catch (err) {
+        console.error('Failed loading studio workspace:', err);
+      } finally {
+        setLoadingWorkspace(false);
+      }
+    },
+    [analyticsDays, currentUserRole, onSettingsChanged]
+  );
 
   useEffect(() => {
     api
@@ -247,7 +315,13 @@ export function StudioPage({
         }
         if (res.editor) {
           setEditorEmail(res.editor.email);
-          loadWorkspaceData(14);
+          setCurrentUserId(res.editor.userId);
+          setCurrentUserRole(res.editor.role);
+          setCurrentProfile(res.editor.profile);
+          setActiveTab((prev) =>
+            ROLE_TABS[res.editor!.role].includes(prev) ? prev : ROLE_TABS[res.editor!.role][0]
+          );
+          loadWorkspaceData(14, res.editor.role);
         }
       })
       .catch(() => setAuthenticated(false))
@@ -262,11 +336,15 @@ export function StudioPage({
       const res = await api.login(loginEmail, loginPassword);
       setAuthenticated(true);
       setEditorEmail(res.editor.email);
+      setCurrentUserId(res.editor.userId);
+      setCurrentUserRole(res.editor.role);
+      setCurrentProfile(res.editor.profile);
       setStorageBackend(res.storageBackend);
       setSupabaseUrl(res.supabaseUrl);
       setSupabaseTablesReady(res.supabaseTablesReady);
       setSupabaseAutomationMode(res.supabaseAutomationMode || 'manual');
-      await loadWorkspaceData(analyticsDays);
+      setActiveTab(ROLE_TABS[res.editor.role][0]);
+      await loadWorkspaceData(analyticsDays, res.editor.role);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Sign in failed.');
     } finally {
@@ -278,6 +356,12 @@ export function StudioPage({
     api.logout();
     setAuthenticated(false);
     setEditorEmail('');
+    setCurrentUserId('');
+    setCurrentProfile(null);
+    setTeamUsers([]);
+    setTeamDirectory([]);
+    setWorkflows([]);
+    setWorkspaceNotice(null);
   };
 
   const qualityReport = useMemo(
@@ -468,18 +552,245 @@ export function StudioPage({
     setChatThreads((prev) => prev.map((t) => (t.id === threadId ? res.thread : t)));
   };
 
+  const handleSaveBranding = async (patch: Partial<AdSenseSettings>) => {
+    setSavingBranding(true);
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.saveAdSenseSettings({
+        ...adSenseForm,
+        ...patch
+      });
+      setAdSenseForm(res.settings);
+      onSettingsChanged(res.settings);
+      setWorkspaceNotice({ type: 'ok', text: 'Header, logo, and sitewide theme saved.' });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to save branding settings.'
+      });
+    } finally {
+      setSavingBranding(false);
+    }
+  };
+
+  const handleSaveMyProfile = async (
+    updates: Partial<Pick<UserProfile, 'full_name' | 'job_title' | 'bio' | 'avatar_url' | 'phone' | 'timezone'>>
+  ) => {
+    setSavingProfile(true);
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.updateMyProfile(updates);
+      setCurrentProfile(res.profile);
+      setTeamUsers((prev) =>
+        prev.map((u) => (u.user_id === res.profile.user_id ? res.profile : u))
+      );
+      setTeamDirectory((prev) =>
+        prev.map((u) =>
+          u.user_id === res.profile.user_id
+            ? {
+                user_id: res.profile.user_id,
+                email: res.profile.email,
+                full_name: res.profile.full_name,
+                role: res.profile.role,
+                job_title: res.profile.job_title,
+                avatar_url: res.profile.avatar_url,
+                status: res.profile.status
+              }
+            : u
+        )
+      );
+      setWorkspaceNotice({ type: 'ok', text: 'Your profile and picture have been updated.' });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to update profile.'
+      });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleCreateTeamUser = async (payload: {
+    email: string;
+    password: string;
+    full_name: string;
+    role: UserRole;
+    job_title?: string;
+  }) => {
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.createUser(payload);
+      setTeamUsers((prev) => [...prev, res.user]);
+      setTeamDirectory((prev) => [
+        ...prev,
+        {
+          user_id: res.user.user_id,
+          email: res.user.email,
+          full_name: res.user.full_name,
+          role: res.user.role,
+          job_title: res.user.job_title,
+          avatar_url: res.user.avatar_url,
+          status: res.user.status
+        }
+      ]);
+      setWorkspaceNotice({
+        type: 'ok',
+        text: `Provisioned user ${res.user.email} (${ROLE_LABELS[res.user.role]}).`
+      });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to create user.'
+      });
+      throw err;
+    }
+  };
+
+  const handleUpdateTeamUser = async (
+    userId: string,
+    payload: { role?: UserRole; status?: UserStatus; password?: string }
+  ) => {
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.updateUser(userId, payload);
+      setTeamUsers((prev) => prev.map((u) => (u.user_id === userId ? res.user : u)));
+      setTeamDirectory((prev) =>
+        prev.map((u) =>
+          u.user_id === userId
+            ? {
+                user_id: res.user.user_id,
+                email: res.user.email,
+                full_name: res.user.full_name,
+                role: res.user.role,
+                job_title: res.user.job_title,
+                avatar_url: res.user.avatar_url,
+                status: res.user.status
+              }
+            : u
+        )
+      );
+      setWorkspaceNotice({
+        type: 'ok',
+        text: payload.password
+          ? `Password updated for ${res.user.email}.`
+          : `Access updated for ${res.user.email}.`
+      });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to update team user.'
+      });
+      throw err;
+    }
+  };
+
+  const handleDeleteTeamUser = async (userId: string) => {
+    setWorkspaceNotice(null);
+    try {
+      await api.deleteUser(userId);
+      setTeamUsers((prev) => prev.filter((u) => u.user_id !== userId));
+      setTeamDirectory((prev) => prev.filter((u) => u.user_id !== userId));
+      setWorkspaceNotice({ type: 'ok', text: 'User account deleted.' });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to delete team user.'
+      });
+      throw err;
+    }
+  };
+
+  const handleCreateWorkflow = async (payload: Partial<UserWorkflowItem>) => {
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.createWorkflow(payload);
+      setWorkflows((prev) => [res.item, ...prev]);
+      setWorkspaceNotice({ type: 'ok', text: 'Workflow task added to queue.' });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to create workflow item.'
+      });
+      throw err;
+    }
+  };
+
+  const handleUpdateWorkflow = async (id: string, patch: Partial<UserWorkflowItem>) => {
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.updateWorkflow(id, patch);
+      setWorkflows((prev) => prev.map((w) => (w.id === id ? res.item : w)));
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to update workflow item.'
+      });
+      throw err;
+    }
+  };
+
+  const handleDeleteWorkflow = async (id: string) => {
+    setWorkspaceNotice(null);
+    try {
+      await api.deleteWorkflow(id);
+      setWorkflows((prev) => prev.filter((w) => w.id !== id));
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to delete workflow item.'
+      });
+      throw err;
+    }
+  };
+
+  const handleAssignInquiry = async (id: string, assignedTo: string | null) => {
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.assignInquiry(id, assignedTo);
+      setInquiries((prev) => prev.map((row) => (row.id === id ? res.inquiry : row)));
+      setWorkspaceNotice({ type: 'ok', text: 'Inquiry assignment updated.' });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to assign inquiry.'
+      });
+    }
+  };
+
+  const handleAssignThread = async (threadId: string, assignedTo: string | null) => {
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.assignChatThread(threadId, assignedTo);
+      setChatThreads((prev) => prev.map((row) => (row.id === threadId ? res.thread : row)));
+      setWorkspaceNotice({ type: 'ok', text: 'Chat thread assignment updated.' });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to assign thread.'
+      });
+    }
+  };
+
+  const handleSaveRoutingRules = async (rules: RoutingRule[]) => {
+    setWorkspaceNotice(null);
+    try {
+      const res = await api.saveRoutingRules(rules);
+      setRoutingRules(res.rules);
+      setWorkspaceNotice({ type: 'ok', text: 'Auto-routing rules saved.' });
+    } catch (err) {
+      setWorkspaceNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Unable to save routing rules.'
+      });
+      throw err;
+    }
+  };
+
   const handleJumpToSection = (section: string) => {
-    const validTabs: StudioTab[] = [
-      'agents',
-      'pages',
-      'inbox',
-      'chat',
-      'analytics',
-      'articles',
-      'adsense'
-    ];
-    if (validTabs.includes(section as StudioTab)) {
+    const allowed = ROLE_TABS[currentUserRole];
+    if (allowed.includes(section as StudioTab)) {
       setActiveTab(section as StudioTab);
+      setWorkspaceNotice(null);
     }
   };
 
@@ -526,9 +837,9 @@ export function StudioPage({
 
   if (!authenticated) {
     return (
-      <div className="mx-auto max-w-md px-6 py-16 lg:py-24">
-        <div className="rounded-xl border border-slate-200 bg-white p-8">
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#1E40AF]">
+      <div className="mx-auto max-w-md px-4 sm:px-6 py-10 sm:py-16 lg:py-24">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--gs-primary)]">
             <Lock className="h-4 w-4" />
             <span>Private Operator Access Only</span>
           </div>
@@ -537,12 +848,12 @@ export function StudioPage({
           </h1>
           <p className="mt-2 text-xs leading-relaxed text-slate-600">
             Sign in with your Supabase Email/Password credentials (no Google Sign-In) to manage
-            all 7 operational agents, public page content, Gmail &amp; lead inbox, internal chat,
-            and Google Analytics.
+            all 7 operational agents, public page content, branding, team workflows, Gmail &amp;
+            lead inbox, internal chat, and Google Analytics.
           </p>
 
           {storageBackend === 'supabase' ? (
-            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-slate-700">
+            <div className="mt-4 rounded-lg border border-slate-200 bg-[var(--gs-soft-bg)] p-3.5 text-xs text-slate-700">
               <div className="font-semibold text-slate-900">Supabase Project Connected</div>
               <p className="mt-1 font-mono text-[11px] text-slate-600 break-all">{supabaseUrl}</p>
               <p className="mt-1.5 text-[11px] leading-relaxed text-slate-600">
@@ -574,7 +885,7 @@ export function StudioPage({
                 required
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
               />
             </div>
             <div>
@@ -588,14 +899,14 @@ export function StudioPage({
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
                 placeholder="Enter password"
-                className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
               />
             </div>
             {loginError && <p className="text-xs font-medium text-red-700">{loginError}</p>}
             <button
               type="submit"
               disabled={loggingIn}
-              className="w-full rounded-lg bg-[#1E40AF] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+              className="min-h-[44px] w-full rounded-lg bg-[var(--gs-primary)] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60"
             >
               {loggingIn ? 'Signing in...' : 'Sign In to Back Office'}
             </button>
@@ -605,7 +916,7 @@ export function StudioPage({
     );
   }
 
-  const navItems: {
+  const allNavItems: {
     id: StudioTab;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
@@ -613,6 +924,7 @@ export function StudioPage({
   }[] = [
     { id: 'agents', label: 'Overview & 7 Agents', icon: Bot, count: agents.length || 7 },
     { id: 'pages', label: 'Page Content Editor', icon: FileEdit },
+    { id: 'branding', label: 'Branding & Theme', icon: Palette },
     { id: 'inbox', label: 'Gmail & Lead Inbox', icon: Mail, count: inquiries.length },
     {
       id: 'chat',
@@ -620,26 +932,45 @@ export function StudioPage({
       icon: MessageSquare,
       count: chatThreads.filter((t) => t.status === 'open').length
     },
+    {
+      id: 'workflows',
+      label: 'Team Workflows',
+      icon: Workflow,
+      count: workflows.filter((w) => w.status !== 'done').length
+    },
     { id: 'analytics', label: 'Google Analytics', icon: BarChart3 },
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
-    { id: 'adsense', label: 'AdSense & Supabase', icon: ShieldCheck }
+    { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
+    { id: 'adsense', label: 'AdSense & Supabase', icon: ShieldCheck },
+    { id: 'profile', label: 'My Profile', icon: UserCheck }
   ];
 
-  const activeNav = navItems.find((n) => n.id === activeTab)!;
+  const allowedTabs = ROLE_TABS[currentUserRole];
+  const navItems = allNavItems.filter((item) => allowedTabs.includes(item.id));
+  const currentTab: StudioTab = allowedTabs.includes(activeTab) ? activeTab : navItems[0].id;
+  const activeNav = navItems.find((n) => n.id === currentTab) || navItems[0];
+
+  const displayName = currentProfile?.full_name || editorEmail.split('@')[0] || 'Operator';
+  const avatarInitials = displayName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || '')
+    .join('');
+  const canAssignLeads = currentUserRole === 'super_admin' || currentUserRole === 'support_agent';
 
   return (
-    <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-8">
+    <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-6 sm:py-8">
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Mobile Sidebar Toggle */}
         <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 lg:hidden">
-          <div className="text-xs font-bold text-slate-900">
+          <div className="text-xs font-bold text-slate-900 truncate">
             Back Office · {activeNav.label}
           </div>
           <button
             type="button"
             onClick={() => setMobileNavOpen((p) => !p)}
             aria-label="Toggle Back Office Navigation"
-            className="rounded-lg border border-slate-200 p-1.5 text-slate-700"
+            className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg border border-slate-200 p-1.5 text-slate-700"
           >
             {mobileNavOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
@@ -652,20 +983,37 @@ export function StudioPage({
           } lg:block w-full lg:w-[260px] shrink-0`}
         >
           <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4 lg:sticky lg:top-24">
-            <div className="border-b border-slate-200 pb-3">
-              <div className="text-[11px] font-semibold text-[#1E40AF]">
-                GitStack Operator Suite
+            <div className="border-b border-slate-200 pb-3 flex items-center gap-3">
+              {currentProfile?.avatar_url ? (
+                <img
+                  src={currentProfile.avatar_url}
+                  alt={displayName}
+                  referrerPolicy="no-referrer"
+                  className="h-10 w-10 rounded-full border border-slate-200 object-cover shrink-0"
+                />
+              ) : (
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white shrink-0"
+                  style={{ backgroundColor: 'var(--gs-primary)' }}
+                >
+                  {avatarInitials || 'GS'}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-[11px] font-semibold text-[var(--gs-primary)] truncate">
+                  {ROLE_LABELS[currentUserRole]}
+                </div>
+                <div className="font-display text-sm font-bold text-slate-900 truncate">
+                  {displayName}
+                </div>
+                <div className="text-[11px] text-slate-500 truncate">{editorEmail}</div>
               </div>
-              <div className="mt-0.5 font-display text-base font-bold text-slate-900">
-                Private Back Office
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500 truncate">{editorEmail}</div>
             </div>
 
             <nav aria-label="Back Office Sections" className="space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const active = activeTab === item.id;
+                const active = currentTab === item.id;
                 return (
                   <button
                     key={item.id}
@@ -673,10 +1021,11 @@ export function StudioPage({
                     onClick={() => {
                       setActiveTab(item.id);
                       setMobileNavOpen(false);
+                      setWorkspaceNotice(null);
                     }}
-                    className={`w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold transition-colors text-left ${
+                    className={`min-h-[42px] w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors text-left ${
                       active
-                        ? 'bg-[#1E40AF] text-white'
+                        ? 'bg-[var(--gs-primary)] text-white'
                         : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
@@ -687,7 +1036,7 @@ export function StudioPage({
                     {typeof item.count === 'number' && (
                       <span
                         className={`font-mono text-[11px] tabular-nums shrink-0 ${
-                          active ? 'text-blue-100' : 'text-slate-400'
+                          active ? 'text-white/80' : 'text-slate-400'
                         }`}
                       >
                         {item.count}
@@ -706,7 +1055,7 @@ export function StudioPage({
               <button
                 type="button"
                 onClick={handleLogout}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="min-h-[42px] w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Sign Out</span>
@@ -718,12 +1067,13 @@ export function StudioPage({
         {/* Main Workspace Canvas */}
         <div className="flex-1 min-w-0 space-y-6">
           {/* Breadcrumb Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 sm:px-6 py-4">
             <div>
               <div className="text-[11px] font-medium text-slate-500">
-                GitStack Back Office / <span className="text-[#1E40AF]">{activeNav.label}</span>
+                GitStack Back Office /{' '}
+                <span className="text-[var(--gs-primary)]">{activeNav.label}</span>
               </div>
-              <h1 className="mt-0.5 font-display text-xl font-bold text-slate-900">
+              <h1 className="mt-0.5 font-display text-lg sm:text-xl font-bold text-slate-900">
                 {activeNav.label}
               </h1>
             </div>
@@ -735,8 +1085,28 @@ export function StudioPage({
             </div>
           </div>
 
+          {workspaceNotice && (
+            <div
+              className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs font-medium ${
+                workspaceNotice.type === 'ok'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-red-200 bg-red-50 text-red-800'
+              }`}
+            >
+              <span>{workspaceNotice.text}</span>
+              <button
+                type="button"
+                onClick={() => setWorkspaceNotice(null)}
+                aria-label="Dismiss notification"
+                className="p-1 opacity-70 hover:opacity-100"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
           {/* PANEL 1: OVERVIEW & 7 DETERMINISTIC AGENTS */}
-          {activeTab === 'agents' && (
+          {currentTab === 'agents' && (
             <AgentsWorkspace
               agents={agents}
               tasks={agentTasks}
@@ -750,7 +1120,7 @@ export function StudioPage({
           )}
 
           {/* PANEL 2: PAGE CONTENT & MEDIA CUSTOMIZER */}
-          {activeTab === 'pages' && (
+          {currentTab === 'pages' && (
             <PageEditorPanel
               key={pageContents.map((p) => p.updated_at).join('|') || 'pages-default'}
               pages={pageContents}
@@ -759,12 +1129,24 @@ export function StudioPage({
             />
           )}
 
+          {/* PANEL 2B: HEADER, LOGO & SITEWIDE THEME CUSTOMIZER */}
+          {currentTab === 'branding' && (
+            <BrandingThemePanel
+              key={adSenseForm.updated_at || 'branding'}
+              settings={adSenseForm}
+              onSave={handleSaveBranding}
+              saving={savingBranding}
+            />
+          )}
+
           {/* PANEL 3: GMAIL & LEAD INBOX */}
-          {activeTab === 'inbox' && (
+          {currentTab === 'inbox' && (
             <InboxWorkspace
               inquiries={inquiries}
               comments={comments}
               subscribers={subscribers}
+              teamUsers={teamDirectory}
+              onAssignInquiry={canAssignLeads ? handleAssignInquiry : undefined}
               onUpdateInquiryStatus={async (id, status) => {
                 await api.updateInquiryStatus(id, status);
                 setInquiries((prev) =>
@@ -782,9 +1164,11 @@ export function StudioPage({
           )}
 
           {/* PANEL 4: INTERNAL CHAT BOX & HISTORICAL Q&A */}
-          {activeTab === 'chat' && (
+          {currentTab === 'chat' && (
             <InternalChatBox
               threads={chatThreads}
+              teamUsers={teamDirectory}
+              onAssignThread={canAssignLeads ? handleAssignThread : undefined}
               onLoadMessages={handleLoadChatMessages}
               onCreateThread={handleCreateChatThread}
               onSendReply={handleSendChatReply}
@@ -792,8 +1176,28 @@ export function StudioPage({
             />
           )}
 
+          {/* PANEL 4B: PER-USER TEAM WORKFLOWS & ROUTING */}
+          {currentTab === 'workflows' && (
+            <UserWorkflowsPanel
+              currentUserId={currentUserId}
+              currentUserRole={currentUserRole}
+              directory={teamDirectory}
+              workflows={workflows}
+              inquiries={inquiries}
+              chatThreads={chatThreads}
+              routingRules={routingRules}
+              onCreateWorkflow={handleCreateWorkflow}
+              onUpdateWorkflow={handleUpdateWorkflow}
+              onDeleteWorkflow={handleDeleteWorkflow}
+              onAssignInquiry={handleAssignInquiry}
+              onAssignThread={handleAssignThread}
+              onSaveRoutingRules={handleSaveRoutingRules}
+              onOpenChatThread={() => setActiveTab('chat')}
+            />
+          )}
+
           {/* PANEL 5: GOOGLE ANALYTICS SETTINGS & DASHBOARD */}
-          {activeTab === 'analytics' && (
+          {currentTab === 'analytics' && (
             <AnalyticsDashboard
               key={adSenseForm.updated_at || 'ga4'}
               settings={adSenseForm}
@@ -804,12 +1208,32 @@ export function StudioPage({
             />
           )}
 
+          {/* PANEL 8: USER ACCESS MANAGEMENT (SUPER ADMIN) */}
+          {currentTab === 'users' && (
+            <UserAccessPanel
+              currentUserId={currentUserId}
+              users={teamUsers}
+              onCreateUser={handleCreateTeamUser}
+              onUpdateUser={handleUpdateTeamUser}
+              onDeleteUser={handleDeleteTeamUser}
+            />
+          )}
+
+          {/* PANEL 9: MY PROFILE & PICTURE */}
+          {currentTab === 'profile' && currentProfile && (
+            <ProfilePanel
+              profile={currentProfile}
+              onSaveProfile={handleSaveMyProfile}
+              saving={savingProfile}
+            />
+          )}
+
           {/* PANEL 6: ARTICLES & PRE-PUBLISH QUALITY GATEKEEPER */}
-          {activeTab === 'articles' && (
+          {currentTab === 'articles' && (
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-              <div className="space-y-6 lg:col-span-8">
+              <div className="space-y-6 lg:col-span-8 min-w-0">
                 <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <h2 className="font-display text-sm font-bold text-slate-900">
                       Managed Engineering Guides ({posts.length})
                     </h2>
@@ -819,7 +1243,7 @@ export function StudioPage({
                         setDraft(createEmptyDraft());
                         setPostMessage(null);
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E40AF] px-3 py-1.5 text-xs font-semibold text-white"
+                      className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
                     >
                       <Plus className="h-3.5 w-3.5" />
                       <span>New Guide</span>
@@ -1325,12 +1749,12 @@ export function StudioPage({
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-5">
+                  <div className="flex flex-col-reverse sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-3 border-t border-slate-200 pt-5">
                     <button
                       type="button"
                       disabled={savingPost}
                       onClick={() => handleSaveArticle('draft')}
-                      className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                      className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xs font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
                     >
                       Save as Draft
                     </button>
@@ -1338,7 +1762,7 @@ export function StudioPage({
                       type="button"
                       disabled={savingPost || !qualityReport.publishEligible}
                       onClick={() => handleSaveArticle('published')}
-                      className="rounded-lg bg-[#1E40AF] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:bg-slate-300"
+                      className="min-h-[44px] rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:cursor-not-allowed disabled:bg-slate-300"
                     >
                       {qualityReport.publishEligible
                         ? 'Publish Live (Gatekeeper Cleared)'
@@ -1350,7 +1774,7 @@ export function StudioPage({
 
               <aside className="lg:col-span-4 space-y-6">
                 <div className="sticky top-24 rounded-xl border border-slate-200 bg-white p-5">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-[#1E40AF]">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-[var(--gs-primary)]">
                     <ShieldCheck className="h-4 w-4" />
                     <span>AdSense Quality &amp; GEO Gatekeeper</span>
                   </div>
@@ -1416,10 +1840,10 @@ export function StudioPage({
           )}
 
           {/* PANEL 7: ADSENSE READINESS AUDIT, ADS.TXT & SUPABASE SCHEMA */}
-          {activeTab === 'adsense' && (
+          {currentTab === 'adsense' && (
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-              <div className="space-y-6 lg:col-span-7">
-                <div className="rounded-xl border border-slate-200 bg-white p-6">
+              <div className="space-y-6 lg:col-span-7 min-w-0">
+                <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="font-display text-lg font-bold text-slate-900">
@@ -1604,13 +2028,13 @@ export function StudioPage({
                   <button
                     type="submit"
                     disabled={savingAdSense}
-                    className="w-full rounded-lg bg-[#1E40AF] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#1D4ED8]"
+                    className="min-h-[44px] w-full rounded-lg bg-[var(--gs-primary)] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
                   >
                     {savingAdSense ? 'Saving...' : 'Save AdSense & ads.txt Configuration'}
                   </button>
                 </form>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-6">
+                <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
                   <h3 className="font-display text-base font-bold text-slate-900">
                     Supabase PostgreSQL &amp; Auto-Migration Status
                   </h3>
@@ -1673,7 +2097,7 @@ export function StudioPage({
                             setMigratingSupabase(false);
                           }
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E40AF] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60"
+                        className="min-h-[42px] inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60"
                       >
                         <RefreshCw className={`h-3.5 w-3.5 ${migratingSupabase ? 'animate-spin' : ''}`} />
                         <span>{migratingSupabase ? 'Migrating...' : 'Run Auto-Migration Now'}</span>
@@ -1691,7 +2115,7 @@ export function StudioPage({
                           setSeedMessage('Unable to copy automatically. Use Download schema.sql instead.');
                         }
                       }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                      className="min-h-[42px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
                     >
                       <Copy className="h-3.5 w-3.5" />
                       <span>Copy schema.sql</span>
@@ -1699,7 +2123,7 @@ export function StudioPage({
                     <button
                       type="button"
                       onClick={handleDownloadSchema}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
+                      className="min-h-[42px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100"
                     >
                       <Download className="h-3.5 w-3.5" />
                       <span>Download schema.sql</span>
@@ -1726,7 +2150,7 @@ export function StudioPage({
                             setSeedingSupabase(false);
                           }
                         }}
-                        className="inline-flex items-center gap-2 rounded-lg border border-[#1E40AF] bg-white px-3.5 py-2 text-xs font-semibold text-[#1E40AF] hover:bg-blue-50 disabled:opacity-60"
+                        className="min-h-[42px] inline-flex items-center gap-2 rounded-lg border border-[var(--gs-primary)] bg-white px-3.5 py-2 text-xs font-semibold text-[var(--gs-primary)] hover:bg-[var(--gs-soft-bg)] disabled:opacity-60"
                       >
                         <span>
                           {seedingSupabase ? 'Syncing...' : 'Sync Starter Guides'}

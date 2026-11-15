@@ -65,6 +65,9 @@ export interface NewsletterSubscriber {
   created_at: string;
 }
 
+export type ThemePresetId = 'cobalt' | 'emerald' | 'indigo' | 'slate' | 'amber' | 'custom';
+export type HeaderSurface = 'white' | 'tinted';
+
 export type InquiryStatus = 'new' | 'reviewed' | 'scheduled';
 
 export interface ClientInquiry {
@@ -78,6 +81,8 @@ export interface ClientInquiry {
   timeline: string;
   project_brief: string;
   status: InquiryStatus;
+  assigned_to?: string | null;
+  assigned_at?: string | null;
   created_at: string;
 }
 
@@ -90,6 +95,14 @@ export interface AdSenseSettings {
   ga4_measurement_id?: string;
   ga4_enabled?: boolean;
   ga4_track_events?: boolean;
+  brand_name?: string;
+  brand_logo_url?: string;
+  brand_logo_alt?: string;
+  theme_preset?: ThemePresetId;
+  primary_color?: string;
+  header_surface?: HeaderSurface;
+  header_cta_label?: string;
+  header_cta_href?: string;
   updated_at: string;
 }
 
@@ -217,6 +230,8 @@ export interface ChatThread {
   requester_name: string;
   requester_email: string;
   status: ChatThreadStatus;
+  assigned_to?: string | null;
+  assigned_at?: string | null;
   last_message_at: string;
   created_at: string;
 }
@@ -258,3 +273,58 @@ export interface AnalyticsSummary {
   topPages: { path: string; views: number }[];
   topReferrers: { referrer: string; visits: number }[];
 }
+
+// --- Team RBAC, Profiles & Per-User Workflows ---
+
+export type UserRole = 'super_admin' | 'editor' | 'support_agent';
+export type UserStatus = 'active' | 'suspended';
+
+export interface UserProfile {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  job_title: string;
+  bio: string;
+  avatar_url: string;
+  phone: string;
+  timezone: string;
+  status: UserStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DirectoryUser = Pick<
+  UserProfile,
+  'user_id' | 'email' | 'full_name' | 'role' | 'job_title' | 'avatar_url' | 'status'
+>;
+
+export type WorkflowCategory = 'onboarding' | 'daily_checklist' | 'project_task' | 'follow_up';
+export type WorkflowStatus = 'todo' | 'in_progress' | 'done';
+export type LinkedEntityType = 'inquiry' | 'chat' | 'article' | 'none';
+
+export interface UserWorkflowItem {
+  id: string;
+  user_id: string;
+  assigned_by: string;
+  title: string;
+  description: string;
+  category: WorkflowCategory;
+  priority: TaskPriority;
+  status: WorkflowStatus;
+  due_date: string | null;
+  linked_entity_type: LinkedEntityType;
+  linked_entity_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoutingRule {
+  id: string;
+  source_type: 'inquiry' | 'chat';
+  match_key: string;
+  assignee_user_id: string | null;
+  enabled: boolean;
+  updated_at: string;
+}
+

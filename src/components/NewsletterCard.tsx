@@ -50,11 +50,11 @@ export function NewsletterCard({ defaultTopic = 'All Engineering Topics' }: { de
   return (
     <section
       aria-label="Engineering Newsletter Subscription"
-      className="rounded-xl border border-slate-200 bg-slate-50 p-6 sm:p-8"
+      className="rounded-xl border border-slate-200 bg-slate-50 p-5 sm:p-8"
     >
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-lg">
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#1E40AF]">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--gs-primary)]">
             <Mail className="h-4 w-4" />
             <span>GitStack Engineering Dispatch</span>
           </div>
@@ -75,13 +75,13 @@ export function NewsletterCard({ defaultTopic = 'All Engineering Topics' }: { de
               onChange={(e) => setName(e.target.value)}
               placeholder="Your name (optional)"
               aria-label="Your name"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1E40AF] focus:outline-none"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[var(--gs-primary)] focus:outline-none"
             />
             <select
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               aria-label="Primary engineering interest"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-[#1E40AF] focus:outline-none"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
             >
               <option value="All Engineering Topics">All Engineering Topics</option>
               <option value="AI Integration & RAG">AI Integration &amp; RAG</option>
@@ -98,22 +98,22 @@ export function NewsletterCard({ defaultTopic = 'All Engineering Topics' }: { de
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
               aria-label="Work or personal email"
-              className="flex-1 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1E40AF] focus:outline-none"
+              className="flex-1 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[var(--gs-primary)] focus:outline-none"
             />
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-lg bg-[#1E40AF] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
+              className="w-full sm:w-auto min-h-[44px] rounded-lg bg-[var(--gs-primary)] hover:bg-[var(--gs-primary-hover)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60 transition-colors whitespace-nowrap shrink-0"
             >
               {submitting ? 'Joining...' : 'Subscribe'}
             </button>
           </div>
-          <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+          <label className="flex items-start gap-2.5 text-xs text-slate-600 cursor-pointer min-h-[36px] py-1">
             <input
               type="checkbox"
               checked={consent}
               onChange={(e) => setConsent(e.target.checked)}
-              className="mt-0.5 rounded border-slate-300 text-[#1E40AF]"
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[var(--gs-primary)] shrink-0"
             />
             <span>I agree to receive technical updates and can unsubscribe at any time.</span>
           </label>

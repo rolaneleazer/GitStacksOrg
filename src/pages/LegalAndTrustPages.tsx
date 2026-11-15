@@ -18,8 +18,8 @@ function LegalShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mx-auto max-w-4xl px-6 py-14 lg:py-20">
-      <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">{kicker}</p>
+    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-10 sm:py-14 lg:py-20">
+      <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">{kicker}</p>
       <h1 className="mt-3 font-display text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
         {title}
       </h1>
@@ -88,18 +88,18 @@ export function AboutPage({
             platforms, Strangler Fig legacy modernizations, and accessibility compliance.
           </li>
         </ul>
-        <div className="pt-4 flex flex-wrap gap-4">
+        <div className="pt-4 flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:gap-4">
           <button
             type="button"
             onClick={() => onNavigate('/contact')}
-            className="rounded-lg bg-[#1E40AF] px-5 py-2.5 text-xs font-semibold text-white"
+            className="min-h-[44px] w-full sm:w-auto rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] transition-colors"
           >
             {cms.hero_cta_label || 'Contact Our Engineering Team'}
           </button>
           <button
             type="button"
             onClick={() => onNavigate('/editorial-policy')}
-            className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            className="min-h-[44px] w-full sm:w-auto rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
           >
             Read Editorial Standards
           </button>
@@ -130,10 +130,10 @@ export function ContactPage({
 
   return (
     <div>
-      <div className="mx-auto max-w-5xl px-6 py-14 lg:py-20">
-        <div className="grid grid-cols-1 gap-10 lg:grid-cols-12">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-10 sm:py-14 lg:py-20">
+        <div className="grid grid-cols-1 gap-8 sm:gap-10 lg:grid-cols-12">
           <div className="lg:col-span-5">
-            <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">{cms.hero_kicker}</p>
+            <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">{cms.hero_kicker}</p>
             <h1 className="mt-3 font-display text-3xl font-bold tracking-tight text-slate-900">
               {cms.hero_title}
             </h1>
@@ -271,7 +271,7 @@ export function PrivacyPolicyPage() {
           href="https://www.google.com/settings/ads"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[#1E40AF] underline"
+          className="text-[var(--gs-primary)] underline"
         >
           Google Ads Settings
         </a>{' '}
@@ -362,7 +362,7 @@ export function CookiePolicyPage({ onOpenCookiePrefs }: { onOpenCookiePrefs: () 
         <button
           type="button"
           onClick={onOpenCookiePrefs}
-          className="rounded-lg bg-[#1E40AF] px-5 py-2.5 text-xs font-semibold text-white"
+          className="min-h-[44px] w-full sm:w-auto rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] transition-colors"
         >
           Update Cookie Preferences
         </button>

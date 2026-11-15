@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS public.inquiries (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Additive migration for inquiries assignment
+ALTER TABLE public.inquiries ADD COLUMN IF NOT EXISTS assigned_to TEXT;
+ALTER TABLE public.inquiries ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+
 -- 5. AdSense & Site Compliance Settings (Singleton id = 'default')
 CREATE TABLE IF NOT EXISTS public.site_settings (
   id TEXT PRIMARY KEY DEFAULT 'default',
@@ -84,6 +88,14 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   ga4_measurement_id TEXT NOT NULL DEFAULT '',
   ga4_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ga4_track_events BOOLEAN NOT NULL DEFAULT TRUE,
+  brand_name TEXT NOT NULL DEFAULT 'GitStack',
+  brand_logo_url TEXT NOT NULL DEFAULT '',
+  brand_logo_alt TEXT NOT NULL DEFAULT 'GitStack logo',
+  theme_preset TEXT NOT NULL DEFAULT 'cobalt',
+  primary_color TEXT NOT NULL DEFAULT '#1E40AF',
+  header_surface TEXT NOT NULL DEFAULT 'white',
+  header_cta_label TEXT NOT NULL DEFAULT 'Book Consultation',
+  header_cta_href TEXT NOT NULL DEFAULT '/contact',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -91,6 +103,14 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS ga4_measurement_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS ga4_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS ga4_track_events BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS brand_name TEXT NOT NULL DEFAULT 'GitStack';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS brand_logo_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS brand_logo_alt TEXT NOT NULL DEFAULT 'GitStack logo';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS theme_preset TEXT NOT NULL DEFAULT 'cobalt';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS primary_color TEXT NOT NULL DEFAULT '#1E40AF';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS header_surface TEXT NOT NULL DEFAULT 'white';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS header_cta_label TEXT NOT NULL DEFAULT 'Book Consultation';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS header_cta_href TEXT NOT NULL DEFAULT '/contact';
 
 -- 6. Page Content & Media Customizer (Structured CMS Slots)
 CREATE TABLE IF NOT EXISTS public.page_contents (
@@ -142,6 +162,9 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS assigned_to TEXT;
+ALTER TABLE public.chat_threads ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON public.chat_messages (thread_id, created_at ASC);
 
 -- 9. First-Party Analytics Telemetry (Public insert, Private Back Office select)
@@ -157,6 +180,51 @@ CREATE TABLE IF NOT EXISTS public.analytics_events (
 
 CREATE INDEX IF NOT EXISTS idx_analytics_created_at ON public.analytics_events (created_at DESC);
 
+-- 10. Team User Profiles & Role-Based Access Control (Private Back Office)
+CREATE TABLE IF NOT EXISTS public.user_profiles (
+  user_id TEXT PRIMARY KEY,
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL CHECK (role IN ('super_admin', 'editor', 'support_agent')) DEFAULT 'editor',
+  job_title TEXT NOT NULL DEFAULT '',
+  bio TEXT NOT NULL DEFAULT '',
+  avatar_url TEXT NOT NULL DEFAULT '',
+  phone TEXT NOT NULL DEFAULT '',
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  status TEXT NOT NULL CHECK (status IN ('active', 'suspended')) DEFAULT 'active',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 11. Per-User Workflow Tasks & Checklists (Private Back Office)
+CREATE TABLE IF NOT EXISTS public.user_workflow_items (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
+  assigned_by TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL CHECK (category IN ('onboarding', 'daily_checklist', 'project_task', 'follow_up')) DEFAULT 'project_task',
+  priority TEXT NOT NULL CHECK (priority IN ('high', 'medium', 'low')) DEFAULT 'medium',
+  status TEXT NOT NULL CHECK (status IN ('todo', 'in_progress', 'done')) DEFAULT 'todo',
+  due_date TEXT,
+  linked_entity_type TEXT NOT NULL CHECK (linked_entity_type IN ('inquiry', 'chat', 'article', 'none')) DEFAULT 'none',
+  linked_entity_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_workflows_user ON public.user_workflow_items (user_id, updated_at DESC);
+
+-- 12. Deterministic Inquiry & Chat Auto-Routing Rules (Private Back Office)
+CREATE TABLE IF NOT EXISTS public.routing_rules (
+  id TEXT PRIMARY KEY,
+  source_type TEXT NOT NULL CHECK (source_type IN ('inquiry', 'chat')),
+  match_key TEXT NOT NULL,
+  assignee_user_id TEXT,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Grant schema and least-privilege table access (enforced by Row-Level Security below)
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT ON public.posts TO anon;
@@ -166,7 +234,7 @@ GRANT INSERT ON public.inquiries TO anon;
 GRANT SELECT ON public.site_settings TO anon;
 GRANT SELECT ON public.page_contents TO anon;
 GRANT INSERT ON public.analytics_events TO anon;
-GRANT ALL ON public.posts, public.comments, public.subscribers, public.inquiries, public.site_settings, public.page_contents, public.agent_tasks, public.chat_threads, public.chat_messages, public.analytics_events TO authenticated, service_role;
+GRANT ALL ON public.posts, public.comments, public.subscribers, public.inquiries, public.site_settings, public.page_contents, public.agent_tasks, public.chat_threads, public.chat_messages, public.analytics_events, public.user_profiles, public.user_workflow_items, public.routing_rules TO authenticated, service_role;
 
 -- Enable Row-Level Security
 ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
@@ -179,6 +247,9 @@ ALTER TABLE public.agent_tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_threads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.analytics_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_workflow_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.routing_rules ENABLE ROW LEVEL SECURITY;
 
 -- Public read access for published posts, approved comments, settings, and page customizations
 DROP POLICY IF EXISTS "Public can read published posts" ON public.posts;
@@ -281,7 +352,43 @@ CREATE POLICY "Authenticated editors read analytics events"
   ON public.analytics_events FOR SELECT
   USING (auth.role() = 'authenticated');
 
-INSERT INTO public.site_settings (id, adsense_publisher_id, ads_txt_content, auto_ads_enabled, ad_slots_enabled, editorial_review_note, ga4_measurement_id, ga4_enabled, ga4_track_events)
+DROP POLICY IF EXISTS "Authenticated team manage user profiles" ON public.user_profiles;
+CREATE POLICY "Authenticated team manage user profiles"
+  ON public.user_profiles FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage user workflows" ON public.user_workflow_items;
+CREATE POLICY "Authenticated team manage user workflows"
+  ON public.user_workflow_items FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage routing rules" ON public.routing_rules;
+CREATE POLICY "Authenticated team manage routing rules"
+  ON public.routing_rules FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+INSERT INTO public.site_settings (
+  id,
+  adsense_publisher_id,
+  ads_txt_content,
+  auto_ads_enabled,
+  ad_slots_enabled,
+  editorial_review_note,
+  ga4_measurement_id,
+  ga4_enabled,
+  ga4_track_events,
+  brand_name,
+  brand_logo_url,
+  brand_logo_alt,
+  theme_preset,
+  primary_color,
+  header_surface,
+  header_cta_label,
+  header_cta_href
+)
 VALUES (
   'default',
   '',
@@ -291,6 +398,14 @@ VALUES (
   'All articles must pass the 8-pillar AdSense E-E-A-T & 800-word depth gate before publishing.',
   '',
   FALSE,
-  TRUE
+  TRUE,
+  'GitStack',
+  '',
+  'GitStack logo',
+  'cobalt',
+  '#1E40AF',
+  'white',
+  'Book Consultation',
+  '/contact'
 )
 ON CONFLICT (id) DO NOTHING;

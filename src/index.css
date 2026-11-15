@@ -9,11 +9,17 @@
 @layer base {
   :root {
     color-scheme: light;
+    --gs-primary: #1E40AF;
+    --gs-primary-hover: #1D4ED8;
+    --gs-soft-bg: #EFF6FF;
+    --gs-soft-border: #BFDBFE;
+    --gs-canvas-bg: #FAFAFC;
+    --gs-header-bg: rgba(255, 255, 255, 0.95);
   }
 
   html {
     scroll-behavior: smooth;
-    background-color: #FAFAFC;
+    background-color: var(--gs-canvas-bg, #FAFAFC);
     color: #0F172A;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;

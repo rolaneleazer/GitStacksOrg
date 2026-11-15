@@ -100,99 +100,99 @@ export function ServicesPage({
   }, []);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-14 lg:py-20">
-      <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-12">
-        <div className="lg:col-span-7">
-          <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
-            {cms.hero_kicker}
-          </p>
-          <h1 className="mt-3 font-display text-4xl font-bold tracking-tight text-slate-900">
-            {cms.hero_title}
-          </h1>
-          <p className="mt-4 text-base leading-relaxed text-slate-600">
-            {cms.hero_subtitle}
-          </p>
-        </div>
-        {cms.hero_image && (
-          <div className="lg:col-span-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 aspect-[16/10]">
-            <ResilientImage
-              src={cms.hero_image}
-              alt={cms.hero_image_alt || cms.hero_title}
-              className="h-full w-full object-cover"
-              fallbackTitle="GitStack Services"
-            />
+    <div>
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14 lg:py-20">
+        <div className="grid grid-cols-1 items-center gap-8 lg:grid-cols-12">
+          <div className="lg:col-span-7">
+            <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
+              {cms.hero_kicker}
+            </p>
+            <h1 className="mt-3 font-display text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
+              {cms.hero_title}
+            </h1>
+            <p className="mt-4 text-base leading-relaxed text-slate-600">
+              {cms.hero_subtitle}
+            </p>
           </div>
-        )}
-      </div>
-
-      <div className="mt-12 space-y-6">
-        {SERVICE_MATRIX.map((svc) => (
-          <section
-            key={svc.code}
-            className="rounded-xl border border-slate-200 bg-white p-8 grid grid-cols-1 gap-8 lg:grid-cols-12"
-          >
-            <div className="lg:col-span-5">
-              <div className="font-mono text-xs font-medium text-[#1E40AF]">
-                Practice {svc.code}
-              </div>
-              <h2 className="mt-2 font-display text-2xl font-bold text-slate-900">{svc.name}</h2>
-              <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                <span className="font-semibold text-slate-800">Best suited for:</span>{' '}
-                {svc.audience}
-              </p>
-              <div className="mt-6">
-                <a
-                  href="#services-inquiry"
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1E40AF] hover:underline"
-                >
-                  <span>Scope this capability</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </a>
-              </div>
+          {cms.hero_image && (
+            <div className="lg:col-span-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 aspect-[16/10]">
+              <ResilientImage
+                src={cms.hero_image}
+                alt={cms.hero_image_alt || cms.hero_title}
+                className="h-full w-full object-cover"
+                fallbackTitle="GitStack Services"
+              />
             </div>
-            <div className="lg:col-span-7 border-t border-slate-200 pt-6 lg:border-t-0 lg:border-l lg:pl-8 lg:pt-0">
-              <h3 className="text-xs font-semibold text-slate-900">Deliverables &amp; Architecture</h3>
-              <ul className="mt-4 space-y-3 text-sm text-slate-700">
-                {svc.outcomes.map((item) => (
-                  <li key={item} className="flex items-start gap-2.5">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#1E40AF]" />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-        ))}
-      </div>
-
-      <div className="mt-12 rounded-xl border border-slate-200 bg-slate-50 p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="font-display text-lg font-bold text-slate-900">
-            Want to inspect our engineering architecture standards first?
-          </h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Read our deep-dive implementation blueprints in the Technical Insights Journal.
-          </p>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={() => onNavigate('/insights')}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-900 hover:bg-slate-100 whitespace-nowrap shrink-0"
-        >
-          Explore Technical Insights
-        </button>
+
+        <div className="mt-10 sm:mt-12 space-y-6">
+          {SERVICE_MATRIX.map((svc) => (
+            <section
+              key={svc.code}
+              className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8 grid grid-cols-1 gap-6 sm:gap-8 lg:grid-cols-12"
+            >
+              <div className="lg:col-span-5">
+                <div className="font-mono text-xs font-medium text-[var(--gs-primary)]">
+                  Practice {svc.code}
+                </div>
+                <h2 className="mt-2 font-display text-2xl font-bold text-slate-900">{svc.name}</h2>
+                <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                  <span className="font-semibold text-slate-800">Best suited for:</span>{' '}
+                  {svc.audience}
+                </p>
+                <div className="mt-5 sm:mt-6">
+                  <a
+                    href="#services-inquiry"
+                    className="inline-flex min-h-[44px] sm:min-h-0 items-center gap-1.5 text-xs font-semibold text-[var(--gs-primary)] hover:underline"
+                  >
+                    <span>Scope this capability</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              </div>
+              <div className="lg:col-span-7 border-t border-slate-200 pt-6 lg:border-t-0 lg:border-l lg:pl-8 lg:pt-0">
+                <h3 className="text-xs font-semibold text-slate-900">Deliverables &amp; Architecture</h3>
+                <ul className="mt-4 space-y-3 text-sm text-slate-700">
+                  {svc.outcomes.map((item) => (
+                    <li key={item} className="flex items-start gap-2.5">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[var(--gs-primary)]" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <div className="mt-10 sm:mt-12 rounded-xl border border-slate-200 bg-slate-50 p-5 sm:p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="font-display text-lg font-bold text-slate-900">
+              Want to inspect our engineering architecture standards first?
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Read our deep-dive implementation blueprints in the Technical Insights Journal.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigate('/insights')}
+            className="min-h-[44px] w-full sm:w-auto rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-900 hover:bg-slate-100 whitespace-nowrap shrink-0"
+          >
+            Explore Technical Insights
+          </button>
+        </div>
+
+        <div id="services-inquiry" className="mt-12 sm:mt-14">
+          <h2 className="mb-6 font-display text-2xl font-bold text-slate-900">
+            {cms.hero_cta_label || 'Request a Technical Proposal'}
+          </h2>
+          <InquiryForm />
+        </div>
       </div>
 
-      <div id="services-inquiry" className="mt-14">
-        <h2 className="mb-6 font-display text-2xl font-bold text-slate-900">
-          {cms.hero_cta_label || 'Request a Technical Proposal'}
-        </h2>
-        <InquiryForm />
-      </div>
-
-      <div className="mt-12 -mx-6">
-        <CustomBlocksSection blocks={cms.custom_blocks} onNavigate={onNavigate} />
-      </div>
+      <CustomBlocksSection blocks={cms.custom_blocks} onNavigate={onNavigate} />
     </div>
   );
 }

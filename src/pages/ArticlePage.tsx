@@ -124,7 +124,7 @@ export function ArticlePage({
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-16">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-12 sm:py-16">
         <div className="h-8 w-48 animate-pulse rounded bg-slate-200" />
         <div className="mt-6 h-12 w-full animate-pulse rounded bg-slate-200" />
         <div className="mt-8 h-72 w-full animate-pulse rounded-xl bg-slate-200" />
@@ -134,7 +134,7 @@ export function ArticlePage({
 
   if (!article) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-20 text-center">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-14 sm:py-20 text-center">
         <h1 className="font-display text-2xl font-bold text-slate-900">
           Technical Article Not Found
         </h1>
@@ -144,7 +144,7 @@ export function ArticlePage({
         <button
           type="button"
           onClick={() => onNavigate('/insights')}
-          className="mt-6 rounded-lg bg-[#1E40AF] px-5 py-2.5 text-xs font-semibold text-white"
+          className="mt-6 min-h-[44px] rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] transition-colors"
         >
           Return to Technical Insights
         </button>
@@ -153,20 +153,20 @@ export function ArticlePage({
   }
 
   return (
-    <article className="mx-auto max-w-6xl px-6 py-12 lg:py-16">
+    <article className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-12 lg:py-16">
       <button
         type="button"
         onClick={() => onNavigate('/insights')}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[#1E40AF]"
+        className="inline-flex min-h-[44px] sm:min-h-0 items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-[var(--gs-primary)]"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
         <span>Back to Technical Insights</span>
       </button>
 
       {/* Article Header */}
-      <header className="mt-6 max-w-3xl">
+      <header className="mt-5 sm:mt-6 max-w-3xl">
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span className="font-semibold text-[#1E40AF]">{article.category}</span>
+          <span className="font-semibold text-[var(--gs-primary)]">{article.category}</span>
           <span aria-hidden="true">·</span>
           <span className="tabular-nums">{article.read_time_minutes} min read</span>
           <span aria-hidden="true">·</span>
@@ -208,14 +208,14 @@ export function ArticlePage({
       </div>
 
       {/* Main Content + Sticky Sidebar */}
-      <div className="mt-10 grid grid-cols-1 gap-12 lg:grid-cols-12">
-        <div className="lg:col-span-8">
+      <div className="mt-8 sm:mt-10 grid grid-cols-1 gap-10 lg:gap-12 lg:grid-cols-12">
+        <div className="min-w-0 lg:col-span-8">
           {/* Executive Summary / AI Answer Block */}
           <section
             aria-label="Executive Summary"
-            className="mb-8 rounded-xl border border-slate-200 bg-white p-6"
+            className="mb-8 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
           >
-            <div className="flex items-center gap-2 text-xs font-semibold text-[#1E40AF]">
+            <div className="flex items-center gap-2 text-xs font-semibold text-[var(--gs-primary)]">
               <BookOpen className="h-4 w-4" />
               <span>Executive Architecture Summary</span>
             </div>
@@ -265,7 +265,7 @@ export function ArticlePage({
                       href={ref.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-[#1E40AF] hover:underline"
+                      className="inline-flex items-center gap-1.5 text-[var(--gs-primary)] hover:underline break-words"
                     >
                       <span>{ref.title}</span>
                       <ExternalLink className="h-3.5 w-3.5 shrink-0" />
@@ -277,7 +277,7 @@ export function ArticlePage({
           )}
 
           {/* E-E-A-T Author Bio Box */}
-          <section className="mt-10 rounded-xl border border-slate-200 bg-white p-6">
+          <section className="mt-10 rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
             <div className="text-xs font-semibold text-slate-500">About the Author</div>
             <div className="mt-1.5 font-display text-base font-bold text-slate-900">
               {article.author_name} · {article.author_role}
@@ -293,7 +293,7 @@ export function ArticlePage({
           {/* Reader Comments Module */}
           <section id="comments" className="mt-12 border-t border-slate-200 pt-10">
             <div className="flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-[#1E40AF]" />
+              <MessageSquare className="h-5 w-5 text-[var(--gs-primary)]" />
               <h2 className="font-display text-2xl font-bold text-slate-900">
                 Engineering Discussion ({comments.length})
               </h2>
@@ -301,7 +301,7 @@ export function ArticlePage({
 
             <form
               onSubmit={handleCommentSubmit}
-              className="mt-6 rounded-xl border border-slate-200 bg-white p-6"
+              className="mt-6 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
               noValidate
             >
               <h3 className="font-display text-sm font-bold text-slate-900">
@@ -319,7 +319,7 @@ export function ArticlePage({
                     value={commentName}
                     onChange={(e) => setCommentName(e.target.value)}
                     placeholder="Samira Patel"
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+                    className="mt-1 min-h-[44px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
                   />
                 </div>
                 <div>
@@ -333,7 +333,7 @@ export function ArticlePage({
                     value={commentEmail}
                     onChange={(e) => setCommentEmail(e.target.value)}
                     placeholder="samira@company.com"
-                    className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+                    className="mt-1 min-h-[44px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
                   />
                 </div>
               </div>
@@ -348,7 +348,7 @@ export function ArticlePage({
                   value={commentBody}
                   onChange={(e) => setCommentBody(e.target.value)}
                   placeholder="Share production trade-offs, implementation questions, or benchmark observations..."
-                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 focus:border-[#1E40AF] focus:bg-white focus:outline-none"
+                  className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
                 />
               </div>
               {commentError && (
@@ -361,7 +361,7 @@ export function ArticlePage({
                 <button
                   type="submit"
                   disabled={submittingComment}
-                  className="rounded-lg bg-[#1E40AF] px-5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-60 transition-colors"
+                  className="min-h-[44px] w-full sm:w-auto rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60 transition-colors"
                 >
                   {submittingComment ? 'Posting...' : 'Post Comment'}
                 </button>
@@ -409,7 +409,7 @@ export function ArticlePage({
                     <a
                       key={h.id}
                       href={`#${h.id}`}
-                      className={`block leading-snug text-slate-600 hover:text-[#1E40AF] ${
+                      className={`block py-1 sm:py-0.5 leading-snug text-slate-600 hover:text-[var(--gs-primary)] ${
                         h.level === 3 ? 'pl-3' : 'font-medium'
                       }`}
                     >
@@ -421,7 +421,7 @@ export function ArticlePage({
             )}
 
             <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="text-xs font-semibold text-[#1E40AF]">
+              <div className="text-xs font-semibold text-[var(--gs-primary)]">
                 Need Implementation Support?
               </div>
               <h3 className="mt-1.5 font-display text-base font-bold text-slate-900">
@@ -434,7 +434,7 @@ export function ArticlePage({
               <button
                 type="button"
                 onClick={() => onNavigate('/contact')}
-                className="mt-4 w-full rounded-lg bg-[#1E40AF] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#1D4ED8] transition-colors"
+                className="mt-4 min-h-[44px] w-full rounded-lg bg-[var(--gs-primary)] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] transition-colors"
               >
                 Book Architecture Review
               </button>

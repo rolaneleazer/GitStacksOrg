@@ -167,14 +167,14 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
     <div>
       {/* 1. Hero Section — Split Editorial Composition */}
       <section className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-14 lg:py-20">
-          <div className="grid grid-cols-1 items-stretch gap-10 lg:grid-cols-12">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14 lg:py-20">
+          <div className="grid grid-cols-1 items-stretch gap-8 sm:gap-10 lg:grid-cols-12">
             <div className="flex flex-col justify-between lg:col-span-6">
               <div>
-                <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
+                <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
                   {cms.hero_kicker}
                 </p>
-                <h1 className="mt-4 font-display text-[clamp(2.25rem,4vw,3.5rem)] font-bold leading-[1.1] tracking-tight text-slate-900">
+                <h1 className="mt-4 font-display text-[clamp(2rem,4vw,3.5rem)] font-bold leading-[1.1] tracking-tight text-slate-900">
                   {cms.hero_title}
                 </h1>
                 <p className="mt-5 max-w-xl text-base leading-[1.7] text-slate-600">
@@ -182,11 +182,11 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                 </p>
               </div>
 
-              <div className="mt-8 flex flex-wrap items-center gap-5">
+              <div className="mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 sm:gap-5">
                 <button
                   type="button"
                   onClick={() => jumpToConsultation('AI Integration')}
-                  className="inline-flex items-center gap-2 rounded-lg bg-[#1E40AF] px-6 py-3.5 text-sm font-semibold text-white hover:bg-[#1D4ED8] transition-colors whitespace-nowrap shrink-0"
+                  className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-[var(--gs-primary)] px-6 py-3 text-sm font-semibold text-white hover:bg-[var(--gs-primary-hover)] transition-colors whitespace-nowrap shrink-0"
                 >
                   <span>{cms.hero_cta_label || 'Schedule Discovery Call'}</span>
                   <ArrowRight className="h-4 w-4" />
@@ -194,7 +194,7 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                 <button
                   type="button"
                   onClick={() => onNavigate('/insights')}
-                  className="text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 hover:text-[#1E40AF] hover:decoration-[#1E40AF] transition-colors whitespace-nowrap shrink-0"
+                  className="inline-flex min-h-[44px] sm:min-h-0 items-center justify-center sm:justify-start text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 hover:text-[var(--gs-primary)] hover:decoration-[var(--gs-primary)] transition-colors whitespace-nowrap shrink-0"
                 >
                   Read Engineering Insights
                 </button>
@@ -252,20 +252,20 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
       </section>
 
       {/* 2. Core & Expanded Capabilities — Interactive Architecture Explorer + Asymmetric Bento */}
-      <section id="ai-ml" className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
-        <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
+      <section id="ai-ml" className="mx-auto max-w-6xl px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
+        <div className="flex flex-col justify-between gap-4 sm:gap-6 md:flex-row md:items-end">
           <div className="max-w-2xl">
-            <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
+            <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
               Expanded Service Portfolio
             </p>
-            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900">
+            <h2 className="mt-2 font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
               {cms.intro_heading || DEFAULT_PAGE_CONTENTS.home.intro_heading}
             </h2>
           </div>
           <button
             type="button"
             onClick={() => onNavigate('/services')}
-            className="text-sm font-semibold text-[#1E40AF] hover:underline whitespace-nowrap shrink-0"
+            className="inline-flex min-h-[44px] sm:min-h-0 items-center self-start md:self-auto text-sm font-semibold text-[var(--gs-primary)] hover:underline whitespace-nowrap shrink-0"
           >
             View full service matrix →
           </button>
@@ -280,9 +280,9 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                 key={cat}
                 type="button"
                 onClick={() => setActiveService(cat)}
-                className={`rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                className={`min-h-[44px] sm:min-h-[38px] rounded-lg px-4 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   active
-                    ? 'bg-[#1E40AF] text-white'
+                    ? 'bg-[var(--gs-primary)] text-white'
                     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -294,7 +294,7 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
 
         {/* Asymmetric Bento Detail Grid */}
         <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="rounded-xl border border-slate-200 bg-white p-8 lg:col-span-7 flex flex-col justify-between">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8 lg:col-span-7 flex flex-col justify-between">
             <div>
               <div className="text-xs font-mono font-medium text-slate-500">
                 Practice {spec.number} · {activeService}
@@ -309,7 +309,7 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                 <ul className="mt-3 space-y-2.5 text-sm text-slate-700">
                   {spec.deliverables.map((d) => (
                     <li key={d} className="flex items-start gap-2.5">
-                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[#1E40AF]" />
+                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[var(--gs-primary)]" />
                       <span>{d}</span>
                     </li>
                   ))}
@@ -332,7 +332,7 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
               <button
                 type="button"
                 onClick={() => jumpToConsultation(activeService)}
-                className="inline-flex items-center gap-2 rounded-lg border border-[#1E40AF] bg-white px-4 py-2.5 text-xs font-semibold text-[#1E40AF] hover:bg-blue-50 transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg border border-[var(--gs-primary)] bg-white px-4 py-2.5 text-xs font-semibold text-[var(--gs-primary)] hover:bg-[var(--gs-soft-bg)] transition-colors whitespace-nowrap shrink-0"
               >
                 <span>Scope a {activeService} Engagement</span>
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -363,8 +363,8 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
             </div>
 
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <div className="grid grid-cols-5 items-stretch">
-                <div className="col-span-2 bg-slate-100">
+              <div className="grid grid-cols-1 sm:grid-cols-5 items-stretch">
+                <div className="aspect-[16/9] sm:aspect-auto sm:col-span-2 bg-slate-100">
                   <ResilientImage
                     src="/src/assets/images/cloud_infra_architecture_1794645172181.jpg"
                     alt="Cloud infrastructure systems architect workstation"
@@ -372,7 +372,7 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                     fallbackTitle="Cloud Infrastructure"
                   />
                 </div>
-                <div className="col-span-3 p-5">
+                <div className="sm:col-span-3 p-5">
                   <div className="text-xs text-slate-500">Foundation · Cloud &amp; Software</div>
                   <h4 className="mt-1 font-display text-base font-bold text-slate-900">
                     Policy-Governed Cloud Operations
@@ -390,23 +390,23 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
 
       {/* 3. Adjacent Proof of Impact — Quantified Case Studies */}
       <section className="border-y border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
           <div className="max-w-2xl">
-            <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
+            <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
               Verified Delivery Outcomes
             </p>
-            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900">
+            <h2 className="mt-2 font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
               Measurable Engineering Impact Across Production Systems
             </h2>
           </div>
 
-          <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-            <article className="rounded-xl border border-slate-200 bg-[#FAFAFC] p-6 flex flex-col justify-between">
+          <div className="mt-8 sm:mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+            <article className="rounded-xl border border-slate-200 bg-[var(--gs-canvas-bg)] p-5 sm:p-6 flex flex-col justify-between">
               <div>
                 <div className="text-xs text-slate-500">
                   AI Integration · Global Freight &amp; Customs
                 </div>
-                <div className="mt-3 font-mono text-2xl font-bold text-[#1E40AF] tabular-nums">
+                <div className="mt-3 font-mono text-2xl font-bold text-[var(--gs-primary)] tabular-nums">
                   68% Faster Resolution
                 </div>
                 <h3 className="mt-2 font-display text-lg font-bold text-slate-900">
@@ -422,12 +422,12 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
               </p>
             </article>
 
-            <article className="rounded-xl border border-slate-200 bg-[#FAFAFC] p-6 flex flex-col justify-between">
+            <article className="rounded-xl border border-slate-200 bg-[var(--gs-canvas-bg)] p-5 sm:p-6 flex flex-col justify-between">
               <div>
                 <div className="text-xs text-slate-500">
                   ML Automation · FinTech Risk Operations
                 </div>
-                <div className="mt-3 font-mono text-2xl font-bold text-[#1E40AF] tabular-nums">
+                <div className="mt-3 font-mono text-2xl font-bold text-[var(--gs-primary)] tabular-nums">
                   6 Weeks → 4 Hours
                 </div>
                 <h3 className="mt-2 font-display text-lg font-bold text-slate-900">
@@ -443,12 +443,12 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
               </p>
             </article>
 
-            <article className="rounded-xl border border-slate-200 bg-[#FAFAFC] p-6 flex flex-col justify-between">
+            <article className="rounded-xl border border-slate-200 bg-[var(--gs-canvas-bg)] p-5 sm:p-6 flex flex-col justify-between">
               <div>
                 <div className="text-xs text-slate-500">
                   Cloud &amp; Software · B2B SaaS Platform
                 </div>
-                <div className="mt-3 font-mono text-2xl font-bold text-[#1E40AF] tabular-nums">
+                <div className="mt-3 font-mono text-2xl font-bold text-[var(--gs-primary)] tabular-nums">
                   -34% Cloud Spend
                 </div>
                 <h3 className="mt-2 font-display text-lg font-bold text-slate-900">
@@ -468,20 +468,20 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
       </section>
 
       {/* 4. Featured Technical Insights Preview */}
-      <section className="mx-auto max-w-6xl px-6 py-16 lg:py-20">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
+            <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
               Technical Insights Journal
             </p>
-            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900">
+            <h2 className="mt-2 font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
               Peer-Reviewed Architecture Guides
             </h2>
           </div>
           <button
             type="button"
             onClick={() => onNavigate('/insights')}
-            className="text-sm font-semibold text-[#1E40AF] hover:underline whitespace-nowrap shrink-0"
+            className="inline-flex min-h-[44px] sm:min-h-0 items-center self-start sm:self-auto text-sm font-semibold text-[var(--gs-primary)] hover:underline whitespace-nowrap shrink-0"
           >
             Browse all guides →
           </button>
@@ -491,17 +491,17 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
           {articles.slice(0, 4).map((article) => (
             <article
               key={article.id}
-              className="group rounded-xl border border-slate-200 bg-white p-6 hover:border-slate-300 transition-colors flex flex-col justify-between"
+              className="group rounded-xl border border-slate-200 bg-white p-5 sm:p-6 hover:border-slate-300 transition-colors flex flex-col justify-between"
             >
               <div>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  <span className="font-medium text-[#1E40AF]">{article.category}</span>
+                  <span className="font-medium text-[var(--gs-primary)]">{article.category}</span>
                   <span aria-hidden="true">·</span>
                   <span className="tabular-nums">{article.read_time_minutes} min read</span>
                   <span aria-hidden="true">·</span>
                   <span className="tabular-nums">{article.word_count} words</span>
                 </div>
-                <h3 className="mt-3 font-display text-xl font-bold leading-snug text-slate-900 group-hover:text-[#1E40AF] transition-colors">
+                <h3 className="mt-3 font-display text-xl font-bold leading-snug text-slate-900 group-hover:text-[var(--gs-primary)] transition-colors">
                   <a
                     href={`/insights/${article.slug}`}
                     onClick={(e) => {
@@ -516,14 +516,14 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                   {article.summary_tldr}
                 </p>
               </div>
-              <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-4 text-xs text-slate-500">
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-4 text-xs text-slate-500">
                 <span>
                   By {article.author_name} · {article.author_role}
                 </span>
                 <button
                   type="button"
                   onClick={() => onNavigate(`/insights/${article.slug}`)}
-                  className="font-semibold text-[#1E40AF] hover:underline whitespace-nowrap shrink-0"
+                  className="inline-flex min-h-[40px] sm:min-h-0 items-center font-semibold text-[var(--gs-primary)] hover:underline whitespace-nowrap shrink-0"
                 >
                   Read guide
                 </button>
@@ -539,8 +539,8 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
 
       {/* 5. Structured AI-Discoverable FAQ */}
       <section className="border-t border-slate-200 bg-white">
-        <div className="mx-auto max-w-4xl px-6 py-16">
-          <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6 py-12 sm:py-16">
+          <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
             Common Engineering &amp; Engagement Questions
           </p>
           <h2 className="mt-2 font-display text-2xl font-bold tracking-tight text-slate-900">
@@ -550,12 +550,12 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
             {HOME_FAQS.map((faq, idx) => {
               const isOpen = openFaqIndex === idx;
               return (
-                <div key={faq.question} className="py-4">
+                <div key={faq.question} className="py-2 sm:py-3">
                   <button
                     type="button"
                     aria-expanded={isOpen}
                     onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
-                    className="flex w-full items-center justify-between gap-4 text-left font-display text-base font-semibold text-slate-900 hover:text-[#1E40AF]"
+                    className="flex min-h-[48px] w-full items-center justify-between gap-4 py-1 text-left font-display text-base font-semibold text-slate-900 hover:text-[var(--gs-primary)]"
                   >
                     <span>{faq.question}</span>
                     {isOpen ? (
@@ -565,7 +565,7 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                     )}
                   </button>
                   {isOpen && (
-                    <p className="mt-3 text-sm leading-relaxed text-slate-600">{faq.answer}</p>
+                    <p className="pb-2 text-sm leading-relaxed text-slate-600">{faq.answer}</p>
                   )}
                 </div>
               );
@@ -575,13 +575,13 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
       </section>
 
       {/* 6. Interactive Client Lead Capture */}
-      <section id="consultation" className="border-t border-slate-200 bg-[#FAFAFC]">
-        <div className="mx-auto max-w-5xl px-6 py-16 lg:py-20">
+      <section id="consultation" className="border-t border-slate-200 bg-[var(--gs-canvas-bg)]">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 py-12 sm:py-16 lg:py-20">
           <div className="mb-8 max-w-2xl">
-            <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
+            <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
               Start an Architecture Conversation
             </p>
-            <h2 className="mt-2 font-display text-3xl font-bold tracking-tight text-slate-900">
+            <h2 className="mt-2 font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
               Book a Technical Discovery Call
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-slate-600">

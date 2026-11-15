@@ -62,12 +62,12 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
   }, [articles, selectedCategory, searchQuery]);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-14 lg:py-20">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-10 sm:py-14 lg:py-20">
       <div className="max-w-3xl">
-        <p className="text-xs font-semibold tracking-wide text-[#1E40AF]">
+        <p className="text-xs font-semibold tracking-wide text-[var(--gs-primary)]">
           GitStack Engineering Publication
         </p>
-        <h1 className="mt-3 font-display text-4xl font-bold tracking-tight text-slate-900">
+        <h1 className="mt-3 font-display text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
           Technical Insights &amp; Architecture Blueprints
         </h1>
         <p className="mt-4 text-base leading-relaxed text-slate-600">
@@ -77,8 +77,8 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
       </div>
 
       {/* Filter & Search Toolbar */}
-      <div className="mt-10 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
+      <div className="mt-8 sm:mt-10 flex flex-col gap-4 border-b border-slate-200 pb-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           {CATEGORIES.map((cat) => {
             const active = selectedCategory === cat;
             return (
@@ -86,9 +86,9 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
                 key={cat}
                 type="button"
                 onClick={() => setSelectedCategory(cat)}
-                className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                className={`min-h-[40px] rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   active
-                    ? 'bg-[#1E40AF] text-white'
+                    ? 'bg-[var(--gs-primary)] text-white'
                     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -106,7 +106,7 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search guides, topics, authors..."
             aria-label="Search technical articles"
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#1E40AF] focus:outline-none"
+            className="min-h-[44px] w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[var(--gs-primary)] focus:outline-none"
           />
         </div>
       </div>
@@ -119,7 +119,7 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="mt-12 rounded-xl border border-slate-200 bg-white p-10 text-center">
+        <div className="mt-10 sm:mt-12 rounded-xl border border-slate-200 bg-white p-6 sm:p-10 text-center">
           <h2 className="font-display text-lg font-bold text-slate-900">
             No matching engineering guides found
           </h2>
@@ -132,13 +132,13 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
               setSelectedCategory('All');
               setSearchQuery('');
             }}
-            className="mt-4 rounded-lg bg-[#1E40AF] px-4 py-2 text-xs font-semibold text-white"
+            className="mt-4 min-h-[44px] rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
           >
             Reset Filters
           </button>
         </div>
       ) : (
-        <div className="mt-10 grid grid-cols-1 gap-8 md:grid-cols-2">
+        <div className="mt-8 sm:mt-10 grid grid-cols-1 gap-6 sm:gap-8 md:grid-cols-2">
           {filtered.map((article) => (
             <article
               key={article.id}
@@ -153,9 +153,9 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
                     fallbackTitle={article.category}
                   />
                 </div>
-                <div className="p-6">
+                <div className="p-5 sm:p-6">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                    <span className="font-semibold text-[#1E40AF]">{article.category}</span>
+                    <span className="font-semibold text-[var(--gs-primary)]">{article.category}</span>
                     <span aria-hidden="true">·</span>
                     <span className="tabular-nums">{article.read_time_minutes} min read</span>
                     <span aria-hidden="true">·</span>
@@ -168,7 +168,7 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
                       })}
                     </span>
                   </div>
-                  <h2 className="mt-3 font-display text-xl font-bold leading-snug text-slate-900 group-hover:text-[#1E40AF] transition-colors">
+                  <h2 className="mt-3 font-display text-xl font-bold leading-snug text-slate-900 group-hover:text-[var(--gs-primary)] transition-colors">
                     <a
                       href={`/insights/${article.slug}`}
                       onClick={(e) => {
@@ -185,14 +185,14 @@ export function InsightsPage({ articles, loading, onNavigate }: InsightsPageProp
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-5 sm:px-6 py-4 text-xs text-slate-500">
                 <span>
                   {article.author_name} · {article.author_role}
                 </span>
                 <button
                   type="button"
                   onClick={() => onNavigate(`/insights/${article.slug}`)}
-                  className="font-semibold text-[#1E40AF] hover:underline whitespace-nowrap shrink-0"
+                  className="inline-flex min-h-[40px] sm:min-h-0 items-center font-semibold text-[var(--gs-primary)] hover:underline whitespace-nowrap shrink-0"
                 >
                   Read full guide →
                 </button>

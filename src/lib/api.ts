@@ -10,6 +10,9 @@ import type {
   AgentTask,
   AnalyticsEventType,
   AnalyticsSummary,
+  ApolloCandidate,
+  ApolloSearchFilters,
+  ApolloStatusResponse,
   Article,
   ArticleComment,
   ChatMessage,
@@ -19,8 +22,12 @@ import type {
   CommentStatus,
   CrmLead,
   CrmOutreachLog,
+  CrmSourcesAnalyticsResponse,
+  CsvImportLeadInput,
   DirectoryUser,
   DiscoveredProspectCandidate,
+  GoogleMapsConfigResponse,
+  GoogleMapsPlaceCandidate,
   InfrastructureMetricsResponse,
   InquiryStatus,
   LarkConnectionStatus,
@@ -92,13 +99,15 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     data = { error: text };
   }
   if (!res.ok) {
-    const errObj = data as { error?: string; blockingIssues?: string[] };
+    const errObj = data as { error?: string; blockingIssues?: string[]; quotaExceeded?: boolean };
     const err = new Error(errObj.error || `Request failed (${res.status})`) as Error & {
       blockingIssues?: string[];
       status?: number;
+      quotaExceeded?: boolean;
     };
     err.blockingIssues = errObj.blockingIssues;
     err.status = res.status;
+    err.quotaExceeded = errObj.quotaExceeded;
     throw err;
   }
   return data as T;
@@ -687,5 +696,102 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  async getCrmSourcesAnalytics() {
+    return request<CrmSourcesAnalyticsResponse>('/api/crm/sources/analytics');
+  },
+
+  async getApolloStatus() {
+    return request<ApolloStatusResponse>('/api/crm/apollo/status');
+  },
+
+  async searchApolloPeople(filters: ApolloSearchFilters) {
+    return request<{ candidates: ApolloCandidate[]; totalEntries: number }>('/api/crm/apollo/search', {
+      method: 'POST',
+      body: JSON.stringify(filters)
+    });
+  },
+
+  async importApolloLeads(candidates: ApolloCandidate[], queryLabel?: string) {
+    return request<{
+      insertedCount: number;
+      mergedCount: number;
+      mxVerifiedCount: number;
+      leads: CrmLead[];
+    }>('/api/crm/apollo/import', {
+      method: 'POST',
+      body: JSON.stringify({ candidates, queryLabel })
+    });
+  },
+
+  async syncHackerNewsLeads(keyword = '') {
+    return request<{
+      threadTitle: string;
+      scannedCount: number;
+      insertedCount: number;
+      mergedCount: number;
+      mxVerifiedCount: number;
+      leads: CrmLead[];
+    }>('/api/crm/sources/hacker-news/sync', {
+      method: 'POST',
+      body: JSON.stringify({ keyword })
+    });
+  },
+
+  async syncYCombinatorLeads(keyword = '') {
+    return request<{
+      datasetLabel: string;
+      scannedCount: number;
+      insertedCount: number;
+      mergedCount: number;
+      mxVerifiedCount: number;
+      leads: CrmLead[];
+    }>('/api/crm/sources/ycombinator/sync', {
+      method: 'POST',
+      body: JSON.stringify({ keyword })
+    });
+  },
+
+  async importCsvLeads(rows: CsvImportLeadInput[], fileName?: string) {
+    return request<{
+      insertedCount: number;
+      mergedCount: number;
+      mxVerifiedCount: number;
+      leads: CrmLead[];
+    }>('/api/crm/sources/csv/import', {
+      method: 'POST',
+      body: JSON.stringify({ rows, fileName })
+    });
+  },
+
+  async getGoogleMapsConfig() {
+    return request<GoogleMapsConfigResponse>('/api/crm/maps/config');
+  },
+
+  async searchGoogleMapsPlaces(query: string, regionCode = '') {
+    return request<{ places: GoogleMapsPlaceCandidate[] }>('/api/crm/maps/search', {
+      method: 'POST',
+      body: JSON.stringify({ query, regionCode })
+    });
+  },
+
+  async importGoogleMapsPlaces(
+    places: GoogleMapsPlaceCandidate[],
+    runAnalysis = true,
+    searchLabel?: string
+  ) {
+    return request<{
+      importedCount: number;
+      insertedCount: number;
+      mergedCount: number;
+      mxVerifiedCount: number;
+      importedLeads: CrmLead[];
+      leads: CrmLead[];
+    }>('/api/crm/maps/import', {
+      method: 'POST',
+      body: JSON.stringify({ places, runAnalysis, searchLabel })
+    });
   }
 };
+

@@ -35,6 +35,13 @@ export default function App() {
   const [loadingArticles, setLoadingArticles] = useState(true);
   const [adSenseSettings, setAdSenseSettings] = useState<AdSenseSettings | null>(null);
   const [pageContents, setPageContents] = useState<PageContentConfig[]>([]);
+  const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState(false);
+
+  useEffect(() => {
+    const onQuota = () => setGmpQuotaExceeded(true);
+    window.addEventListener('gmp-quota-exceeded', onQuota);
+    return () => window.removeEventListener('gmp-quota-exceeded', onQuota);
+  }, []);
 
   const {
     consent,
@@ -202,6 +209,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--gs-canvas-bg)] text-slate-900">
+      {gmpQuotaExceeded && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
+          <span>
+            Google Maps Platform quota reached. If you are the app owner, visit{' '}
+            <a
+              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline font-semibold text-amber-950 hover:text-amber-800"
+            >
+              maps developer site
+            </a>{' '}
+            for instructions to update your account.
+          </span>
+        </div>
+      )}
       <AdSenseScriptLoader settings={adSenseSettings} consent={consent} />
       <GoogleAnalyticsLoader settings={adSenseSettings} consent={consent} route={route} />
       <Header currentPath={route} settings={adSenseSettings} onNavigate={navigate} />

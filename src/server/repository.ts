@@ -45,12 +45,16 @@ import type {
   CrmLead,
   CrmOAuthTokenRecord,
   CrmOutreachLog,
+  CrmSourcesAnalyticsResponse,
+  CrmSyncRun,
   DirectoryUser,
   InquiryStatus,
+  LeadSourceType,
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
   RoutingRule,
+  SourceBreakdownMetric,
   UserProfile,
   UserRole,
   UserStatus,
@@ -78,6 +82,7 @@ interface LocalDatabase {
   crm_leads?: CrmLead[];
   crm_outreach_logs?: CrmOutreachLog[];
   crm_oauth_tokens?: CrmOAuthTokenRecord[];
+  crm_sync_runs?: CrmSyncRun[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -367,7 +372,8 @@ function ensureLocalShape(db: LocalDatabase): LocalDatabase {
     agent_email_reports: db.agent_email_reports || [],
     crm_leads: db.crm_leads || [],
     crm_outreach_logs: db.crm_outreach_logs || [],
-    crm_oauth_tokens: db.crm_oauth_tokens || []
+    crm_oauth_tokens: db.crm_oauth_tokens || [],
+    crm_sync_runs: db.crm_sync_runs || []
   };
 }
 
@@ -2172,6 +2178,10 @@ export async function upsertMergeCrmLeads(
         company_domain: match.company_domain || inc.company_domain,
         website_url: match.website_url || inc.website_url,
         github_url: match.github_url || inc.github_url,
+        phone: match.phone || inc.phone || '',
+        location: match.location || inc.location || '',
+        rating: match.rating ?? inc.rating ?? null,
+        source_detail: match.source_detail || inc.source_detail || '',
         tech_stack: mergedStack,
         source_urls: mergedSources,
         research_brief:
@@ -2350,4 +2360,154 @@ export async function deleteCrmOAuthToken(
   await writeLocalDb(db);
   return db.crm_oauth_tokens.length < before;
 }
+
+const LEAD_SOURCE_LABELS: Record<LeadSourceType, string> = {
+  github: 'GitHub Trending & Repos',
+  website: 'Company Website Scraper',
+  gemini_search: 'Gemini AI Search',
+  apollo: 'Apollo.io API',
+  google_maps: 'Google Maps Places',
+  hacker_news: 'Hacker News Hiring',
+  ycombinator: 'Y Combinator Directory',
+  csv_import: 'CSV / JSON Import',
+  manual: 'Manual Entry'
+};
+
+export async function listCrmSyncRuns(userToken?: string): Promise<CrmSyncRun[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_sync_runs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(80);
+    if (!error && Array.isArray(data)) return data as CrmSyncRun[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.crm_sync_runs || [])].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+export async function addCrmSyncRun(
+  run: CrmSyncRun,
+  userToken?: string
+): Promise<CrmSyncRun> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_sync_runs')
+      .insert(run)
+      .select()
+      .single();
+    if (!error && data) return data as CrmSyncRun;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.crm_sync_runs || [];
+  list.unshift(run);
+  db.crm_sync_runs = list.slice(0, 150);
+  await writeLocalDb(db);
+  return run;
+}
+
+export async function getCrmSourcesAnalytics(
+  userToken?: string
+): Promise<CrmSourcesAnalyticsResponse> {
+  const [leads, logs, syncRuns] = await Promise.all([
+    listCrmLeads(userToken),
+    listCrmOutreachLogs(undefined, userToken),
+    listCrmSyncRuns(userToken)
+  ]);
+
+  const leadSourceById = new Map<string, LeadSourceType>();
+  for (const lead of leads) {
+    leadSourceById.set(lead.id, lead.source_type);
+  }
+
+  const sourceOrder: LeadSourceType[] = [
+    'github',
+    'apollo',
+    'google_maps',
+    'hacker_news',
+    'ycombinator',
+    'website',
+    'gemini_search',
+    'csv_import',
+    'manual'
+  ];
+
+  const bySource: SourceBreakdownMetric[] = sourceOrder.map((src) => {
+    const matchingLeads = leads.filter((l) => l.source_type === src);
+    const matchingRuns = syncRuns.filter((r) => r.source_type === src);
+    const leadCount = matchingLeads.length;
+    const verifiedMxCount = matchingLeads.filter((l) => l.email_status === 'verified_mx').length;
+    const mxRatePercent = leadCount > 0 ? Math.round((verifiedMxCount / leadCount) * 100) : 0;
+    const avgFitScore =
+      leadCount > 0
+        ? Math.round(matchingLeads.reduce((s, l) => s + (Number(l.fit_score) || 0), 0) / leadCount)
+        : 0;
+    const totalDealValue = matchingLeads
+      .filter((l) => l.stage !== 'lost')
+      .reduce((s, l) => s + (Number(l.deal_value) || 0), 0);
+    const wonCount = matchingLeads.filter((l) => l.stage === 'won').length;
+    const outreachSentCount = logs.filter(
+      (lg) => lg.status === 'sent' && leadSourceById.get(lg.lead_id) === src
+    ).length;
+
+    const latestRunDate = matchingRuns[0]?.created_at || null;
+    const latestLeadDate =
+      matchingLeads.length > 0
+        ? matchingLeads.reduce(
+            (latest, l) => (l.created_at > latest ? l.created_at : latest),
+            matchingLeads[0].created_at
+          )
+        : null;
+    const lastSyncedAt =
+      latestRunDate && latestLeadDate
+        ? latestRunDate > latestLeadDate
+          ? latestRunDate
+          : latestLeadDate
+        : latestRunDate || latestLeadDate;
+
+    return {
+      source_type: src,
+      label: LEAD_SOURCE_LABELS[src],
+      leadCount,
+      verifiedMxCount,
+      mxRatePercent,
+      avgFitScore,
+      totalDealValue,
+      wonCount,
+      outreachSentCount,
+      lastSyncedAt
+    };
+  });
+
+  const totalLeads = leads.length;
+  const verifiedMxCount = leads.filter((l) => l.email_status === 'verified_mx').length;
+  const verifiedMxPercent =
+    totalLeads > 0 ? Math.round((verifiedMxCount / totalLeads) * 100) : 0;
+  const totalPipelineValue = leads
+    .filter((l) => l.stage !== 'lost')
+    .reduce((sum, l) => sum + (Number(l.deal_value) || 0), 0);
+  const wonDeals = leads.filter((l) => l.stage === 'won').length;
+  const activeSourcesCount = bySource.filter((b) => b.leadCount > 0 || b.lastSyncedAt).length;
+
+  return {
+    totals: {
+      totalLeads,
+      verifiedMxCount,
+      verifiedMxPercent,
+      totalPipelineValue,
+      wonDeals,
+      activeSourcesCount,
+      totalSyncRuns: syncRuns.length
+    },
+    bySource: bySource.sort((a, b) => b.leadCount - a.leadCount || b.totalDealValue - a.totalDealValue),
+    syncRuns: syncRuns.slice(0, 40)
+  };
+}
+
 

@@ -518,7 +518,7 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- 17. Apollo-Style CRM Pipeline & Open-Source Prospecting Leads
+-- 17. Apollo-Style CRM Pipeline & Multi-Source Prospecting Leads
 CREATE TABLE IF NOT EXISTS public.crm_leads (
   id TEXT PRIMARY KEY,
   contact_name TEXT NOT NULL,
@@ -529,7 +529,11 @@ CREATE TABLE IF NOT EXISTS public.crm_leads (
   company_domain TEXT NOT NULL DEFAULT '',
   website_url TEXT NOT NULL DEFAULT '',
   github_url TEXT NOT NULL DEFAULT '',
-  source_type TEXT NOT NULL CHECK (source_type IN ('github', 'website', 'gemini_search', 'manual')) DEFAULT 'manual',
+  phone TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  rating NUMERIC,
+  source_detail TEXT NOT NULL DEFAULT '',
+  source_type TEXT NOT NULL CHECK (source_type IN ('github', 'website', 'gemini_search', 'apollo', 'google_maps', 'hacker_news', 'ycombinator', 'csv_import', 'manual')) DEFAULT 'manual',
   source_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
   tech_stack JSONB NOT NULL DEFAULT '[]'::jsonb,
   research_brief TEXT NOT NULL DEFAULT '',
@@ -548,7 +552,17 @@ CREATE TABLE IF NOT EXISTS public.crm_leads (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.crm_leads ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.crm_leads ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.crm_leads ADD COLUMN IF NOT EXISTS rating NUMERIC;
+ALTER TABLE public.crm_leads ADD COLUMN IF NOT EXISTS source_detail TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.crm_leads DROP CONSTRAINT IF EXISTS crm_leads_source_type_check;
+ALTER TABLE public.crm_leads
+  ADD CONSTRAINT crm_leads_source_type_check
+  CHECK (source_type IN ('github', 'website', 'gemini_search', 'apollo', 'google_maps', 'hacker_news', 'ycombinator', 'csv_import', 'manual'));
+
 CREATE INDEX IF NOT EXISTS idx_crm_leads_stage ON public.crm_leads (stage, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crm_leads_source ON public.crm_leads (source_type, updated_at DESC);
 
 -- 18. CRM Outbound Email & Proposal Delivery Logs (Lark Mail + Gmail)
 CREATE TABLE IF NOT EXISTS public.crm_outreach_logs (
@@ -581,11 +595,29 @@ CREATE TABLE IF NOT EXISTS public.crm_oauth_tokens (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-GRANT ALL ON public.crm_leads, public.crm_outreach_logs, public.crm_oauth_tokens TO authenticated, service_role;
+-- 20. CRM Multi-Source Sync & Import Provenance Audit Runs
+CREATE TABLE IF NOT EXISTS public.crm_sync_runs (
+  id TEXT PRIMARY KEY,
+  source_type TEXT NOT NULL CHECK (source_type IN ('github', 'website', 'gemini_search', 'apollo', 'google_maps', 'hacker_news', 'ycombinator', 'csv_import', 'manual')),
+  query_label TEXT NOT NULL DEFAULT '',
+  fetched_count INTEGER NOT NULL DEFAULT 0,
+  inserted_count INTEGER NOT NULL DEFAULT 0,
+  merged_count INTEGER NOT NULL DEFAULT 0,
+  mx_verified_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL CHECK (status IN ('completed', 'partial', 'failed')) DEFAULT 'completed',
+  error_detail TEXT NOT NULL DEFAULT '',
+  triggered_by TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_sync_runs_created ON public.crm_sync_runs (created_at DESC);
+
+GRANT ALL ON public.crm_leads, public.crm_outreach_logs, public.crm_oauth_tokens, public.crm_sync_runs TO authenticated, service_role;
 
 ALTER TABLE public.crm_leads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_outreach_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.crm_oauth_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_sync_runs ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Authenticated team manage crm leads" ON public.crm_leads;
 CREATE POLICY "Authenticated team manage crm leads"
@@ -604,4 +636,11 @@ CREATE POLICY "Authenticated team manage crm oauth tokens"
   ON public.crm_oauth_tokens FOR ALL
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage crm sync runs" ON public.crm_sync_runs;
+CREATE POLICY "Authenticated team manage crm sync runs"
+  ON public.crm_sync_runs FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
 

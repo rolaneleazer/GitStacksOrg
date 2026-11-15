@@ -26,6 +26,8 @@ import type {
   AgentTask,
   AgentWorkStatus,
   AnalyticsEventType,
+  ApolloCandidate,
+  ApolloSearchFilters,
   Article,
   ArticleComment,
   ChatMessage,
@@ -38,6 +40,8 @@ import type {
   CrmLeadStage,
   CrmOAuthTokenRecord,
   CrmOutreachLog,
+  CsvImportLeadInput,
+  GoogleMapsPlaceCandidate,
   HeaderSurface,
   InquiryStatus,
   LarkConnectionStatus,
@@ -56,6 +60,18 @@ import type {
   UserStatus,
   UserWorkflowItem
 } from '../shared/types.ts';
+import {
+  buildLeadsFromCsvInputs,
+  enrichAndBuildApolloLeads,
+  getApolloApiKey,
+  getGoogleMapsApiKey,
+  harvestHackerNewsLeads,
+  harvestYCombinatorLeads,
+  importAndAnalyzeGoogleMapsPlaces,
+  MapsQuotaExceededError,
+  searchApolloPeople,
+  searchGoogleMapsEstablishments
+} from './connectors.ts';
 import { collectInfrastructureMetrics } from './infrastructure.ts';
 import {
   buildLarkAuthorizeUrl,
@@ -78,6 +94,7 @@ import {
   addAgentConversation,
   addChatMessage,
   addCrmOutreachLog,
+  addCrmSyncRun,
   addSubscriber,
   assignChatThread,
   assignInquiry,
@@ -100,6 +117,7 @@ import {
   getAgentReportSettings,
   getAnalyticsSummary,
   getCrmOAuthToken,
+  getCrmSourcesAnalytics,
   getPostBySlug,
   getSupabaseAutomationMode,
   getSupabaseUrl,
@@ -2352,6 +2370,23 @@ export async function createApp(): Promise<Express> {
       const merged = await upsertMergeCrmLeads(harvested.leads, token);
       const mxVerifiedCount = harvested.leads.filter((l) => l.email_status === 'verified_mx').length;
 
+      await addCrmSyncRun(
+        {
+          id: `sync-${crypto.randomUUID().slice(0, 8)}`,
+          source_type: 'github',
+          query_label: `Trending Repos (${validTrack})`,
+          fetched_count: harvested.leads.length,
+          inserted_count: merged.insertedCount,
+          merged_count: merged.mergedCount,
+          mx_verified_count: mxVerifiedCount,
+          status: 'completed',
+          error_detail: '',
+          triggered_by: req.editor!.email,
+          created_at: new Date().toISOString()
+        },
+        token
+      ).catch(() => {});
+
       const payload: OpenSourceSyncResult = {
         track: validTrack,
         reposScanned: harvested.reposScanned,
@@ -2364,6 +2399,285 @@ export async function createApp(): Promise<Express> {
       res.json(payload);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Open-source database sync failed' });
+    }
+  });
+
+  // --- Source Attribution Dashboard, Apollo.io, HN, YC, CSV & Google Maps Endpoints ---
+
+  app.get('/api/crm/sources/analytics', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const analytics = await getCrmSourcesAnalytics(getBearerToken(req));
+      res.json(analytics);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to compute source attribution analytics'
+      });
+    }
+  });
+
+  app.get('/api/crm/apollo/status', requireRoles('super_admin', 'editor'), async (_req, res) => {
+    res.json({
+      configured: Boolean(getApolloApiKey()),
+      envVarName: 'APOLLO_API_KEY',
+      endpointMode: 'mixed_people/api_search + people/bulk_match'
+    });
+  });
+
+  app.post('/api/crm/apollo/search', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const filters = (req.body || {}) as ApolloSearchFilters;
+      const result = await searchApolloPeople(filters);
+      res.json(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Apollo.io search failed';
+      res.status(message.includes('APOLLO_API_KEY') ? 400 : 502).json({ error: message });
+    }
+  });
+
+  app.post('/api/crm/apollo/import', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { candidates, queryLabel } = req.body as {
+        candidates?: ApolloCandidate[];
+        queryLabel?: string;
+      };
+      if (!Array.isArray(candidates) || candidates.length === 0) {
+        return res.status(400).json({ error: 'Select at least one Apollo prospect to import.' });
+      }
+      const builtLeads = await enrichAndBuildApolloLeads(candidates, req.editor!.userId);
+      const merged = await upsertMergeCrmLeads(builtLeads, token);
+      const mxVerifiedCount = builtLeads.filter((l) => l.email_status === 'verified_mx').length;
+
+      await addCrmSyncRun(
+        {
+          id: `sync-${crypto.randomUUID().slice(0, 8)}`,
+          source_type: 'apollo',
+          query_label: (queryLabel || 'Apollo People Search').slice(0, 100),
+          fetched_count: builtLeads.length,
+          inserted_count: merged.insertedCount,
+          merged_count: merged.mergedCount,
+          mx_verified_count: mxVerifiedCount,
+          status: 'completed',
+          error_detail: '',
+          triggered_by: req.editor!.email,
+          created_at: new Date().toISOString()
+        },
+        token
+      ).catch(() => {});
+
+      res.json({
+        insertedCount: merged.insertedCount,
+        mergedCount: merged.mergedCount,
+        mxVerifiedCount,
+        leads: merged.leads
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Apollo import failed' });
+    }
+  });
+
+  app.post('/api/crm/sources/hacker-news/sync', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { keyword } = (req.body || {}) as { keyword?: string };
+      const harvested = await harvestHackerNewsLeads(keyword || '', req.editor!.userId);
+      const merged = await upsertMergeCrmLeads(harvested.leads, token);
+      const mxVerifiedCount = harvested.leads.filter((l) => l.email_status === 'verified_mx').length;
+
+      await addCrmSyncRun(
+        {
+          id: `sync-${crypto.randomUUID().slice(0, 8)}`,
+          source_type: 'hacker_news',
+          query_label: `${harvested.threadTitle}${keyword?.trim() ? ` (${keyword.trim()})` : ''}`.slice(0, 100),
+          fetched_count: harvested.leads.length,
+          inserted_count: merged.insertedCount,
+          merged_count: merged.mergedCount,
+          mx_verified_count: mxVerifiedCount,
+          status: 'completed',
+          error_detail: '',
+          triggered_by: req.editor!.email,
+          created_at: new Date().toISOString()
+        },
+        token
+      ).catch(() => {});
+
+      res.json({
+        threadTitle: harvested.threadTitle,
+        scannedCount: harvested.scannedCount,
+        insertedCount: merged.insertedCount,
+        mergedCount: merged.mergedCount,
+        mxVerifiedCount,
+        leads: merged.leads
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Hacker News hiring sync failed'
+      });
+    }
+  });
+
+  app.post('/api/crm/sources/ycombinator/sync', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { keyword } = (req.body || {}) as { keyword?: string };
+      const harvested = await harvestYCombinatorLeads(keyword || '', req.editor!.userId);
+      const merged = await upsertMergeCrmLeads(harvested.leads, token);
+      const mxVerifiedCount = harvested.leads.filter((l) => l.email_status === 'verified_mx').length;
+
+      await addCrmSyncRun(
+        {
+          id: `sync-${crypto.randomUUID().slice(0, 8)}`,
+          source_type: 'ycombinator',
+          query_label: `${harvested.datasetLabel}${keyword?.trim() ? ` (${keyword.trim()})` : ''}`.slice(0, 100),
+          fetched_count: harvested.leads.length,
+          inserted_count: merged.insertedCount,
+          merged_count: merged.mergedCount,
+          mx_verified_count: mxVerifiedCount,
+          status: 'completed',
+          error_detail: '',
+          triggered_by: req.editor!.email,
+          created_at: new Date().toISOString()
+        },
+        token
+      ).catch(() => {});
+
+      res.json({
+        datasetLabel: harvested.datasetLabel,
+        scannedCount: harvested.scannedCount,
+        insertedCount: merged.insertedCount,
+        mergedCount: merged.mergedCount,
+        mxVerifiedCount,
+        leads: merged.leads
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Y Combinator directory sync failed'
+      });
+    }
+  });
+
+  app.post('/api/crm/sources/csv/import', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { rows, fileName } = req.body as {
+        rows?: CsvImportLeadInput[];
+        fileName?: string;
+      };
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: 'Provide at least one row with a company_name.' });
+      }
+      const builtLeads = await buildLeadsFromCsvInputs(rows, req.editor!.userId);
+      if (builtLeads.length === 0) {
+        return res.status(400).json({ error: 'No valid rows containing a company name were found.' });
+      }
+      const merged = await upsertMergeCrmLeads(builtLeads, token);
+      const mxVerifiedCount = builtLeads.filter((l) => l.email_status === 'verified_mx').length;
+
+      await addCrmSyncRun(
+        {
+          id: `sync-${crypto.randomUUID().slice(0, 8)}`,
+          source_type: 'csv_import',
+          query_label: (fileName || 'CSV / JSON Lead Upload').slice(0, 100),
+          fetched_count: builtLeads.length,
+          inserted_count: merged.insertedCount,
+          merged_count: merged.mergedCount,
+          mx_verified_count: mxVerifiedCount,
+          status: 'completed',
+          error_detail: '',
+          triggered_by: req.editor!.email,
+          created_at: new Date().toISOString()
+        },
+        token
+      ).catch(() => {});
+
+      res.json({
+        insertedCount: merged.insertedCount,
+        mergedCount: merged.mergedCount,
+        mxVerifiedCount,
+        leads: merged.leads
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'CSV bulk import failed' });
+    }
+  });
+
+  app.get('/api/crm/maps/config', requireRoles('super_admin', 'editor'), async (_req, res) => {
+    const apiKey = getGoogleMapsApiKey();
+    res.json({
+      configured: Boolean(apiKey),
+      apiKey
+    });
+  });
+
+  app.post('/api/crm/maps/search', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const { query, regionCode } = req.body as { query?: string; regionCode?: string };
+      if (!query || !query.trim()) {
+        return res.status(400).json({ error: 'Establishment search query is required.' });
+      }
+      const places = await searchGoogleMapsEstablishments(query.trim(), regionCode || '');
+      res.json({ places });
+    } catch (err) {
+      if (err instanceof MapsQuotaExceededError) {
+        return res.status(429).json({
+          quotaExceeded: true,
+          error: err.message
+        });
+      }
+      res.status(502).json({
+        error: err instanceof Error ? err.message : 'Google Maps Places search failed'
+      });
+    }
+  });
+
+  app.post('/api/crm/maps/import', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { places, runAnalysis, searchLabel } = req.body as {
+        places?: GoogleMapsPlaceCandidate[];
+        runAnalysis?: boolean;
+        searchLabel?: string;
+      };
+      if (!Array.isArray(places) || places.length === 0) {
+        return res.status(400).json({ error: 'Select at least one establishment from the map first.' });
+      }
+      const imported = await importAndAnalyzeGoogleMapsPlaces(
+        places,
+        req.editor!.userId,
+        runAnalysis !== false
+      );
+      const merged = await upsertMergeCrmLeads(imported, token);
+      const mxVerifiedCount = imported.filter((l) => l.email_status === 'verified_mx').length;
+
+      await addCrmSyncRun(
+        {
+          id: `sync-${crypto.randomUUID().slice(0, 8)}`,
+          source_type: 'google_maps',
+          query_label: (searchLabel || 'Google Maps Establishment Search').slice(0, 100),
+          fetched_count: imported.length,
+          inserted_count: merged.insertedCount,
+          merged_count: merged.mergedCount,
+          mx_verified_count: mxVerifiedCount,
+          status: 'completed',
+          error_detail: '',
+          triggered_by: req.editor!.email,
+          created_at: new Date().toISOString()
+        },
+        token
+      ).catch(() => {});
+
+      res.json({
+        importedCount: imported.length,
+        insertedCount: merged.insertedCount,
+        mergedCount: merged.mergedCount,
+        mxVerifiedCount,
+        importedLeads: imported,
+        leads: merged.leads
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to import Google Maps establishments'
+      });
     }
   });
 
@@ -2493,6 +2807,10 @@ export async function createApp(): Promise<Express> {
         company_domain: (body.company_domain || '').trim().toLowerCase(),
         website_url: (body.website_url || '').trim(),
         github_url: (body.github_url || '').trim(),
+        phone: (body.phone || '').trim(),
+        location: (body.location || '').trim(),
+        rating: body.rating !== undefined && body.rating !== null ? Number(body.rating) : null,
+        source_detail: (body.source_detail || '').trim(),
         source_type: body.source_type || 'manual',
         source_urls: Array.isArray(body.source_urls) ? body.source_urls.slice(0, 10) : [],
         tech_stack: Array.isArray(body.tech_stack) ? body.tech_stack.slice(0, 10) : [],
@@ -2556,6 +2874,9 @@ export async function createApp(): Promise<Express> {
         ...(patch.company_domain !== undefined ? { company_domain: patch.company_domain.trim().toLowerCase() } : {}),
         ...(patch.website_url !== undefined ? { website_url: patch.website_url.trim() } : {}),
         ...(patch.github_url !== undefined ? { github_url: patch.github_url.trim() } : {}),
+        ...(patch.phone !== undefined ? { phone: patch.phone.trim() } : {}),
+        ...(patch.location !== undefined ? { location: patch.location.trim() } : {}),
+        ...(patch.source_detail !== undefined ? { source_detail: patch.source_detail.trim() } : {}),
         ...(patch.tech_stack !== undefined ? { tech_stack: patch.tech_stack } : {}),
         ...(patch.research_brief !== undefined ? { research_brief: patch.research_brief } : {}),
         ...(patch.recommended_service !== undefined ? { recommended_service: patch.recommended_service } : {}),

@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BarChart3,
   Bot,
   Briefcase,
   CheckCircle2,
@@ -11,6 +12,7 @@ import {
   ExternalLink,
   Globe,
   Mail,
+  MapPin,
   Plus,
   RefreshCw,
   Search,
@@ -43,6 +45,9 @@ import type {
   ServiceCategory,
   UserWorkflowItem
 } from '../../shared/types.ts';
+import { GoogleMapsProspectingTab } from './GoogleMapsProspectingTab.tsx';
+import { MultiSourceImportPanel } from './MultiSourceImportPanel.tsx';
+import { SourcesAttributionTab } from './SourcesAttributionTab.tsx';
 
 interface CrmProspectingPanelProps {
   onDealWon?: (payload: {
@@ -80,7 +85,9 @@ const EMAIL_STATUS_LABEL: Record<EmailVerificationStatus, { text: string; tone: 
 };
 
 export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
-  const [subView, setSubView] = useState<'directory' | 'pipeline' | 'discover' | 'logs'>('directory');
+  const [subView, setSubView] = useState<
+    'directory' | 'pipeline' | 'discover' | 'maps' | 'sources' | 'logs'
+  >('directory');
   const [showLostColumn, setShowLostColumn] = useState(false);
 
   // CRM Data
@@ -1171,7 +1178,31 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
             }`}
           >
             <Search className="h-3.5 w-3.5" />
-            <span>Custom Repo / Domain Finder</span>
+            <span>Apollo &amp; Data Connectors</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubView('maps')}
+            className={`min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              subView === 'maps'
+                ? 'bg-[var(--gs-primary)] text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            <span>Map Finder</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubView('sources')}
+            className={`min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              subView === 'sources'
+                ? 'bg-[var(--gs-primary)] text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            <span>Sources &amp; Provenance</span>
           </button>
           <button
             type="button"
@@ -1294,8 +1325,13 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
               >
                 <option value="all">Source: All</option>
                 <option value="github">GitHub Repo</option>
+                <option value="apollo">Apollo.io API</option>
+                <option value="google_maps">Google Maps</option>
+                <option value="hacker_news">Hacker News</option>
+                <option value="ycombinator">Y Combinator</option>
                 <option value="website">Company Website</option>
                 <option value="gemini_search">Gemini Search</option>
+                <option value="csv_import">CSV Import</option>
                 <option value="manual">Manual Entry</option>
               </select>
 
@@ -1843,16 +1879,24 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
         </div>
       )}
 
-      {/* VIEW 2: OPEN-SOURCE LEAD FINDER */}
+      {/* VIEW 2: MULTI-SOURCE CONNECTORS + OPEN-SOURCE LEAD FINDER */}
       {subView === 'discover' && (
         <div className="space-y-5">
+          <MultiSourceImportPanel
+            onLeadsUpdated={(updatedLeads, text) => {
+              setLeads(updatedLeads);
+              setNotice({ type: 'ok', text });
+            }}
+            onError={(msg) => setNotice({ type: 'err', text: msg })}
+          />
+
           <form
             onSubmit={handleDiscover}
             className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4"
           >
             <div>
               <h3 className="font-display text-sm font-bold text-slate-900">
-                Apollo-Style Open-Source Prospecting Engine
+                Custom Open-Source Repo &amp; Domain Scraper
               </h3>
               <p className="mt-1 text-xs text-slate-600">
                 Search any company domain (e.g. <span className="font-mono">supabase.com</span>,{' '}
@@ -2026,6 +2070,31 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
             </div>
           )}
         </div>
+      )}
+
+      {/* VIEW 2B: GOOGLE MAPS ESTABLISHMENT FINDER */}
+      {subView === 'maps' && (
+        <GoogleMapsProspectingTab
+          existingDomains={importedKeys}
+          onLeadsUpdated={(updatedLeads, text) => {
+            setLeads(updatedLeads);
+            setNotice({ type: 'ok', text });
+          }}
+          onOpenLead={(lead) => openLeadDossier(lead)}
+          onError={(msg) => setNotice({ type: 'err', text: msg })}
+        />
+      )}
+
+      {/* VIEW 2C: SOURCE ATTRIBUTION & PROVENANCE DASHBOARD */}
+      {subView === 'sources' && (
+        <SourcesAttributionTab
+          leads={leads}
+          onFilterBySource={(source) => {
+            setFilterSource(source);
+            setSubView('directory');
+          }}
+          onOpenLead={(lead) => openLeadDossier(lead)}
+        />
       )}
 
       {/* VIEW 3: OUTREACH ACTIVITY LOGS */}

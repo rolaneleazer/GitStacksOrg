@@ -497,7 +497,16 @@ export type EmailVerificationStatus =
   | 'inferred'
   | 'invalid';
 
-export type LeadSourceType = 'github' | 'website' | 'gemini_search' | 'manual';
+export type LeadSourceType =
+  | 'github'
+  | 'website'
+  | 'gemini_search'
+  | 'apollo'
+  | 'google_maps'
+  | 'hacker_news'
+  | 'ycombinator'
+  | 'csv_import'
+  | 'manual';
 
 export interface CrmFollowUpStep {
   step_number: number;
@@ -517,6 +526,10 @@ export interface CrmLead {
   company_domain: string;
   website_url: string;
   github_url: string;
+  phone?: string;
+  location?: string;
+  rating?: number | null;
+  source_detail?: string;
   source_type: LeadSourceType;
   source_urls: string[];
   tech_stack: string[];
@@ -561,11 +574,16 @@ export interface DiscoveredProspectCandidate {
   company_domain: string;
   website_url: string;
   github_url: string;
+  phone?: string;
+  location?: string;
+  rating?: number | null;
+  source_detail?: string;
   source_type: LeadSourceType;
   source_urls: string[];
   tech_stack: string[];
   fit_score: number;
   snippet: string;
+  external_id?: string;
 }
 
 export interface CrmOAuthTokenRecord {
@@ -603,5 +621,110 @@ export interface OpenSourceSyncResult {
   mxVerifiedCount: number;
   sourcesSynced: string[];
   leads: CrmLead[];
+}
+
+export interface CrmSyncRun {
+  id: string;
+  source_type: LeadSourceType;
+  query_label: string;
+  fetched_count: number;
+  inserted_count: number;
+  merged_count: number;
+  mx_verified_count: number;
+  status: 'completed' | 'partial' | 'failed';
+  error_detail: string;
+  triggered_by: string;
+  created_at: string;
+}
+
+export interface SourceBreakdownMetric {
+  source_type: LeadSourceType;
+  label: string;
+  leadCount: number;
+  verifiedMxCount: number;
+  mxRatePercent: number;
+  avgFitScore: number;
+  totalDealValue: number;
+  wonCount: number;
+  outreachSentCount: number;
+  lastSyncedAt: string | null;
+}
+
+export interface CrmSourcesAnalyticsResponse {
+  totals: {
+    totalLeads: number;
+    verifiedMxCount: number;
+    verifiedMxPercent: number;
+    totalPipelineValue: number;
+    wonDeals: number;
+    activeSourcesCount: number;
+    totalSyncRuns: number;
+  };
+  bySource: SourceBreakdownMetric[];
+  syncRuns: CrmSyncRun[];
+}
+
+export interface ApolloStatusResponse {
+  configured: boolean;
+  envVarName: 'APOLLO_API_KEY';
+  endpointMode: 'mixed_people/api_search + people/bulk_match';
+}
+
+export interface ApolloSearchFilters {
+  personTitles?: string[];
+  qKeywords?: string;
+  personLocations?: string[];
+  organizationDomains?: string[];
+  perPage?: number;
+  page?: number;
+}
+
+export interface ApolloCandidate {
+  id: string;
+  apollo_person_id: string;
+  contact_name: string;
+  role_title: string;
+  email: string;
+  has_email: boolean;
+  company_name: string;
+  company_domain: string;
+  website_url: string;
+  linkedin_url: string;
+  location: string;
+  industry: string;
+  tech_stack: string[];
+  snippet: string;
+}
+
+export interface GoogleMapsPlaceCandidate {
+  place_id: string;
+  name: string;
+  primary_type: string;
+  formatted_address: string;
+  location: { lat: number; lng: number };
+  phone: string;
+  website_url: string;
+  google_maps_uri: string;
+  rating: number | null;
+  user_rating_count: number | null;
+}
+
+export interface GoogleMapsConfigResponse {
+  configured: boolean;
+  apiKey: string;
+}
+
+export interface CsvImportLeadInput {
+  contact_name?: string;
+  role_title?: string;
+  email?: string;
+  company_name: string;
+  website_url?: string;
+  company_domain?: string;
+  phone?: string;
+  location?: string;
+  tech_stack?: string[];
+  recommended_service?: ServiceCategory;
+  deal_value?: number;
 }
 

@@ -481,3 +481,116 @@ export interface AgentEmailReport {
   sent_at: string;
 }
 
+// --- Apollo-Style Open-Source Prospecting, CRM Pipeline & Lark Mail Integration ---
+
+export type CrmLeadStage =
+  | 'discovered'
+  | 'researched'
+  | 'proposed'
+  | 'follow_up'
+  | 'won'
+  | 'lost';
+
+export type EmailVerificationStatus =
+  | 'verified_mx'
+  | 'public_found'
+  | 'inferred'
+  | 'invalid';
+
+export type LeadSourceType = 'github' | 'website' | 'gemini_search' | 'manual';
+
+export interface CrmFollowUpStep {
+  step_number: number;
+  delay_days: number;
+  subject: string;
+  body: string;
+  sent_at: string | null;
+}
+
+export interface CrmLead {
+  id: string;
+  contact_name: string;
+  role_title: string;
+  email: string;
+  email_status: EmailVerificationStatus;
+  company_name: string;
+  company_domain: string;
+  website_url: string;
+  github_url: string;
+  source_type: LeadSourceType;
+  source_urls: string[];
+  tech_stack: string[];
+  research_brief: string;
+  recommended_service: ServiceCategory;
+  fit_score: number;
+  deal_value: number;
+  stage: CrmLeadStage;
+  proposal_subject: string;
+  proposal_body: string;
+  follow_up_sequence: CrmFollowUpStep[];
+  assigned_to: string | null;
+  last_contacted_at: string | null;
+  next_followup_at: string | null;
+  converted_inquiry_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmOutreachLog {
+  id: string;
+  lead_id: string;
+  channel: 'lark_mail' | 'gmail_api';
+  recipient_email: string;
+  subject: string;
+  body: string;
+  provider_message_id: string;
+  status: 'sent' | 'failed';
+  error_detail: string;
+  step_label: string;
+  sent_by: string;
+  sent_at: string;
+}
+
+export interface DiscoveredProspectCandidate {
+  id: string;
+  contact_name: string;
+  role_title: string;
+  email: string;
+  email_status: EmailVerificationStatus;
+  company_name: string;
+  company_domain: string;
+  website_url: string;
+  github_url: string;
+  source_type: LeadSourceType;
+  source_urls: string[];
+  tech_stack: string[];
+  fit_score: number;
+  snippet: string;
+}
+
+export interface CrmOAuthTokenRecord {
+  id: string;
+  user_id: string;
+  provider: 'lark';
+  access_token: string;
+  refresh_token: string;
+  expires_at: string;
+  account_email: string;
+  account_name: string;
+  updated_at: string;
+}
+
+export interface LarkConnectionStatus {
+  configured: boolean;
+  connected: boolean;
+  lark_email: string;
+  lark_name: string;
+  expires_at: string | null;
+  redirect_uris: {
+    development: string;
+    shared: string;
+  };
+  missing_env: string[];
+}
+
+

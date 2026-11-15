@@ -517,3 +517,91 @@ VALUES (
   'gmail'
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- 17. Apollo-Style CRM Pipeline & Open-Source Prospecting Leads
+CREATE TABLE IF NOT EXISTS public.crm_leads (
+  id TEXT PRIMARY KEY,
+  contact_name TEXT NOT NULL,
+  role_title TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  email_status TEXT NOT NULL CHECK (email_status IN ('verified_mx', 'public_found', 'inferred', 'invalid')) DEFAULT 'inferred',
+  company_name TEXT NOT NULL,
+  company_domain TEXT NOT NULL DEFAULT '',
+  website_url TEXT NOT NULL DEFAULT '',
+  github_url TEXT NOT NULL DEFAULT '',
+  source_type TEXT NOT NULL CHECK (source_type IN ('github', 'website', 'gemini_search', 'manual')) DEFAULT 'manual',
+  source_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+  tech_stack JSONB NOT NULL DEFAULT '[]'::jsonb,
+  research_brief TEXT NOT NULL DEFAULT '',
+  recommended_service TEXT NOT NULL DEFAULT 'AI Integration',
+  fit_score INTEGER NOT NULL DEFAULT 70,
+  deal_value INTEGER NOT NULL DEFAULT 25000,
+  stage TEXT NOT NULL CHECK (stage IN ('discovered', 'researched', 'proposed', 'follow_up', 'won', 'lost')) DEFAULT 'discovered',
+  proposal_subject TEXT NOT NULL DEFAULT '',
+  proposal_body TEXT NOT NULL DEFAULT '',
+  follow_up_sequence JSONB NOT NULL DEFAULT '[]'::jsonb,
+  assigned_to TEXT,
+  last_contacted_at TIMESTAMPTZ,
+  next_followup_at TIMESTAMPTZ,
+  converted_inquiry_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_leads_stage ON public.crm_leads (stage, updated_at DESC);
+
+-- 18. CRM Outbound Email & Proposal Delivery Logs (Lark Mail + Gmail)
+CREATE TABLE IF NOT EXISTS public.crm_outreach_logs (
+  id TEXT PRIMARY KEY,
+  lead_id TEXT NOT NULL REFERENCES public.crm_leads(id) ON DELETE CASCADE,
+  channel TEXT NOT NULL CHECK (channel IN ('lark_mail', 'gmail_api')) DEFAULT 'lark_mail',
+  recipient_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  provider_message_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('sent', 'failed')) DEFAULT 'sent',
+  error_detail TEXT NOT NULL DEFAULT '',
+  step_label TEXT NOT NULL DEFAULT 'Initial Proposal',
+  sent_by TEXT NOT NULL DEFAULT '',
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_outreach_logs_lead ON public.crm_outreach_logs (lead_id, sent_at DESC);
+
+-- 19. Per-Operator OAuth Tokens (Lark Open Platform Mail API)
+CREATE TABLE IF NOT EXISTS public.crm_oauth_tokens (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL CHECK (provider IN ('lark')) DEFAULT 'lark',
+  access_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL DEFAULT '',
+  expires_at TIMESTAMPTZ NOT NULL,
+  account_email TEXT NOT NULL DEFAULT '',
+  account_name TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.crm_leads, public.crm_outreach_logs, public.crm_oauth_tokens TO authenticated, service_role;
+
+ALTER TABLE public.crm_leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_outreach_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.crm_oauth_tokens ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated team manage crm leads" ON public.crm_leads;
+CREATE POLICY "Authenticated team manage crm leads"
+  ON public.crm_leads FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage crm outreach logs" ON public.crm_outreach_logs;
+CREATE POLICY "Authenticated team manage crm outreach logs"
+  ON public.crm_outreach_logs FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage crm oauth tokens" ON public.crm_oauth_tokens;
+CREATE POLICY "Authenticated team manage crm oauth tokens"
+  ON public.crm_oauth_tokens FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+

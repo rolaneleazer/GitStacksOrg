@@ -42,6 +42,9 @@ import type {
   ChatThreadStatus,
   ClientInquiry,
   CommentStatus,
+  CrmLead,
+  CrmOAuthTokenRecord,
+  CrmOutreachLog,
   DirectoryUser,
   InquiryStatus,
   NewsletterSubscriber,
@@ -72,6 +75,9 @@ interface LocalDatabase {
   agent_conversations?: AgentConversationEntry[];
   agent_report_settings?: AgentReportSettings;
   agent_email_reports?: AgentEmailReport[];
+  crm_leads?: CrmLead[];
+  crm_outreach_logs?: CrmOutreachLog[];
+  crm_oauth_tokens?: CrmOAuthTokenRecord[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -179,7 +185,7 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
   try {
     const client = getSupabaseClient();
-    const [postsRes, pagesRes, profilesRes, wfRes, rulesRes, officeRes, reportsRes] =
+    const [postsRes, pagesRes, profilesRes, wfRes, rulesRes, officeRes, reportsRes, crmRes] =
       await Promise.all([
         client.from('posts').select('id').limit(1),
         client.from('page_contents').select('page_key').limit(1),
@@ -187,7 +193,8 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
         client.from('user_workflow_items').select('id').limit(1),
         client.from('routing_rules').select('id').limit(1),
         client.from('agent_office_profiles').select('agent_id').limit(1),
-        client.from('agent_email_reports').select('id').limit(1)
+        client.from('agent_email_reports').select('id').limit(1),
+        client.from('crm_leads').select('id').limit(1)
       ]);
     return (
       !postsRes.error &&
@@ -196,7 +203,8 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
       !wfRes.error &&
       !rulesRes.error &&
       !officeRes.error &&
-      !reportsRes.error
+      !reportsRes.error &&
+      !crmRes.error
     );
   } catch {
     return false;
@@ -356,7 +364,10 @@ function ensureLocalShape(db: LocalDatabase): LocalDatabase {
       ...DEFAULT_AGENT_REPORT_SETTINGS,
       ...(db.agent_report_settings || {})
     },
-    agent_email_reports: db.agent_email_reports || []
+    agent_email_reports: db.agent_email_reports || [],
+    crm_leads: db.crm_leads || [],
+    crm_outreach_logs: db.crm_outreach_logs || [],
+    crm_oauth_tokens: db.crm_oauth_tokens || []
   };
 }
 
@@ -2046,3 +2057,174 @@ export async function recordAgentEmailReport(
   await writeLocalDb(db);
   return report;
 }
+
+// --- Apollo-Style CRM Leads, Outreach Logs & Lark OAuth Tokens ---
+
+export async function listCrmLeads(userToken?: string): Promise<CrmLead[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_leads')
+      .select('*')
+      .order('updated_at', { ascending: false });
+    if (!error && Array.isArray(data)) {
+      return data as CrmLead[];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.crm_leads || [])].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  );
+}
+
+export async function upsertCrmLead(lead: CrmLead, userToken?: string): Promise<CrmLead> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_leads')
+      .upsert(lead, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) return data as CrmLead;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.crm_leads || [];
+  const idx = list.findIndex((l) => l.id === lead.id);
+  if (idx >= 0) list[idx] = lead;
+  else list.unshift(lead);
+  db.crm_leads = list;
+  await writeLocalDb(db);
+  return lead;
+}
+
+export async function deleteCrmLead(id: string, userToken?: string): Promise<boolean> {
+  if (isSupabaseConfigured()) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('crm_leads')
+      .delete()
+      .eq('id', id);
+    if (!error) return true;
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const before = (db.crm_leads || []).length;
+  db.crm_leads = (db.crm_leads || []).filter((l) => l.id !== id);
+  db.crm_outreach_logs = (db.crm_outreach_logs || []).filter((log) => log.lead_id !== id);
+  await writeLocalDb(db);
+  return db.crm_leads.length < before;
+}
+
+export async function listCrmOutreachLogs(
+  leadId?: string,
+  userToken?: string
+): Promise<CrmOutreachLog[]> {
+  if (isSupabaseConfigured()) {
+    let query = getSupabaseClient(userToken)
+      .from('crm_outreach_logs')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(120);
+    if (leadId) query = query.eq('lead_id', leadId);
+    const { data, error } = await query;
+    if (!error && Array.isArray(data)) return data as CrmOutreachLog[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.crm_outreach_logs || [];
+  return (leadId ? list.filter((l) => l.lead_id === leadId) : list).sort(
+    (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+  );
+}
+
+export async function addCrmOutreachLog(
+  log: CrmOutreachLog,
+  userToken?: string
+): Promise<CrmOutreachLog> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_outreach_logs')
+      .insert(log)
+      .select()
+      .single();
+    if (!error && data) return data as CrmOutreachLog;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.crm_outreach_logs || [];
+  list.unshift(log);
+  db.crm_outreach_logs = list.slice(0, 300);
+  await writeLocalDb(db);
+  return log;
+}
+
+export async function getCrmOAuthToken(
+  userId: string,
+  provider: 'lark' = 'lark',
+  userToken?: string
+): Promise<CrmOAuthTokenRecord | null> {
+  const tokenId = `${userId}:${provider}`;
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_oauth_tokens')
+      .select('*')
+      .eq('id', tokenId)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as CrmOAuthTokenRecord;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.crm_oauth_tokens || []).find((t) => t.id === tokenId) || null;
+}
+
+export async function upsertCrmOAuthToken(
+  record: CrmOAuthTokenRecord,
+  userToken?: string
+): Promise<CrmOAuthTokenRecord> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_oauth_tokens')
+      .upsert(record, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) return data as CrmOAuthTokenRecord;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.crm_oauth_tokens || [];
+  const idx = list.findIndex((t) => t.id === record.id);
+  if (idx >= 0) list[idx] = record;
+  else list.unshift(record);
+  db.crm_oauth_tokens = list;
+  await writeLocalDb(db);
+  return record;
+}
+
+export async function deleteCrmOAuthToken(
+  userId: string,
+  provider: 'lark' = 'lark',
+  userToken?: string
+): Promise<boolean> {
+  const tokenId = `${userId}:${provider}`;
+  if (isSupabaseConfigured()) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('crm_oauth_tokens')
+      .delete()
+      .eq('id', tokenId);
+    if (!error) return true;
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const before = (db.crm_oauth_tokens || []).length;
+  db.crm_oauth_tokens = (db.crm_oauth_tokens || []).filter((t) => t.id !== tokenId);
+  await writeLocalDb(db);
+  return db.crm_oauth_tokens.length < before;
+}
+

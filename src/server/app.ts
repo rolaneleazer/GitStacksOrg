@@ -33,12 +33,19 @@ import type {
   ChatThreadStatus,
   ClientInquiry,
   CommentStatus,
+  CrmFollowUpStep,
+  CrmLead,
+  CrmLeadStage,
+  CrmOAuthTokenRecord,
+  CrmOutreachLog,
   HeaderSurface,
   InquiryStatus,
+  LarkConnectionStatus,
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
   RoutingRule,
+  ServiceCategory,
   SiteAuditCheck,
   SiteAuditReport,
   TaskPriority,
@@ -49,8 +56,25 @@ import type {
 } from '../shared/types.ts';
 import { collectInfrastructureMetrics } from './infrastructure.ts';
 import {
+  buildLarkAuthorizeUrl,
+  exchangeLarkCodeForTokens,
+  fetchLarkUserInfo,
+  getLarkBaseOrigin,
+  getLarkEnvStatus,
+  getLarkRedirectUri,
+  refreshLarkUserToken,
+  sendLarkMailMessage,
+  verifyLarkOAuthState
+} from './lark.ts';
+import {
+  discoverOpenSourceLeads,
+  runProspectResearchAndProposal,
+  verifyEmailMxDomain
+} from './prospecting.ts';
+import {
   addAgentConversation,
   addChatMessage,
+  addCrmOutreachLog,
   addSubscriber,
   assignChatThread,
   assignInquiry,
@@ -64,12 +88,15 @@ import {
   createTeamUser,
   createWorkflowItem,
   deleteAgentTask,
+  deleteCrmLead,
+  deleteCrmOAuthToken,
   deletePost,
   deleteTeamUser,
   deleteWorkflowItem,
   getAdSenseSettings,
   getAgentReportSettings,
   getAnalyticsSummary,
+  getCrmOAuthToken,
   getPostBySlug,
   getSupabaseAutomationMode,
   getSupabaseUrl,
@@ -81,6 +108,8 @@ import {
   listChatMessages,
   listChatThreads,
   listComments,
+  listCrmLeads,
+  listCrmOutreachLogs,
   listInquiries,
   listPageContents,
   listPosts,
@@ -104,6 +133,8 @@ import {
   updateWorkflowItem,
   upsertAgentOfficeProfile,
   upsertAgentTask,
+  upsertCrmLead,
+  upsertCrmOAuthToken,
   upsertPageContent,
   upsertPost,
   verifyEditorToken,
@@ -2149,6 +2180,561 @@ export async function createApp(): Promise<Express> {
       res.json({ rules: saved });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save routing rules' });
+    }
+  });
+
+  // --- Lark Open Platform OAuth & Mail Integration ---
+
+  app.get('/api/lark/status', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const env = getLarkEnvStatus();
+      const token = getBearerToken(req);
+      const record = await getCrmOAuthToken(req.editor!.userId, 'lark', token);
+      const currentRedirect = getLarkRedirectUri(req);
+      const baseOrigin = getLarkBaseOrigin(req);
+      const devRedirect = baseOrigin.includes('ais-pre-')
+        ? `${baseOrigin.replace('ais-pre-', 'ais-dev-')}/api/lark/callback`
+        : currentRedirect;
+      const sharedRedirect = baseOrigin.includes('ais-dev-')
+        ? `${baseOrigin.replace('ais-dev-', 'ais-pre-')}/api/lark/callback`
+        : `${(process.env.SHARED_APP_URL || baseOrigin).replace(/\/$/, '')}/api/lark/callback`;
+
+      const status: LarkConnectionStatus = {
+        configured: env.configured,
+        connected: Boolean(record && record.access_token),
+        lark_email: record?.account_email || '',
+        lark_name: record?.account_name || '',
+        expires_at: record?.expires_at || null,
+        redirect_uris: {
+          development: devRedirect,
+          shared: sharedRedirect
+        },
+        missing_env: env.missing
+      };
+      res.json(status);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to inspect Lark status' });
+    }
+  });
+
+  app.get('/api/lark/auth-url', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    const env = getLarkEnvStatus();
+    if (!env.configured) {
+      return res.status(400).json({
+        error: `Lark Open Platform credentials missing: ${env.missing.join(', ')}. Configure them in your environment secrets.`,
+        missing_env: env.missing
+      });
+    }
+    const url = buildLarkAuthorizeUrl(req.editor!.userId, req);
+    res.json({ url, redirectUri: getLarkRedirectUri(req) });
+  });
+
+  app.get(['/api/lark/callback', '/api/lark/callback/'], async (req, res) => {
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const oauthErr = typeof req.query.error === 'string' ? req.query.error : '';
+
+    const sendPopupResult = (ok: boolean, detail: { email?: string; name?: string; error?: string }) => {
+      const payload = JSON.stringify({
+        type: ok ? 'LARK_OAUTH_SUCCESS' : 'LARK_OAUTH_ERROR',
+        ...detail
+      });
+      res
+        .status(ok ? 200 : 400)
+        .type('html')
+        .send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Lark Mail Connection</title></head>
+<body style="font-family:system-ui,sans-serif;padding:24px;background:#f8fafc;color:#0f172a;">
+  <p style="font-size:14px;font-weight:600;">${
+    ok ? 'Lark Mail connected. Returning to GitStack Back Office...' : 'Lark OAuth failed.'
+  }</p>
+  ${detail.error ? `<p style="font-size:12px;color:#b91c1c;">${detail.error.replace(/</g, '&lt;')}</p>` : ''}
+  <script>
+    (function() {
+      try {
+        if (window.opener && !window.opener.closed) {
+          window.opener.postMessage(${payload}, '*');
+        }
+      } catch (e) {}
+      setTimeout(function() { window.close(); }, ${ok ? 400 : 2500});
+    })();
+  </script>
+</body>
+</html>`);
+    };
+
+    if (oauthErr) {
+      return sendPopupResult(false, { error: `Lark declined authorization: ${oauthErr}` });
+    }
+    if (!code || !state) {
+      return sendPopupResult(false, { error: 'Missing authorization code or state from Lark.' });
+    }
+
+    const verifiedState = verifyLarkOAuthState(state);
+    if (!verifiedState) {
+      return sendPopupResult(false, { error: 'Invalid or expired Lark OAuth state signature.' });
+    }
+
+    try {
+      const redirectUri = getLarkRedirectUri(req);
+      const tokens = await exchangeLarkCodeForTokens(code, redirectUri);
+      const userInfo = await fetchLarkUserInfo(tokens.access_token);
+      const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+
+      const record: CrmOAuthTokenRecord = {
+        id: `${verifiedState.userId}:lark`,
+        user_id: verifiedState.userId,
+        provider: 'lark',
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        expires_at: expiresAt,
+        account_email: userInfo.email,
+        account_name: userInfo.name,
+        updated_at: new Date().toISOString()
+      };
+      await upsertCrmOAuthToken(record);
+      res.cookie('gs_lark_connected', '1', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000
+      });
+      return sendPopupResult(true, { email: userInfo.email, name: userInfo.name });
+    } catch (err) {
+      return sendPopupResult(false, {
+        error: err instanceof Error ? err.message : 'Lark token exchange failed'
+      });
+    }
+  });
+
+  app.delete('/api/lark/disconnect', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      await deleteCrmOAuthToken(req.editor!.userId, 'lark', getBearerToken(req));
+      res.clearCookie('gs_lark_connected', { httpOnly: true, secure: true, sameSite: 'none' });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to disconnect Lark' });
+    }
+  });
+
+  // --- Apollo-Style Open-Source Lead Discovery & CRM Pipeline ---
+
+  app.post('/api/crm/discover', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const { query, mode } = req.body as {
+        query?: string;
+        mode?: 'auto' | 'github' | 'website';
+      };
+      if (!query || !query.trim()) {
+        return res.status(400).json({ error: 'Search query, GitHub topic, or company domain is required.' });
+      }
+      const validMode = mode === 'github' || mode === 'website' ? mode : 'auto';
+      const result = await discoverOpenSourceLeads(query.trim(), validMode);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Open-source lead discovery failed' });
+    }
+  });
+
+  app.get('/api/crm/leads', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const [leads, logs] = await Promise.all([
+        listCrmLeads(token),
+        listCrmOutreachLogs(undefined, token)
+      ]);
+      res.json({ leads, logs });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load CRM leads' });
+    }
+  });
+
+  app.post('/api/crm/leads', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const body = req.body as Partial<CrmLead>;
+      const contactName = (body.contact_name || '').trim();
+      const companyName = (body.company_name || '').trim();
+      const email = (body.email || '').trim().toLowerCase();
+
+      if (!contactName && !companyName) {
+        return res.status(400).json({ error: 'Contact name or company name is required.' });
+      }
+
+      let emailStatus = body.email_status || 'inferred';
+      if (email && !body.email_status) {
+        const mxOk = await verifyEmailMxDomain(email);
+        emailStatus = mxOk ? 'verified_mx' : 'invalid';
+      } else if (!email) {
+        emailStatus = 'invalid';
+      }
+
+      const now = new Date().toISOString();
+      const validServices: ServiceCategory[] = [
+        'AI Integration',
+        'ML Automation',
+        'Cloud Infrastructure',
+        'Custom Software',
+        'Technical Consulting'
+      ];
+      const recommendedService = validServices.includes(body.recommended_service as ServiceCategory)
+        ? (body.recommended_service as ServiceCategory)
+        : 'AI Integration';
+
+      const lead: CrmLead = {
+        id: `crm-${crypto.randomUUID().slice(0, 8)}`,
+        contact_name: contactName || `${companyName} Team`,
+        role_title: (body.role_title || '').trim() || 'Engineering Leader',
+        email,
+        email_status: emailStatus,
+        company_name: companyName || contactName,
+        company_domain: (body.company_domain || '').trim().toLowerCase(),
+        website_url: (body.website_url || '').trim(),
+        github_url: (body.github_url || '').trim(),
+        source_type: body.source_type || 'manual',
+        source_urls: Array.isArray(body.source_urls) ? body.source_urls.slice(0, 10) : [],
+        tech_stack: Array.isArray(body.tech_stack) ? body.tech_stack.slice(0, 10) : [],
+        research_brief: (body.research_brief || '').trim(),
+        recommended_service: recommendedService,
+        fit_score: Math.max(10, Math.min(100, Number(body.fit_score) || 72)),
+        deal_value: Math.max(1000, Number(body.deal_value) || 25000),
+        stage: body.stage || 'discovered',
+        proposal_subject: (body.proposal_subject || '').trim(),
+        proposal_body: (body.proposal_body || '').trim(),
+        follow_up_sequence: Array.isArray(body.follow_up_sequence) ? body.follow_up_sequence : [],
+        assigned_to: body.assigned_to ?? req.editor!.userId,
+        last_contacted_at: null,
+        next_followup_at: null,
+        converted_inquiry_id: null,
+        created_at: now,
+        updated_at: now
+      };
+
+      const saved = await upsertCrmLead(lead, token);
+      res.status(201).json({ lead: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to create CRM lead' });
+    }
+  });
+
+  app.patch('/api/crm/leads/:id', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const leads = await listCrmLeads(token);
+      const existing = leads.find((l) => l.id === req.params.id);
+      if (!existing) return res.status(404).json({ error: 'CRM lead not found.' });
+
+      const patch = req.body as Partial<CrmLead>;
+      const validStages: CrmLeadStage[] = [
+        'discovered',
+        'researched',
+        'proposed',
+        'follow_up',
+        'won',
+        'lost'
+      ];
+
+      let updatedEmailStatus = patch.email_status ?? existing.email_status;
+      if (patch.email !== undefined && patch.email.trim().toLowerCase() !== existing.email) {
+        const cleanEmail = patch.email.trim().toLowerCase();
+        updatedEmailStatus = cleanEmail
+          ? (await verifyEmailMxDomain(cleanEmail))
+            ? 'verified_mx'
+            : 'invalid'
+          : 'invalid';
+      }
+
+      const updated: CrmLead = {
+        ...existing,
+        ...(patch.contact_name !== undefined ? { contact_name: patch.contact_name.trim() } : {}),
+        ...(patch.role_title !== undefined ? { role_title: patch.role_title.trim() } : {}),
+        ...(patch.email !== undefined ? { email: patch.email.trim().toLowerCase() } : {}),
+        email_status: updatedEmailStatus,
+        ...(patch.company_name !== undefined ? { company_name: patch.company_name.trim() } : {}),
+        ...(patch.company_domain !== undefined ? { company_domain: patch.company_domain.trim().toLowerCase() } : {}),
+        ...(patch.website_url !== undefined ? { website_url: patch.website_url.trim() } : {}),
+        ...(patch.github_url !== undefined ? { github_url: patch.github_url.trim() } : {}),
+        ...(patch.tech_stack !== undefined ? { tech_stack: patch.tech_stack } : {}),
+        ...(patch.research_brief !== undefined ? { research_brief: patch.research_brief } : {}),
+        ...(patch.recommended_service !== undefined ? { recommended_service: patch.recommended_service } : {}),
+        ...(patch.fit_score !== undefined ? { fit_score: Math.max(0, Math.min(100, Number(patch.fit_score))) } : {}),
+        ...(patch.deal_value !== undefined ? { deal_value: Math.max(0, Number(patch.deal_value)) } : {}),
+        ...(patch.stage && validStages.includes(patch.stage) ? { stage: patch.stage } : {}),
+        ...(patch.proposal_subject !== undefined ? { proposal_subject: patch.proposal_subject } : {}),
+        ...(patch.proposal_body !== undefined ? { proposal_body: patch.proposal_body } : {}),
+        ...(patch.follow_up_sequence !== undefined ? { follow_up_sequence: patch.follow_up_sequence } : {}),
+        ...(patch.assigned_to !== undefined ? { assigned_to: patch.assigned_to } : {}),
+        ...(patch.next_followup_at !== undefined ? { next_followup_at: patch.next_followup_at } : {}),
+        updated_at: new Date().toISOString()
+      };
+
+      const saved = await upsertCrmLead(updated, token);
+      res.json({ lead: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update CRM lead' });
+    }
+  });
+
+  app.delete('/api/crm/leads/:id', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const ok = await deleteCrmLead(req.params.id, getBearerToken(req));
+      res.json({ ok });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to delete CRM lead' });
+    }
+  });
+
+  app.post('/api/crm/leads/:id/research', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const leads = await listCrmLeads(token);
+      const existing = leads.find((l) => l.id === req.params.id);
+      if (!existing) return res.status(404).json({ error: 'CRM lead not found.' });
+
+      const result = await runProspectResearchAndProposal(existing);
+      const updated: CrmLead = {
+        ...existing,
+        research_brief: result.research_brief,
+        recommended_service: result.recommended_service,
+        fit_score: result.fit_score,
+        deal_value: result.deal_value,
+        tech_stack: result.tech_stack,
+        proposal_subject: result.proposal_subject,
+        proposal_body: result.proposal_body,
+        follow_up_sequence: result.follow_up_sequence,
+        source_urls: result.source_urls,
+        stage: existing.stage === 'discovered' ? 'researched' : existing.stage,
+        updated_at: new Date().toISOString()
+      };
+      const saved = await upsertCrmLead(updated, token);
+      res.json({ lead: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Prospect research failed' });
+    }
+  });
+
+  app.post('/api/crm/leads/:id/send', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const leads = await listCrmLeads(token);
+      const existing = leads.find((l) => l.id === req.params.id);
+      if (!existing) return res.status(404).json({ error: 'CRM lead not found.' });
+
+      const {
+        channel,
+        recipient_email,
+        subject,
+        body,
+        step_number,
+        provider_message_id,
+        client_error
+      } = req.body as {
+        channel?: 'lark_mail' | 'gmail_api';
+        recipient_email?: string;
+        subject?: string;
+        body?: string;
+        step_number?: number;
+        provider_message_id?: string;
+        client_error?: string;
+      };
+
+      const targetEmail = (recipient_email || existing.email || '').trim().toLowerCase();
+      if (!targetEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(targetEmail)) {
+        return res.status(400).json({ error: 'A valid recipient email address is required before sending.' });
+      }
+      const cleanSubject = (subject || existing.proposal_subject || '').trim();
+      const cleanBody = (body || existing.proposal_body || '').trim();
+      if (!cleanSubject || !cleanBody) {
+        return res.status(400).json({ error: 'Subject and email body are required.' });
+      }
+
+      const sendChannel: 'lark_mail' | 'gmail_api' = channel === 'gmail_api' ? 'gmail_api' : 'lark_mail';
+      const now = new Date().toISOString();
+      let deliveryStatus: 'sent' | 'failed' = 'sent';
+      let messageId = provider_message_id || '';
+      let errorDetail = client_error || '';
+
+      if (sendChannel === 'lark_mail') {
+        const oauthRecord = await getCrmOAuthToken(req.editor!.userId, 'lark', token);
+        if (!oauthRecord || !oauthRecord.access_token) {
+          return res.status(400).json({
+            error: 'Lark Mail is not connected for your operator session. Connect Lark Mail first or select Gmail.'
+          });
+        }
+
+        let activeAccessToken = oauthRecord.access_token;
+        const expiresMs = new Date(oauthRecord.expires_at).getTime();
+        if (Number.isFinite(expiresMs) && expiresMs - Date.now() < 120_000 && oauthRecord.refresh_token) {
+          try {
+            const refreshed = await refreshLarkUserToken(oauthRecord.refresh_token);
+            activeAccessToken = refreshed.access_token;
+            await upsertCrmOAuthToken(
+              {
+                ...oauthRecord,
+                access_token: refreshed.access_token,
+                refresh_token: refreshed.refresh_token,
+                expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
+                updated_at: now
+              },
+              token
+            );
+          } catch (refreshErr) {
+            return res.status(401).json({
+              error:
+                refreshErr instanceof Error
+                  ? refreshErr.message
+                  : 'Lark session expired. Please reconnect Lark Mail.'
+            });
+          }
+        }
+
+        try {
+          const sent = await sendLarkMailMessage(activeAccessToken, {
+            toEmail: targetEmail,
+            toName: existing.contact_name,
+            subject: cleanSubject,
+            bodyText: cleanBody
+          });
+          messageId = sent.messageId;
+        } catch (sendErr) {
+          deliveryStatus = 'failed';
+          errorDetail = sendErr instanceof Error ? sendErr.message : 'Lark Mail dispatch failed';
+        }
+      } else {
+        if (client_error) {
+          deliveryStatus = 'failed';
+        } else if (!messageId) {
+          return res.status(400).json({
+            error: 'Gmail API dispatch requires client OAuth completion before logging.'
+          });
+        }
+      }
+
+      const stepLabel = step_number ? `Follow-Up Step ${step_number}` : 'Initial Proposal';
+      const logEntry: CrmOutreachLog = {
+        id: `crmlog-${crypto.randomUUID().slice(0, 8)}`,
+        lead_id: existing.id,
+        channel: sendChannel,
+        recipient_email: targetEmail,
+        subject: cleanSubject,
+        body: cleanBody,
+        provider_message_id: messageId,
+        status: deliveryStatus,
+        error_detail: errorDetail,
+        step_label: stepLabel,
+        sent_by: req.editor!.email,
+        sent_at: now
+      };
+      const savedLog = await addCrmOutreachLog(logEntry, token);
+
+      if (deliveryStatus === 'failed') {
+        return res.status(502).json({
+          error: errorDetail || 'Email delivery failed.',
+          log: savedLog,
+          lead: existing
+        });
+      }
+
+      const updatedSequence: CrmFollowUpStep[] = (existing.follow_up_sequence || []).map((step) =>
+        step_number && step.step_number === step_number ? { ...step, sent_at: now } : step
+      );
+      const nextUnsent = updatedSequence.find((s) => !s.sent_at);
+      const nextFollowupIso = nextUnsent
+        ? new Date(Date.now() + nextUnsent.delay_days * 86_400_000).toISOString()
+        : null;
+
+      let nextStage: CrmLeadStage = existing.stage;
+      if (existing.stage === 'discovered' || existing.stage === 'researched') {
+        nextStage = 'proposed';
+      } else if (existing.stage === 'proposed' && step_number) {
+        nextStage = 'follow_up';
+      }
+
+      const updatedLead = await upsertCrmLead(
+        {
+          ...existing,
+          email: targetEmail,
+          proposal_subject: step_number ? existing.proposal_subject : cleanSubject,
+          proposal_body: step_number ? existing.proposal_body : cleanBody,
+          follow_up_sequence: updatedSequence,
+          stage: nextStage,
+          last_contacted_at: now,
+          next_followup_at: nextFollowupIso,
+          updated_at: now
+        },
+        token
+      );
+
+      res.json({ lead: updatedLead, log: savedLog });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to dispatch CRM email' });
+    }
+  });
+
+  app.post('/api/crm/leads/:id/convert', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const leads = await listCrmLeads(token);
+      const existing = leads.find((l) => l.id === req.params.id);
+      if (!existing) return res.status(404).json({ error: 'CRM lead not found.' });
+
+      const now = new Date().toISOString();
+      let createdInquiry: ClientInquiry | null = null;
+      let createdWorkflow: UserWorkflowItem | null = null;
+
+      if (!existing.converted_inquiry_id) {
+        const refId = `GS-CRM-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+        const inquiry: ClientInquiry = {
+          id: refId,
+          reference_code: refId,
+          full_name: existing.contact_name,
+          company: existing.company_name,
+          work_email: existing.email || `client@${existing.company_domain || 'gitstack.io'}`,
+          service_interest: existing.recommended_service,
+          budget_range: `$${existing.deal_value.toLocaleString()}`,
+          timeline: 'Immediate Kickoff',
+          project_brief:
+            existing.research_brief ||
+            `Won CRM prospect (${existing.company_name}). Proposal sent: ${existing.proposal_subject}`,
+          status: 'scheduled',
+          assigned_to: existing.assigned_to || req.editor!.userId,
+          assigned_at: now,
+          created_at: now
+        };
+        createdInquiry = await createInquiry(inquiry);
+
+        const wf: UserWorkflowItem = {
+          id: `wf-${crypto.randomUUID().slice(0, 8)}`,
+          user_id: existing.assigned_to || req.editor!.userId,
+          assigned_by: req.editor!.userId,
+          title: `Client Kickoff: ${existing.company_name} (${existing.recommended_service})`,
+          description: `Prepare technical kickoff deck, SOW, and architecture workspace for ${existing.contact_name} (${existing.email}).`,
+          category: 'onboarding',
+          priority: 'high',
+          status: 'todo',
+          due_date: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
+          linked_entity_type: 'inquiry',
+          linked_entity_id: refId,
+          created_at: now,
+          updated_at: now
+        };
+        createdWorkflow = await createWorkflowItem(wf, token);
+      }
+
+      const updatedLead = await upsertCrmLead(
+        {
+          ...existing,
+          stage: 'won',
+          converted_inquiry_id: existing.converted_inquiry_id || createdInquiry?.id || null,
+          updated_at: now
+        },
+        token
+      );
+
+      res.json({ lead: updatedLead, inquiry: createdInquiry, workflowItem: createdWorkflow });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to convert lead to client' });
     }
   });
 

@@ -17,9 +17,13 @@ import type {
   ChatThreadStatus,
   ClientInquiry,
   CommentStatus,
+  CrmLead,
+  CrmOutreachLog,
   DirectoryUser,
+  DiscoveredProspectCandidate,
   InfrastructureMetricsResponse,
   InquiryStatus,
+  LarkConnectionStatus,
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
@@ -579,5 +583,89 @@ export const api = {
       '/api/reports/agent-daily/dispatch',
       { method: 'POST' }
     );
+  },
+
+  // --- Lark Open Platform OAuth & Apollo-Style CRM ---
+  async getLarkStatus() {
+    return request<LarkConnectionStatus>('/api/lark/status');
+  },
+
+  async getLarkAuthUrl() {
+    return request<{ url: string; redirectUri: string }>('/api/lark/auth-url');
+  },
+
+  async disconnectLark() {
+    return request<{ ok: boolean }>('/api/lark/disconnect', { method: 'DELETE' });
+  },
+
+  async discoverCrmLeads(query: string, mode: 'auto' | 'github' | 'website' = 'auto') {
+    return request<{ candidates: DiscoveredProspectCandidate[]; sourcesChecked: string[] }>(
+      '/api/crm/discover',
+      {
+        method: 'POST',
+        body: JSON.stringify({ query, mode })
+      }
+    );
+  },
+
+  async listCrmLeads() {
+    return request<{ leads: CrmLead[]; logs: CrmOutreachLog[] }>('/api/crm/leads');
+  },
+
+  async createCrmLead(payload: Partial<CrmLead>) {
+    return request<{ lead: CrmLead }>('/api/crm/leads', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async updateCrmLead(id: string, payload: Partial<CrmLead>) {
+    return request<{ lead: CrmLead }>(`/api/crm/leads/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteCrmLead(id: string) {
+    return request<{ ok: boolean }>(`/api/crm/leads/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async researchCrmLead(id: string) {
+    return request<{ lead: CrmLead }>(`/api/crm/leads/${encodeURIComponent(id)}/research`, {
+      method: 'POST'
+    });
+  },
+
+  async sendCrmProposal(
+    id: string,
+    payload: {
+      channel: 'lark_mail' | 'gmail_api';
+      recipient_email: string;
+      subject: string;
+      body: string;
+      step_number?: number;
+      provider_message_id?: string;
+      client_error?: string;
+    }
+  ) {
+    return request<{ lead: CrmLead; log: CrmOutreachLog }>(
+      `/api/crm/leads/${encodeURIComponent(id)}/send`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async convertCrmLeadToWon(id: string) {
+    return request<{
+      lead: CrmLead;
+      inquiry: ClientInquiry | null;
+      workflowItem: UserWorkflowItem | null;
+    }>(`/api/crm/leads/${encodeURIComponent(id)}/convert`, {
+      method: 'POST'
+    });
   }
 };

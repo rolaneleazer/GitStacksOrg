@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   BarChart3,
   Bot,
+  Briefcase,
   CheckCircle2,
   Copy,
   Download,
@@ -30,6 +31,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
+import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
@@ -80,6 +82,7 @@ interface StudioPageProps {
 
 type StudioTab =
   | 'agents'
+  | 'crm'
   | 'pages'
   | 'branding'
   | 'inbox'
@@ -95,6 +98,7 @@ type StudioTab =
 const ROLE_TABS: Record<UserRole, StudioTab[]> = {
   super_admin: [
     'agents',
+    'crm',
     'pages',
     'branding',
     'inbox',
@@ -107,7 +111,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'adsense',
     'profile'
   ],
-  editor: ['agents', 'pages', 'articles', 'workflows', 'analytics', 'resources', 'profile'],
+  editor: ['agents', 'crm', 'pages', 'articles', 'workflows', 'analytics', 'resources', 'profile'],
   support_agent: ['inbox', 'chat', 'workflows', 'resources', 'profile']
 };
 
@@ -927,6 +931,7 @@ export function StudioPage({
     count?: number;
   }[] = [
     { id: 'agents', label: 'Overview & 7 Agents', icon: Bot, count: agents.length || 7 },
+    { id: 'crm', label: 'CRM & Prospecting', icon: Briefcase },
     { id: 'pages', label: 'Page Content Editor', icon: FileEdit },
     { id: 'branding', label: 'Branding & Theme', icon: Palette },
     { id: 'inbox', label: 'Gmail & Lead Inbox', icon: Mail, count: inquiries.length },
@@ -1121,6 +1126,20 @@ export function StudioPage({
               onCreateTask={handleCreateAgentTask}
               onToggleTask={handleToggleAgentTask}
               onDeleteTask={handleDeleteAgentTask}
+            />
+          )}
+
+          {/* PANEL 1B: APOLLO-STYLE CRM, OPEN-SOURCE LEAD FINDER & LARK MAIL */}
+          {currentTab === 'crm' && (
+            <CrmProspectingPanel
+              onDealWon={({ inquiry, workflowItem }) => {
+                if (inquiry) {
+                  setInquiries((prev) => [inquiry, ...prev]);
+                }
+                if (workflowItem) {
+                  setWorkflows((prev) => [workflowItem, ...prev]);
+                }
+              }}
             />
           )}
 

@@ -409,3 +409,111 @@ VALUES (
   '/contact'
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- 13. Virtual Office HQ Customizable Agent Profiles
+CREATE TABLE IF NOT EXISTS public.agent_office_profiles (
+  agent_id TEXT PRIMARY KEY CHECK (agent_id IN ('marketing', 'ceo', 'booking', 'cybersecurity', 'qa', 'adsense', 'traffic')),
+  display_name TEXT NOT NULL,
+  custom_role TEXT NOT NULL,
+  avatar_icon TEXT NOT NULL DEFAULT 'bot',
+  accent_color TEXT NOT NULL DEFAULT '#1E40AF',
+  desk_label TEXT NOT NULL DEFAULT 'Operations Desk',
+  desk_x NUMERIC NOT NULL DEFAULT 5,
+  desk_y NUMERIC NOT NULL DEFAULT 5,
+  work_status TEXT NOT NULL CHECK (work_status IN ('working', 'walking', 'idle')) DEFAULT 'working',
+  current_mission TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 14. Agent Live Conversation & Inter-Agent Handoff Feed
+CREATE TABLE IF NOT EXISTS public.agent_conversations (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL CHECK (agent_id IN ('marketing', 'ceo', 'booking', 'cybersecurity', 'qa', 'adsense', 'traffic')),
+  peer_agent_id TEXT,
+  sender_type TEXT NOT NULL CHECK (sender_type IN ('agent', 'operator', 'handoff', 'system')) DEFAULT 'agent',
+  sender_name TEXT NOT NULL,
+  message TEXT NOT NULL,
+  finding_status TEXT NOT NULL CHECK (finding_status IN ('nominal', 'attention', 'critical', 'info')) DEFAULT 'info',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_conversations_agent ON public.agent_conversations (agent_id, created_at DESC);
+
+-- 15. Daily Agent Email Report Settings (Singleton id = 'default')
+CREATE TABLE IF NOT EXISTS public.agent_report_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  recipient_email TEXT NOT NULL DEFAULT 'gitstackitsolution@gmail.com',
+  send_hour_utc INTEGER NOT NULL DEFAULT 8,
+  preferred_channel TEXT NOT NULL CHECK (preferred_channel IN ('gmail', 'resend')) DEFAULT 'gmail',
+  include_agents JSONB NOT NULL DEFAULT '["ceo","marketing","booking","cybersecurity","qa","adsense","traffic"]'::jsonb,
+  last_sent_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 16. Immutable Daily Agent Email Delivery Proof Log
+CREATE TABLE IF NOT EXISTS public.agent_email_reports (
+  id TEXT PRIMARY KEY,
+  recipient_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('gmail_api', 'resend_api', 'cron_dispatch')) DEFAULT 'gmail_api',
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('manual', 'daily_cron')) DEFAULT 'manual',
+  status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'skipped_unconfigured')) DEFAULT 'sent',
+  provider_message_id TEXT NOT NULL DEFAULT '',
+  provider_thread_id TEXT NOT NULL DEFAULT '',
+  overall_score INTEGER NOT NULL DEFAULT 0,
+  agent_snapshots JSONB NOT NULL DEFAULT '[]'::jsonb,
+  body_text TEXT NOT NULL,
+  proof_hash TEXT NOT NULL,
+  error_detail TEXT NOT NULL DEFAULT '',
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_email_reports_sent ON public.agent_email_reports (sent_at DESC);
+
+GRANT ALL ON public.agent_office_profiles, public.agent_conversations, public.agent_report_settings, public.agent_email_reports TO authenticated, service_role;
+
+ALTER TABLE public.agent_office_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_report_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_email_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated team manage agent office profiles" ON public.agent_office_profiles;
+CREATE POLICY "Authenticated team manage agent office profiles"
+  ON public.agent_office_profiles FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage agent conversations" ON public.agent_conversations;
+CREATE POLICY "Authenticated team manage agent conversations"
+  ON public.agent_conversations FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage report settings" ON public.agent_report_settings;
+CREATE POLICY "Authenticated team manage report settings"
+  ON public.agent_report_settings FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage email reports" ON public.agent_email_reports;
+CREATE POLICY "Authenticated team manage email reports"
+  ON public.agent_email_reports FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+INSERT INTO public.agent_report_settings (
+  id,
+  enabled,
+  recipient_email,
+  send_hour_utc,
+  preferred_channel
+)
+VALUES (
+  'default',
+  TRUE,
+  'gitstackitsolution@gmail.com',
+  8,
+  'gmail'
+)
+ON CONFLICT (id) DO NOTHING;

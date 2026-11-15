@@ -1,7 +1,12 @@
 import type {
   AdSenseSettings,
+  AgentConversationEntry,
+  AgentEmailReport,
   AgentId,
+  AgentOfficeProfile,
   AgentReport,
+  AgentReportSettings,
+  AgentSnapshotItem,
   AgentTask,
   AnalyticsEventType,
   AnalyticsSummary,
@@ -483,5 +488,96 @@ export const api = {
 
   async getInfrastructureMetrics() {
     return request<InfrastructureMetricsResponse>('/api/infrastructure/metrics');
+  },
+
+  // --- Virtual Office HQ & Daily Agent Email Proof Reports ---
+  async getAgentsOffice() {
+    return request<{
+      profiles: AgentOfficeProfile[];
+      conversations: AgentConversationEntry[];
+    }>('/api/agents/office');
+  },
+
+  async updateAgentOfficeProfile(
+    agentId: AgentId,
+    payload: Partial<AgentOfficeProfile>
+  ) {
+    return request<{ profile: AgentOfficeProfile }>(
+      `/api/agents/office/${encodeURIComponent(agentId)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async triggerOfficeShift(action: 'all_hands' | 'lounge') {
+    return request<{ profiles: AgentOfficeProfile[]; entry: AgentConversationEntry }>(
+      '/api/agents/office/shift',
+      {
+        method: 'POST',
+        body: JSON.stringify({ action })
+      }
+    );
+  },
+
+  async sendAgentConversation(payload: {
+    agent_id: AgentId;
+    peer_agent_id?: AgentId | null;
+    message: string;
+    sender_type?: 'operator' | 'handoff';
+  }) {
+    return request<{ entries: AgentConversationEntry[] }>('/api/agents/conversations', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getDailyAgentReports() {
+    return request<{
+      settings: AgentReportSettings;
+      reports: AgentEmailReport[];
+      preview: {
+        subject: string;
+        bodyText: string;
+        overallScore: number;
+        snapshots: AgentSnapshotItem[];
+      };
+    }>('/api/reports/agent-daily');
+  },
+
+  async saveDailyReportSettings(payload: Partial<AgentReportSettings>) {
+    return request<{ settings: AgentReportSettings }>('/api/reports/agent-daily/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async logGmailAgentReport(payload: {
+    recipient_email: string;
+    subject: string;
+    body_text: string;
+    provider_message_id: string;
+    provider_thread_id?: string;
+    status: 'sent' | 'failed' | 'skipped_unconfigured';
+    overall_score: number;
+    agent_snapshots: AgentSnapshotItem[];
+    error_detail?: string;
+  }) {
+    return request<{ report: AgentEmailReport }>('/api/reports/agent-daily/log', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        channel: 'gmail_api',
+        trigger_type: 'manual'
+      })
+    });
+  },
+
+  async dispatchServerAgentReport() {
+    return request<{ report: AgentEmailReport; deliveredViaServer: boolean }>(
+      '/api/reports/agent-daily/dispatch',
+      { method: 'POST' }
+    );
   }
 };

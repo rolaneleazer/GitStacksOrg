@@ -5,13 +5,26 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { buildAllAgentReports } from '../shared/agentEngine.ts';
+import {
+  AGENT_COLLABORATION_MAP,
+  composeDailyAgentDigest,
+  DEFAULT_AGENT_OFFICE_PROFILES
+} from '../shared/agentOfficeDefaults.ts';
 import { validatePageContentForAdSense } from '../shared/pageDefaults.ts';
 import { evaluateArticleQuality, slugify } from '../shared/qualityGate.ts';
 import { DEFAULT_BRANDING, normalizeHexColor } from '../shared/themePresets.ts';
 import type {
   AdSenseSettings,
+  AgentAvatarIcon,
+  AgentConversationEntry,
+  AgentEmailReport,
   AgentId,
+  AgentOfficeProfile,
+  AgentReport,
+  AgentReportSettings,
+  AgentSnapshotItem,
   AgentTask,
+  AgentWorkStatus,
   AnalyticsEventType,
   Article,
   ArticleComment,
@@ -36,12 +49,14 @@ import type {
 } from '../shared/types.ts';
 import { collectInfrastructureMetrics } from './infrastructure.ts';
 import {
+  addAgentConversation,
   addChatMessage,
   addSubscriber,
   assignChatThread,
   assignInquiry,
   autoMigrateSupabaseSchema,
   autoSeedSupabaseIfEmpty,
+  bulkUpdateAgentWorkStatus,
   checkSupabaseTablesReady,
   createChatThread,
   createComment,
@@ -53,11 +68,15 @@ import {
   deleteTeamUser,
   deleteWorkflowItem,
   getAdSenseSettings,
+  getAgentReportSettings,
   getAnalyticsSummary,
   getPostBySlug,
   getSupabaseAutomationMode,
   getSupabaseUrl,
   isSupabaseConfigured,
+  listAgentConversations,
+  listAgentEmailReports,
+  listAgentOfficeProfiles,
   listAgentTasks,
   listChatMessages,
   listChatThreads,
@@ -70,8 +89,10 @@ import {
   listUserDirectory,
   listUserProfiles,
   listWorkflowItems,
+  recordAgentEmailReport,
   recordAnalyticsEvent,
   saveAdSenseSettings,
+  saveAgentReportSettings,
   saveRoutingRules,
   seedStarterDataToSupabase,
   signInEditor,
@@ -81,6 +102,7 @@ import {
   updateMyUserProfile,
   updateTeamUser,
   updateWorkflowItem,
+  upsertAgentOfficeProfile,
   upsertAgentTask,
   upsertPageContent,
   upsertPost,
@@ -1054,53 +1076,598 @@ export async function createApp(): Promise<Express> {
     }
   });
 
-  // --- Back Office 7 Deterministic Agents & Tasks ---
+  // --- Back Office 7 Deterministic Agents, Virtual Office HQ & Daily Reports ---
+
+  const VALID_AGENT_IDS: AgentId[] = [
+    'marketing',
+    'ceo',
+    'booking',
+    'cybersecurity',
+    'qa',
+    'adsense',
+    'traffic'
+  ];
+
+  async function computeServerAgentContext(token?: string) {
+    const [
+      posts,
+      comments,
+      inquiries,
+      subscribers,
+      settings,
+      pageContents,
+      chatThreads,
+      analytics,
+      tasks,
+      profiles,
+      supabaseTablesReady
+    ] = await Promise.all([
+      listPosts(true, token),
+      listComments(null, true, token),
+      listInquiries(token),
+      listSubscribers(token),
+      getAdSenseSettings(),
+      listPageContents(),
+      listChatThreads(token),
+      getAnalyticsSummary(14, token),
+      listAgentTasks(token),
+      listAgentOfficeProfiles(token),
+      checkSupabaseTablesReady()
+    ]);
+
+    const publishedPosts = posts.filter((p) => p.status === 'published');
+    const siteAudit = buildSiteAuditReport(publishedPosts, settings);
+    const agents = buildAllAgentReports({
+      posts,
+      comments,
+      inquiries,
+      subscribers,
+      settings,
+      siteAudit,
+      pageContents,
+      chatThreads,
+      analytics,
+      supabaseTablesReady
+    });
+
+    return { agents, tasks, profiles, siteAudit };
+  }
+
+  function computeReportProofHash(input: {
+    recipient_email: string;
+    subject: string;
+    channel: string;
+    provider_message_id: string;
+    sent_at: string;
+    overall_score: number;
+    body_text: string;
+  }): string {
+    const canonical = JSON.stringify({
+      recipient_email: input.recipient_email,
+      subject: input.subject,
+      channel: input.channel,
+      provider_message_id: input.provider_message_id,
+      sent_at: input.sent_at,
+      overall_score: input.overall_score,
+      body_text: input.body_text
+    });
+    return crypto.createHash('sha256').update(canonical).digest('hex');
+  }
+
+  function buildDeterministicAgentReply(
+    agent: AgentReport,
+    profile: AgentOfficeProfile,
+    tasks: AgentTask[],
+    operatorMessage: string,
+    peerAgent?: { report: AgentReport; profile: AgentOfficeProfile }
+  ): { text: string; status: AgentConversationEntry['finding_status'] } {
+    const agentTasks = tasks.filter((t) => t.agent_id === agent.id && !t.completed);
+    const flagged = agent.checks.filter((c) => c.status !== 'pass');
+    const q = operatorMessage.toLowerCase();
+
+    if (peerAgent) {
+      const peerFlagged = peerAgent.report.checks.filter((c) => c.status !== 'pass');
+      const findingStatus: AgentConversationEntry['finding_status'] =
+        peerAgent.report.status === 'critical'
+          ? 'critical'
+          : peerAgent.report.status === 'attention'
+            ? 'attention'
+            : 'nominal';
+      return {
+        text: `Handoff received by ${peerAgent.profile.display_name} (${peerAgent.report.score}% health). ${
+          peerFlagged.length > 0
+            ? `Active priority: ${peerFlagged[0].label} (${peerFlagged[0].metric}) — ${peerFlagged[0].detail}`
+            : `All ${peerAgent.report.checks.length} checks nominal. Desk mission aligned with ${profile.display_name}.`
+        }`,
+        status: findingStatus
+      };
+    }
+
+    if (q.includes('task') || q.includes('todo') || q.includes('checklist')) {
+      const taskSummary =
+        agentTasks.length > 0
+          ? agentTasks
+              .slice(0, 3)
+              .map((t) => `[${t.priority.toUpperCase()}] ${t.title}`)
+              .join('; ')
+          : 'Zero open action items in queue.';
+      return {
+        text: `${profile.display_name} currently tracks ${agentTasks.length} open task(s): ${taskSummary}`,
+        status: agentTasks.length > 0 ? 'info' : 'nominal'
+      };
+    }
+
+    if (flagged.length > 0) {
+      const top = flagged[0];
+      return {
+        text: `${profile.display_name} live telemetry (${agent.score}%): ${flagged.length} item(s) need attention. Top check: ${top.label} (${top.metric}) — ${top.detail}`,
+        status: top.status === 'fail' ? 'critical' : 'attention'
+      };
+    }
+
+    return {
+      text: `${profile.display_name} station nominal at ${agent.score}%. All ${agent.checks.length} deterministic checks passing under mission "${profile.current_mission}".`,
+      status: 'nominal'
+    };
+  }
+
+  async function executeServerReportDispatch(
+    triggerType: 'manual' | 'daily_cron',
+    token?: string
+  ): Promise<{ report: AgentEmailReport; deliveredViaServer: boolean }> {
+    const [ctx, settings] = await Promise.all([
+      computeServerAgentContext(token),
+      getAgentReportSettings(token)
+    ]);
+
+    const nowIso = new Date().toISOString();
+    const digest = composeDailyAgentDigest({
+      agents: ctx.agents,
+      tasks: ctx.tasks,
+      profiles: ctx.profiles,
+      includeAgents: settings.include_agents,
+      recipientEmail: settings.recipient_email,
+      generatedAt: nowIso
+    });
+
+    const resendKey = process.env.RESEND_API_KEY?.trim();
+    const fromEmail = process.env.RESEND_FROM_EMAIL?.trim() || 'GitStack Agents <onboarding@resend.dev>';
+
+    let status: AgentEmailReport['status'] = 'skipped_unconfigured';
+    let channel: AgentEmailReport['channel'] = 'cron_dispatch';
+    let providerMessageId = '';
+    let errorDetail = '';
+    let deliveredViaServer = false;
+
+    if (resendKey) {
+      channel = triggerType === 'daily_cron' ? 'cron_dispatch' : 'resend_api';
+      try {
+        const resendRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${resendKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: [settings.recipient_email],
+            subject: digest.subject,
+            text: digest.bodyText
+          })
+        });
+        const payload = (await resendRes.json().catch(() => ({}))) as {
+          id?: string;
+          message?: string;
+          error?: { message?: string };
+        };
+        if (resendRes.ok && payload.id) {
+          status = 'sent';
+          providerMessageId = payload.id;
+          deliveredViaServer = true;
+        } else {
+          status = 'failed';
+          errorDetail =
+            payload.message || payload.error?.message || `Resend returned HTTP ${resendRes.status}.`;
+        }
+      } catch (err) {
+        status = 'failed';
+        errorDetail = err instanceof Error ? err.message : 'Resend network delivery error.';
+      }
+    } else {
+      errorDetail =
+        'RESEND_API_KEY is not configured for unattended background cron email sending. Use "Send via Gmail Now" in Back Office or configure RESEND_API_KEY in Vercel environment variables.';
+    }
+
+    const proofHash = computeReportProofHash({
+      recipient_email: settings.recipient_email,
+      subject: digest.subject,
+      channel,
+      provider_message_id: providerMessageId,
+      sent_at: nowIso,
+      overall_score: digest.overallScore,
+      body_text: digest.bodyText
+    });
+
+    const saved = await recordAgentEmailReport(
+      {
+        id: `rep-${crypto.randomUUID().slice(0, 8)}`,
+        recipient_email: settings.recipient_email,
+        subject: digest.subject,
+        channel,
+        trigger_type: triggerType,
+        status,
+        provider_message_id: providerMessageId,
+        provider_thread_id: '',
+        overall_score: digest.overallScore,
+        agent_snapshots: digest.snapshots,
+        body_text: digest.bodyText,
+        proof_hash: proofHash,
+        error_detail: errorDetail,
+        sent_at: nowIso
+      },
+      token
+    );
+
+    return { report: saved, deliveredViaServer };
+  }
 
   app.get('/api/agents/overview', requireEditor, async (req, res) => {
     try {
-      const token = getBearerToken(req);
-      const [
-        posts,
-        comments,
-        inquiries,
-        subscribers,
-        settings,
-        pageContents,
-        chatThreads,
-        analytics,
-        tasks,
-        supabaseTablesReady
-      ] = await Promise.all([
-        listPosts(true, token),
-        listComments(null, true, token),
-        listInquiries(token),
-        listSubscribers(token),
-        getAdSenseSettings(),
-        listPageContents(),
-        listChatThreads(token),
-        getAnalyticsSummary(14, token),
-        listAgentTasks(token),
-        checkSupabaseTablesReady()
-      ]);
-
-      const publishedPosts = posts.filter((p) => p.status === 'published');
-      const siteAudit = buildSiteAuditReport(publishedPosts, settings);
-      const agents = buildAllAgentReports({
-        posts,
-        comments,
-        inquiries,
-        subscribers,
-        settings,
-        siteAudit,
-        pageContents,
-        chatThreads,
-        analytics,
-        supabaseTablesReady
-      });
-
-      res.json({ agents, tasks });
+      const ctx = await computeServerAgentContext(getBearerToken(req));
+      res.json({ agents: ctx.agents, tasks: ctx.tasks });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to evaluate agents' });
+    }
+  });
+
+  app.get('/api/agents/office', requireEditor, async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const [profiles, conversations] = await Promise.all([
+        listAgentOfficeProfiles(token),
+        listAgentConversations(token)
+      ]);
+      res.json({ profiles, conversations });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load Virtual Office HQ' });
+    }
+  });
+
+  app.put('/api/agents/office/:agentId', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const agentId = req.params.agentId as AgentId;
+      if (!VALID_AGENT_IDS.includes(agentId)) {
+        return res.status(400).json({ error: 'Invalid agent ID.' });
+      }
+      const token = getBearerToken(req);
+      const existingList = await listAgentOfficeProfiles(token);
+      const current =
+        existingList.find((p) => p.agent_id === agentId) ||
+        DEFAULT_AGENT_OFFICE_PROFILES.find((p) => p.agent_id === agentId)!;
+
+      const payload = req.body as Partial<AgentOfficeProfile>;
+      const validIcons: AgentAvatarIcon[] = [
+        'megaphone',
+        'crown',
+        'calendar',
+        'shield',
+        'check',
+        'badge',
+        'trending',
+        'bot',
+        'cpu'
+      ];
+      const validStatuses: AgentWorkStatus[] = ['working', 'walking', 'idle'];
+
+      const updated: AgentOfficeProfile = {
+        agent_id: agentId,
+        display_name:
+          payload.display_name !== undefined
+            ? payload.display_name.trim().slice(0, 48) || current.display_name
+            : current.display_name,
+        custom_role:
+          payload.custom_role !== undefined
+            ? payload.custom_role.trim().slice(0, 90) || current.custom_role
+            : current.custom_role,
+        avatar_icon:
+          payload.avatar_icon && validIcons.includes(payload.avatar_icon)
+            ? payload.avatar_icon
+            : current.avatar_icon,
+        accent_color:
+          payload.accent_color !== undefined
+            ? normalizeHexColor(payload.accent_color, current.accent_color)
+            : current.accent_color,
+        desk_label:
+          payload.desk_label !== undefined
+            ? payload.desk_label.trim().slice(0, 48) || current.desk_label
+            : current.desk_label,
+        desk_x:
+          typeof payload.desk_x === 'number' && Number.isFinite(payload.desk_x)
+            ? Math.max(1, Math.min(11.5, Number(payload.desk_x.toFixed(1))))
+            : current.desk_x,
+        desk_y:
+          typeof payload.desk_y === 'number' && Number.isFinite(payload.desk_y)
+            ? Math.max(0.8, Math.min(6.8, Number(payload.desk_y.toFixed(1))))
+            : current.desk_y,
+        work_status:
+          payload.work_status && validStatuses.includes(payload.work_status)
+            ? payload.work_status
+            : current.work_status,
+        current_mission:
+          payload.current_mission !== undefined
+            ? payload.current_mission.trim().slice(0, 200)
+            : current.current_mission,
+        updated_at: new Date().toISOString()
+      };
+
+      const saved = await upsertAgentOfficeProfile(updated, token);
+      res.json({ profile: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update agent profile' });
+    }
+  });
+
+  app.post('/api/agents/office/shift', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const { action } = req.body as { action?: 'all_hands' | 'lounge' };
+      if (action !== 'all_hands' && action !== 'lounge') {
+        return res.status(400).json({ error: 'action must be all_hands or lounge.' });
+      }
+      const token = getBearerToken(req);
+      const targetStatus: AgentWorkStatus = action === 'all_hands' ? 'working' : 'idle';
+      const profiles = await bulkUpdateAgentWorkStatus(targetStatus, token);
+      const entry = await addAgentConversation(
+        {
+          id: `ac-${crypto.randomUUID().slice(0, 8)}`,
+          agent_id: 'ceo',
+          peer_agent_id: null,
+          sender_type: 'system',
+          sender_name: req.editor?.profile.full_name || 'Operator Shift Control',
+          message:
+            action === 'all_hands'
+              ? 'All-Hands Shift dispatched: all 7 operational agents routed to their HQ stations.'
+              : 'Lounge Break active: all 7 agents resting in the Pantry & Lounge.',
+          finding_status: 'info',
+          created_at: new Date().toISOString()
+        },
+        token
+      );
+      res.json({ profiles, entry });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to trigger shift' });
+    }
+  });
+
+  app.post('/api/agents/conversations', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const { agent_id, peer_agent_id, message, sender_type } = req.body as {
+        agent_id?: AgentId;
+        peer_agent_id?: AgentId | null;
+        message?: string;
+        sender_type?: 'operator' | 'handoff';
+      };
+      if (!agent_id || !VALID_AGENT_IDS.includes(agent_id) || !message?.trim()) {
+        return res.status(400).json({ error: 'Valid agent_id and message are required.' });
+      }
+
+      const token = getBearerToken(req);
+      const ctx = await computeServerAgentContext(token);
+      const agentReport = ctx.agents.find((a) => a.id === agent_id)!;
+      const agentProfile =
+        ctx.profiles.find((p) => p.agent_id === agent_id) ||
+        DEFAULT_AGENT_OFFICE_PROFILES.find((p) => p.agent_id === agent_id)!;
+
+      const safePeerId =
+        peer_agent_id && VALID_AGENT_IDS.includes(peer_agent_id)
+          ? peer_agent_id
+          : sender_type === 'handoff'
+            ? AGENT_COLLABORATION_MAP[agent_id][0] || null
+            : null;
+      const peerReport = safePeerId ? ctx.agents.find((a) => a.id === safePeerId) : undefined;
+      const peerProfile = safePeerId
+        ? ctx.profiles.find((p) => p.agent_id === safePeerId)
+        : undefined;
+
+      const now = Date.now();
+      const firstEntry = await addAgentConversation(
+        {
+          id: `ac-${crypto.randomUUID().slice(0, 8)}`,
+          agent_id,
+          peer_agent_id: safePeerId,
+          sender_type: sender_type === 'handoff' ? 'handoff' : 'operator',
+          sender_name:
+            sender_type === 'handoff'
+              ? agentProfile.display_name
+              : req.editor?.profile.full_name || req.editor?.email || 'GitStack Operator',
+          message: message.trim().slice(0, 500),
+          finding_status: 'info',
+          created_at: new Date(now).toISOString()
+        },
+        token
+      );
+
+      const replyData = buildDeterministicAgentReply(
+        agentReport,
+        agentProfile,
+        ctx.tasks,
+        message.trim(),
+        peerReport && peerProfile ? { report: peerReport, profile: peerProfile } : undefined
+      );
+
+      const replyEntry = await addAgentConversation(
+        {
+          id: `ac-${crypto.randomUUID().slice(0, 8)}`,
+          agent_id: peerProfile ? peerProfile.agent_id : agent_id,
+          peer_agent_id: peerProfile ? agent_id : null,
+          sender_type: 'agent',
+          sender_name: peerProfile ? peerProfile.display_name : agentProfile.display_name,
+          message: replyData.text,
+          finding_status: replyData.status,
+          created_at: new Date(now + 400).toISOString()
+        },
+        token
+      );
+
+      res.status(201).json({ entries: [replyEntry, firstEntry] });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to log agent conversation' });
+    }
+  });
+
+  app.get('/api/reports/agent-daily', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const [settings, reports, ctx] = await Promise.all([
+        getAgentReportSettings(token),
+        listAgentEmailReports(token),
+        computeServerAgentContext(token)
+      ]);
+      const preview = composeDailyAgentDigest({
+        agents: ctx.agents,
+        tasks: ctx.tasks,
+        profiles: ctx.profiles,
+        includeAgents: settings.include_agents,
+        recipientEmail: settings.recipient_email
+      });
+      res.json({ settings, reports, preview });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load daily agent reports' });
+    }
+  });
+
+  app.put('/api/reports/agent-daily/settings', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const current = await getAgentReportSettings(token);
+      const payload = req.body as Partial<AgentReportSettings>;
+
+      const nextRecipient =
+        payload.recipient_email !== undefined ? payload.recipient_email.trim() : current.recipient_email;
+      if (!isValidEmail(nextRecipient)) {
+        return res.status(400).json({ error: 'Please enter a valid recipient email address.' });
+      }
+
+      const hourNum =
+        payload.send_hour_utc !== undefined ? Number(payload.send_hour_utc) : current.send_hour_utc;
+      const sendHour = Number.isInteger(hourNum) && hourNum >= 0 && hourNum <= 23 ? hourNum : current.send_hour_utc;
+
+      const filteredAgents = Array.isArray(payload.include_agents)
+        ? payload.include_agents.filter((id): id is AgentId => VALID_AGENT_IDS.includes(id))
+        : current.include_agents;
+
+      const next: AgentReportSettings = {
+        id: 'default',
+        enabled: payload.enabled !== undefined ? Boolean(payload.enabled) : current.enabled,
+        recipient_email: nextRecipient,
+        send_hour_utc: sendHour,
+        preferred_channel:
+          payload.preferred_channel === 'resend' || payload.preferred_channel === 'gmail'
+            ? payload.preferred_channel
+            : current.preferred_channel,
+        include_agents: filteredAgents.length > 0 ? filteredAgents : VALID_AGENT_IDS,
+        last_sent_at: current.last_sent_at,
+        updated_at: new Date().toISOString()
+      };
+
+      const saved = await saveAgentReportSettings(next, token);
+      res.json({ settings: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save report settings' });
+    }
+  });
+
+  app.post('/api/reports/agent-daily/log', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const payload = req.body as Partial<AgentEmailReport>;
+      if (!payload.recipient_email || !isValidEmail(payload.recipient_email)) {
+        return res.status(400).json({ error: 'Valid recipient_email is required.' });
+      }
+      if (!payload.subject?.trim() || !payload.body_text?.trim()) {
+        return res.status(400).json({ error: 'Report subject and body_text are required.' });
+      }
+      const sentAt = new Date().toISOString();
+      const channel =
+        payload.channel === 'resend_api' || payload.channel === 'cron_dispatch'
+          ? payload.channel
+          : 'gmail_api';
+      const status =
+        payload.status === 'failed' || payload.status === 'skipped_unconfigured'
+          ? payload.status
+          : 'sent';
+      const providerMessageId = (payload.provider_message_id || '').trim();
+      const overallScore = Number.isFinite(Number(payload.overall_score))
+        ? Math.max(0, Math.min(100, Math.round(Number(payload.overall_score))))
+        : 0;
+
+      const proofHash = computeReportProofHash({
+        recipient_email: payload.recipient_email.trim(),
+        subject: payload.subject.trim(),
+        channel,
+        provider_message_id: providerMessageId,
+        sent_at: sentAt,
+        overall_score: overallScore,
+        body_text: payload.body_text
+      });
+
+      const saved = await recordAgentEmailReport(
+        {
+          id: `rep-${crypto.randomUUID().slice(0, 8)}`,
+          recipient_email: payload.recipient_email.trim(),
+          subject: payload.subject.trim(),
+          channel,
+          trigger_type: payload.trigger_type === 'daily_cron' ? 'daily_cron' : 'manual',
+          status,
+          provider_message_id: providerMessageId,
+          provider_thread_id: (payload.provider_thread_id || '').trim(),
+          overall_score: overallScore,
+          agent_snapshots: Array.isArray(payload.agent_snapshots)
+            ? (payload.agent_snapshots as AgentSnapshotItem[])
+            : [],
+          body_text: payload.body_text,
+          proof_hash: proofHash,
+          error_detail: (payload.error_detail || '').trim(),
+          sent_at: sentAt
+        },
+        getBearerToken(req)
+      );
+
+      res.status(201).json({ report: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to log email proof' });
+    }
+  });
+
+  app.post('/api/reports/agent-daily/dispatch', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const result = await executeServerReportDispatch('manual', getBearerToken(req));
+      res.status(201).json(result);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to dispatch server report' });
+    }
+  });
+
+  app.get('/api/cron/daily-agent-report', async (req, res) => {
+    try {
+      const cronSecret = process.env.CRON_SECRET?.trim();
+      if (cronSecret) {
+        const authHeader = req.headers.authorization || '';
+        const querySecret = typeof req.query.secret === 'string' ? req.query.secret : '';
+        if (authHeader !== `Bearer ${cronSecret}` && querySecret !== cronSecret) {
+          return res.status(401).json({ error: 'Invalid cron authorization.' });
+        }
+      }
+      const settings = await getAgentReportSettings();
+      if (!settings.enabled) {
+        return res.json({
+          ok: true,
+          skipped: true,
+          reason: 'Daily agent reporting is disabled in Back Office settings.'
+        });
+      }
+      const result = await executeServerReportDispatch('daily_cron');
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Daily cron dispatch failed' });
     }
   });
 

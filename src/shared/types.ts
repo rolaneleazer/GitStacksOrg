@@ -403,3 +403,81 @@ export interface InfrastructureMetricsResponse {
   alerts: InfrastructureAlert[];
 }
 
+// --- Virtual Office HQ & Daily Agent Email Reports ---
+
+export type AgentWorkStatus = 'working' | 'walking' | 'idle';
+export type AgentAvatarIcon =
+  | 'megaphone'
+  | 'crown'
+  | 'calendar'
+  | 'shield'
+  | 'check'
+  | 'badge'
+  | 'trending'
+  | 'bot'
+  | 'cpu';
+
+export interface AgentOfficeProfile {
+  agent_id: AgentId;
+  display_name: string;
+  custom_role: string;
+  avatar_icon: AgentAvatarIcon;
+  accent_color: string;
+  desk_label: string;
+  desk_x: number;
+  desk_y: number;
+  work_status: AgentWorkStatus;
+  current_mission: string;
+  updated_at: string;
+}
+
+export interface AgentConversationEntry {
+  id: string;
+  agent_id: AgentId;
+  peer_agent_id: AgentId | null;
+  sender_type: 'agent' | 'operator' | 'handoff' | 'system';
+  sender_name: string;
+  message: string;
+  finding_status: 'nominal' | 'attention' | 'critical' | 'info';
+  created_at: string;
+}
+
+export interface AgentReportSettings {
+  id: string;
+  enabled: boolean;
+  recipient_email: string;
+  send_hour_utc: number;
+  preferred_channel: 'gmail' | 'resend';
+  include_agents: AgentId[];
+  last_sent_at: string | null;
+  updated_at: string;
+}
+
+export interface AgentSnapshotItem {
+  agent_id: AgentId;
+  name: string;
+  display_name: string;
+  score: number;
+  status: 'healthy' | 'attention' | 'critical';
+  open_tasks: number;
+  work_status: AgentWorkStatus;
+  top_finding: string;
+}
+
+export interface AgentEmailReport {
+  id: string;
+  recipient_email: string;
+  subject: string;
+  channel: 'gmail_api' | 'resend_api' | 'cron_dispatch';
+  trigger_type: 'manual' | 'daily_cron';
+  status: 'sent' | 'failed' | 'skipped_unconfigured';
+  provider_message_id: string;
+  provider_thread_id: string;
+  overall_score: number;
+  agent_snapshots: AgentSnapshotItem[];
+  body_text: string;
+  proof_hash: string;
+  error_detail: string;
+  sent_at: string;
+}
+

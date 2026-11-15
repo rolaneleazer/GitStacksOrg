@@ -8,6 +8,12 @@
       "includeFiles": "supabase/schema.sql"
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/daily-agent-report",
+      "schedule": "0 8 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

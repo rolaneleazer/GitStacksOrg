@@ -4,6 +4,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Client as PgClient } from 'pg';
+import {
+  DEFAULT_AGENT_OFFICE_PROFILES,
+  DEFAULT_AGENT_REPORT_SETTINGS,
+  SEED_AGENT_CONVERSATIONS
+} from '../shared/agentOfficeDefaults.ts';
 import { DEFAULT_PAGE_CONTENTS } from '../shared/pageDefaults.ts';
 import {
   DEFAULT_ADSENSE_SETTINGS,
@@ -21,7 +26,13 @@ import {
 } from '../shared/seedData.ts';
 import type {
   AdSenseSettings,
+  AgentConversationEntry,
+  AgentEmailReport,
+  AgentId,
+  AgentOfficeProfile,
+  AgentReportSettings,
   AgentTask,
+  AgentWorkStatus,
   AnalyticsEvent,
   AnalyticsSummary,
   Article,
@@ -57,6 +68,10 @@ interface LocalDatabase {
   user_profiles?: UserProfile[];
   user_workflow_items?: UserWorkflowItem[];
   routing_rules?: RoutingRule[];
+  agent_office_profiles?: AgentOfficeProfile[];
+  agent_conversations?: AgentConversationEntry[];
+  agent_report_settings?: AgentReportSettings;
+  agent_email_reports?: AgentEmailReport[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -164,19 +179,24 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
   try {
     const client = getSupabaseClient();
-    const [postsRes, pagesRes, profilesRes, wfRes, rulesRes] = await Promise.all([
-      client.from('posts').select('id').limit(1),
-      client.from('page_contents').select('page_key').limit(1),
-      client.from('user_profiles').select('user_id').limit(1),
-      client.from('user_workflow_items').select('id').limit(1),
-      client.from('routing_rules').select('id').limit(1)
-    ]);
+    const [postsRes, pagesRes, profilesRes, wfRes, rulesRes, officeRes, reportsRes] =
+      await Promise.all([
+        client.from('posts').select('id').limit(1),
+        client.from('page_contents').select('page_key').limit(1),
+        client.from('user_profiles').select('user_id').limit(1),
+        client.from('user_workflow_items').select('id').limit(1),
+        client.from('routing_rules').select('id').limit(1),
+        client.from('agent_office_profiles').select('agent_id').limit(1),
+        client.from('agent_email_reports').select('id').limit(1)
+      ]);
     return (
       !postsRes.error &&
       !pagesRes.error &&
       !profilesRes.error &&
       !wfRes.error &&
-      !rulesRes.error
+      !rulesRes.error &&
+      !officeRes.error &&
+      !reportsRes.error
     );
   } catch {
     return false;
@@ -329,7 +349,14 @@ function ensureLocalShape(db: LocalDatabase): LocalDatabase {
     analytics_events: db.analytics_events || [...SEED_ANALYTICS_EVENTS],
     user_profiles: db.user_profiles || [...SEED_USER_PROFILES],
     user_workflow_items: db.user_workflow_items || [...SEED_USER_WORKFLOWS],
-    routing_rules: db.routing_rules || [...SEED_ROUTING_RULES]
+    routing_rules: db.routing_rules || [...SEED_ROUTING_RULES],
+    agent_office_profiles: db.agent_office_profiles || [...DEFAULT_AGENT_OFFICE_PROFILES],
+    agent_conversations: db.agent_conversations || [...SEED_AGENT_CONVERSATIONS],
+    agent_report_settings: {
+      ...DEFAULT_AGENT_REPORT_SETTINGS,
+      ...(db.agent_report_settings || {})
+    },
+    agent_email_reports: db.agent_email_reports || []
   };
 }
 
@@ -1803,4 +1830,219 @@ async function resolveAutoAssignee(
   } catch {
     return null;
   }
+}
+
+// --- Virtual Office HQ Profiles, Conversations & Daily Email Report Proof Logs ---
+
+export async function listAgentOfficeProfiles(userToken?: string): Promise<AgentOfficeProfile[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_office_profiles')
+      .select('*');
+    if (!error && Array.isArray(data)) {
+      const byId = new Map<AgentId, AgentOfficeProfile>();
+      for (const def of DEFAULT_AGENT_OFFICE_PROFILES) {
+        byId.set(def.agent_id, def);
+      }
+      for (const row of data as AgentOfficeProfile[]) {
+        byId.set(row.agent_id, {
+          ...row,
+          desk_x: Number(row.desk_x),
+          desk_y: Number(row.desk_y)
+        });
+      }
+      return Array.from(byId.values());
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return db.agent_office_profiles || [...DEFAULT_AGENT_OFFICE_PROFILES];
+}
+
+export async function upsertAgentOfficeProfile(
+  profile: AgentOfficeProfile,
+  userToken?: string
+): Promise<AgentOfficeProfile> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_office_profiles')
+      .upsert(profile, { onConflict: 'agent_id' })
+      .select()
+      .single();
+    if (!error && data) {
+      const row = data as AgentOfficeProfile;
+      return { ...row, desk_x: Number(row.desk_x), desk_y: Number(row.desk_y) };
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.agent_office_profiles || [...DEFAULT_AGENT_OFFICE_PROFILES];
+  const idx = list.findIndex((p) => p.agent_id === profile.agent_id);
+  if (idx >= 0) list[idx] = profile;
+  else list.push(profile);
+  db.agent_office_profiles = list;
+  await writeLocalDb(db);
+  return profile;
+}
+
+export async function bulkUpdateAgentWorkStatus(
+  workStatus: AgentWorkStatus,
+  userToken?: string
+): Promise<AgentOfficeProfile[]> {
+  const current = await listAgentOfficeProfiles(userToken);
+  const now = new Date().toISOString();
+  const updated = current.map((p) => ({ ...p, work_status: workStatus, updated_at: now }));
+
+  if (isSupabaseConfigured()) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('agent_office_profiles')
+      .upsert(updated, { onConflict: 'agent_id' });
+    if (!error) return updated;
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.agent_office_profiles = updated;
+  await writeLocalDb(db);
+  return updated;
+}
+
+export async function listAgentConversations(
+  userToken?: string
+): Promise<AgentConversationEntry[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_conversations')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(120);
+    if (!error && Array.isArray(data)) {
+      return data.length > 0 ? (data as AgentConversationEntry[]) : [...SEED_AGENT_CONVERSATIONS];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.agent_conversations || SEED_AGENT_CONVERSATIONS)].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+export async function addAgentConversation(
+  entry: AgentConversationEntry,
+  userToken?: string
+): Promise<AgentConversationEntry> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_conversations')
+      .insert(entry)
+      .select()
+      .single();
+    if (!error && data) return data as AgentConversationEntry;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.agent_conversations || [...SEED_AGENT_CONVERSATIONS];
+  list.unshift(entry);
+  db.agent_conversations = list.slice(0, 200);
+  await writeLocalDb(db);
+  return entry;
+}
+
+export async function getAgentReportSettings(userToken?: string): Promise<AgentReportSettings> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_report_settings')
+      .select('*')
+      .eq('id', 'default')
+      .limit(1);
+    if (!error && data && data[0]) {
+      return { ...DEFAULT_AGENT_REPORT_SETTINGS, ...(data[0] as AgentReportSettings) };
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return { ...DEFAULT_AGENT_REPORT_SETTINGS, ...(db.agent_report_settings || {}) };
+}
+
+export async function saveAgentReportSettings(
+  settings: AgentReportSettings,
+  userToken?: string
+): Promise<AgentReportSettings> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_report_settings')
+      .upsert(settings, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) return data as AgentReportSettings;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  db.agent_report_settings = settings;
+  await writeLocalDb(db);
+  return settings;
+}
+
+export async function listAgentEmailReports(userToken?: string): Promise<AgentEmailReport[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_email_reports')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(60);
+    if (!error && Array.isArray(data)) {
+      return data as AgentEmailReport[];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.agent_email_reports || [])].sort(
+    (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+  );
+}
+
+export async function recordAgentEmailReport(
+  report: AgentEmailReport,
+  userToken?: string
+): Promise<AgentEmailReport> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('agent_email_reports')
+      .insert(report)
+      .select()
+      .single();
+    if (!error && data) {
+      if (report.status === 'sent') {
+        const current = await getAgentReportSettings(userToken);
+        await saveAgentReportSettings(
+          { ...current, last_sent_at: report.sent_at, updated_at: report.sent_at },
+          userToken
+        ).catch(() => {});
+      }
+      return data as AgentEmailReport;
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.agent_email_reports || [];
+  list.unshift(report);
+  db.agent_email_reports = list.slice(0, 100);
+  if (report.status === 'sent') {
+    db.agent_report_settings = {
+      ...DEFAULT_AGENT_REPORT_SETTINGS,
+      ...(db.agent_report_settings || {}),
+      last_sent_at: report.sent_at,
+      updated_at: report.sent_at
+    };
+  }
+  await writeLocalDb(db);
+  return report;
 }

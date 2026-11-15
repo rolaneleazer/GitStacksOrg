@@ -188,7 +188,7 @@ export async function listGmailMessages(
 export async function sendGmailMessage(
   accessToken: string,
   payload: { to: string; subject: string; body: string; threadId?: string }
-): Promise<{ id: string }> {
+): Promise<{ id: string; threadId?: string }> {
   const cleanTo = payload.to.replace(/[\r\n]/g, '').trim();
   const cleanSubject = payload.subject.replace(/[\r\n]/g, '').trim();
   const rawMime = [
@@ -220,5 +220,5 @@ export async function sendGmailMessage(
     const err = await res.json().catch(() => ({}));
     throw new Error(err?.error?.message || `Failed to send Gmail message (${res.status})`);
   }
-  return (await res.json()) as { id: string };
+  return (await res.json()) as { id: string; threadId?: string };
 }

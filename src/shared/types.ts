@@ -593,4 +593,15 @@ export interface LarkConnectionStatus {
   missing_env: string[];
 }
 
+export type OpenSourceSyncTrack = 'all' | 'ai' | 'cloud' | 'devtools';
+
+export interface OpenSourceSyncResult {
+  track: OpenSourceSyncTrack;
+  reposScanned: number;
+  insertedCount: number;
+  mergedCount: number;
+  mxVerifiedCount: number;
+  sourcesSynced: string[];
+  leads: CrmLead[];
+}
 

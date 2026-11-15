@@ -2099,6 +2099,129 @@ export async function upsertCrmLead(lead: CrmLead, userToken?: string): Promise<
   return lead;
 }
 
+export async function upsertMergeCrmLeads(
+  incomingLeads: CrmLead[],
+  userToken?: string
+): Promise<{
+  insertedCount: number;
+  mergedCount: number;
+  leads: CrmLead[];
+}> {
+  if (incomingLeads.length === 0) {
+    return {
+      insertedCount: 0,
+      mergedCount: 0,
+      leads: await listCrmLeads(userToken)
+    };
+  }
+
+  const existingLeads = await listCrmLeads(userToken);
+  const byEmail = new Map<string, CrmLead>();
+  const byDomain = new Map<string, CrmLead>();
+  const byGithub = new Map<string, CrmLead>();
+
+  const indexLead = (row: CrmLead) => {
+    if (row.email) byEmail.set(row.email.trim().toLowerCase(), row);
+    if (row.company_domain) byDomain.set(row.company_domain.trim().toLowerCase(), row);
+    if (row.github_url) byGithub.set(row.github_url.trim().toLowerCase(), row);
+  };
+  for (const row of existingLeads) indexLead(row);
+
+  let insertedCount = 0;
+  let mergedCount = 0;
+  const toPersist: CrmLead[] = [];
+  const now = new Date().toISOString();
+
+  const statusRank: Record<CrmLead['email_status'], number> = {
+    verified_mx: 4,
+    public_found: 3,
+    inferred: 2,
+    invalid: 1
+  };
+
+  for (const inc of incomingLeads) {
+    const emailKey = inc.email?.trim().toLowerCase() || '';
+    const domainKey = inc.company_domain?.trim().toLowerCase() || '';
+    const githubKey = inc.github_url?.trim().toLowerCase() || '';
+
+    const match =
+      (emailKey && byEmail.get(emailKey)) ||
+      (domainKey && byDomain.get(domainKey)) ||
+      (githubKey && byGithub.get(githubKey)) ||
+      null;
+
+    if (match) {
+      const mergedStack = Array.from(
+        new Set([...(match.tech_stack || []), ...(inc.tech_stack || [])])
+      ).slice(0, 10);
+      const mergedSources = Array.from(
+        new Set([...(match.source_urls || []), ...(inc.source_urls || [])])
+      ).slice(0, 10);
+
+      const useIncomingEmail =
+        Boolean(inc.email) &&
+        (!match.email || statusRank[inc.email_status] > statusRank[match.email_status]);
+
+      const merged: CrmLead = {
+        ...match,
+        contact_name: match.contact_name || inc.contact_name,
+        role_title: match.role_title || inc.role_title,
+        email: useIncomingEmail ? inc.email : match.email,
+        email_status: useIncomingEmail ? inc.email_status : match.email_status,
+        company_name: match.company_name || inc.company_name,
+        company_domain: match.company_domain || inc.company_domain,
+        website_url: match.website_url || inc.website_url,
+        github_url: match.github_url || inc.github_url,
+        tech_stack: mergedStack,
+        source_urls: mergedSources,
+        research_brief:
+          match.research_brief && match.research_brief.length >= 80
+            ? match.research_brief
+            : inc.research_brief || match.research_brief,
+        fit_score: Math.max(match.fit_score || 0, inc.fit_score || 0),
+        deal_value: Math.max(match.deal_value || 0, inc.deal_value || 0),
+        updated_at: now
+      };
+      toPersist.push(merged);
+      indexLead(merged);
+      mergedCount++;
+    } else {
+      toPersist.push(inc);
+      indexLead(inc);
+      insertedCount++;
+    }
+  }
+
+  if (isSupabaseConfigured() && toPersist.length > 0) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('crm_leads')
+      .upsert(toPersist, { onConflict: 'id' });
+    if (!error) {
+      return {
+        insertedCount,
+        mergedCount,
+        leads: await listCrmLeads(userToken)
+      };
+    }
+    if (!isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const map = new Map<string, CrmLead>();
+  for (const existing of db.crm_leads || []) map.set(existing.id, existing);
+  for (const row of toPersist) map.set(row.id, row);
+  db.crm_leads = Array.from(map.values()).sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  );
+  await writeLocalDb(db);
+
+  return {
+    insertedCount,
+    mergedCount,
+    leads: db.crm_leads
+  };
+}
+
 export async function deleteCrmLead(id: string, userToken?: string): Promise<boolean> {
   if (isSupabaseConfigured()) {
     const { error } = await getSupabaseClient(userToken)

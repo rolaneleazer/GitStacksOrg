@@ -6,6 +6,7 @@ import type {
   CrmLead,
   DiscoveredProspectCandidate,
   EmailVerificationStatus,
+  OpenSourceSyncTrack,
   ServiceCategory
 } from '../shared/types.ts';
 
@@ -198,7 +199,9 @@ interface GitHubRepoSearchItem {
   full_name: string;
   html_url: string;
   description: string | null;
+  homepage?: string | null;
   language: string | null;
+  topics?: string[];
   stargazers_count: number;
   owner: { login: string; type: string; html_url: string };
 }
@@ -218,11 +221,13 @@ async function fetchGitHubJson<T>(url: string): Promise<T | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
   try {
+    const ghToken = process.env.GITHUB_TOKEN?.trim();
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
         Accept: 'application/vnd.github+json',
-        'User-Agent': 'GitStack-CRM-Prospecting/1.0'
+        'User-Agent': 'GitStack-CRM-Prospecting/1.0',
+        ...(ghToken ? { Authorization: `Bearer ${ghToken}` } : {})
       }
     });
     if (!res.ok) return null;
@@ -702,3 +707,303 @@ function buildDefaultFollowUps(
     }
   ];
 }
+
+const TRENDING_TRACK_CONFIG: Record<
+  Exclude<OpenSourceSyncTrack, 'all'>,
+  {
+    label: string;
+    service: ServiceCategory;
+    queries: string[];
+    fallbackDomains: { login: string; company: string; domain: string; role: string; stack: string[] }[];
+  }
+> = {
+  ai: {
+    label: 'Trending AI & LLM Repos',
+    service: 'AI Integration',
+    queries: ['topic:ai-agents stars:>500', 'topic:llm OR topic:rag stars:>1000'],
+    fallbackDomains: [
+      { login: 'langchain-ai', company: 'LangChain', domain: 'langchain.com', role: 'AI Engineering Team', stack: ['AI / LLM', 'Python', 'TypeScript'] },
+      { login: 'pydantic', company: 'Pydantic', domain: 'pydantic.dev', role: 'Platform & AI Tooling', stack: ['AI / LLM', 'Python', 'Observability'] },
+      { login: 'crewAIInc', company: 'CrewAI', domain: 'crewai.com', role: 'Agent Orchestration Team', stack: ['AI / LLM', 'Multi-Agent', 'Python'] },
+      { login: 'qdrant', company: 'Qdrant', domain: 'qdrant.tech', role: 'Vector Engine Engineering', stack: ['AI / LLM', 'Rust', 'Vector DB'] }
+    ]
+  },
+  cloud: {
+    label: 'Trending Cloud & Infra Repos',
+    service: 'Cloud Infrastructure',
+    queries: ['topic:kubernetes OR topic:terraform stars:>1000', 'topic:observability OR topic:devops stars:>500'],
+    fallbackDomains: [
+      { login: 'grafana', company: 'Grafana Labs', domain: 'grafana.com', role: 'Cloud Observability Team', stack: ['Kubernetes', 'Observability', 'Go'] },
+      { login: 'dagger', company: 'Dagger', domain: 'dagger.io', role: 'CI/CD Infrastructure Team', stack: ['Docker', 'Kubernetes', 'Go'] },
+      { login: 'hashicorp', company: 'HashiCorp', domain: 'hashicorp.com', role: 'Infrastructure Automation', stack: ['Terraform', 'AWS', 'Cloud'] },
+      { login: 'cilium', company: 'Isovalent / Cilium', domain: 'cilium.io', role: 'Cloud Networking Team', stack: ['Kubernetes', 'eBPF', 'Cloud'] }
+    ]
+  },
+  devtools: {
+    label: 'Trending DevTools & SaaS Repos',
+    service: 'Custom Software',
+    queries: ['topic:developer-tools stars:>1200', 'topic:typescript OR topic:postgres stars:>1500'],
+    fallbackDomains: [
+      { login: 'supabase', company: 'Supabase', domain: 'supabase.com', role: 'Developer Platform Team', stack: ['PostgreSQL', 'TypeScript', 'React / Next.js'] },
+      { login: 'posthog', company: 'PostHog', domain: 'posthog.com', role: 'Product Analytics Engineering', stack: ['TypeScript', 'PostgreSQL', 'Python'] },
+      { login: 'triggerdotdev', company: 'Trigger.dev', domain: 'trigger.dev', role: 'Background Jobs Infrastructure', stack: ['TypeScript', 'Node.js', 'Docker'] },
+      { login: 'resend', company: 'Resend', domain: 'resend.com', role: 'Developer Email Platform', stack: ['TypeScript', 'React / Next.js', 'Cloud'] }
+    ]
+  }
+};
+
+function inferServiceFromSignals(
+  stack: string[],
+  defaultService: ServiceCategory
+): ServiceCategory {
+  if (stack.some((t) => /ai|llm|rag|pytorch|ml|vector|agent/i.test(t))) return 'AI Integration';
+  if (stack.some((t) => /kubernetes|terraform|docker|aws|gcp|observability|ebpf/i.test(t))) {
+    return 'Cloud Infrastructure';
+  }
+  return defaultService;
+}
+
+function isNonGenericWebsiteDomain(domain: string): boolean {
+  if (!domain) return false;
+  return !/^(github\.com|gist\.github\.com|twitter\.com|x\.com|linkedin\.com|youtube\.com|medium\.com|discord\.gg|npmjs\.com)$/i.test(
+    domain
+  );
+}
+
+export async function harvestTrendingOpenSourceLeads(
+  track: OpenSourceSyncTrack = 'all',
+  assignedUserId: string | null = null
+): Promise<{
+  leads: CrmLead[];
+  reposScanned: number;
+  sourcesSynced: string[];
+}> {
+  const activeTracks: Exclude<OpenSourceSyncTrack, 'all'>[] =
+    track === 'all' ? ['ai', 'cloud', 'devtools'] : [track];
+
+  const searchJobs: { trackKey: Exclude<OpenSourceSyncTrack, 'all'>; query: string }[] = [];
+  for (const tk of activeTracks) {
+    const cfg = TRENDING_TRACK_CONFIG[tk];
+    const queriesToRun = track === 'all' ? [cfg.queries[0]] : cfg.queries;
+    for (const q of queriesToRun) {
+      searchJobs.push({ trackKey: tk, query: q });
+    }
+  }
+
+  const searchResponses = await Promise.all(
+    searchJobs.map(async (job) => {
+      const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(job.query)}&sort=updated&per_page=7`;
+      const data = await fetchGitHubJson<{ items?: GitHubRepoSearchItem[] }>(url);
+      return { ...job, url, items: data?.items || [] };
+    })
+  );
+
+  const sourcesSynced: string[] = [];
+  let reposScanned = 0;
+  const repoOwners = new Map<
+    string,
+    {
+      login: string;
+      repo: GitHubRepoSearchItem;
+      trackKey: Exclude<OpenSourceSyncTrack, 'all'>;
+    }
+  >();
+
+  for (const res of searchResponses) {
+    if (res.items.length > 0) {
+      sourcesSynced.push(TRENDING_TRACK_CONFIG[res.trackKey].label);
+      reposScanned += res.items.length;
+      for (const repo of res.items) {
+        const key = repo.owner.login.toLowerCase();
+        if (!repoOwners.has(key)) {
+          repoOwners.set(key, { login: repo.owner.login, repo, trackKey: res.trackKey });
+        }
+      }
+    }
+  }
+
+  const selectedEntries = Array.from(repoOwners.values()).slice(0, 14);
+  const now = new Date().toISOString();
+  const harvestedLeads: CrmLead[] = [];
+
+  if (selectedEntries.length > 0) {
+    const enriched = await Promise.all(
+      selectedEntries.map(async ({ login, repo, trackKey }) => {
+        const detail = await fetchGitHubJson<GitHubUserDetail>(
+          `https://api.github.com/users/${encodeURIComponent(login)}`
+        );
+        const homepageDomain = normalizeDomain(repo.homepage || '');
+        const blogDomain = normalizeDomain(detail?.blog || '');
+        const chosenDomain = isNonGenericWebsiteDomain(homepageDomain)
+          ? homepageDomain
+          : isNonGenericWebsiteDomain(blogDomain)
+            ? blogDomain
+            : '';
+
+        const webSignals = chosenDomain ? await scrapePublicWebsite(chosenDomain) : null;
+
+        let chosenEmail = detail?.email?.trim().toLowerCase() || '';
+        let emailStatus: EmailVerificationStatus = 'inferred';
+
+        if (chosenEmail && isUsefulBusinessEmail(chosenEmail)) {
+          const mx = await verifyEmailMxDomain(chosenEmail);
+          emailStatus = mx ? 'verified_mx' : 'public_found';
+        } else if (webSignals && webSignals.emails.length > 0) {
+          chosenEmail = webSignals.emails[0];
+          const mx = await verifyEmailMxDomain(chosenEmail);
+          emailStatus = mx ? 'verified_mx' : 'public_found';
+        } else if (chosenDomain) {
+          chosenEmail = `contact@${chosenDomain}`;
+          const mx = await verifyEmailMxDomain(chosenEmail);
+          emailStatus = mx ? 'inferred' : 'invalid';
+        }
+
+        const techSet = new Set<string>(webSignals?.techSignals || []);
+        if (repo.language) techSet.add(repo.language);
+        for (const topic of (repo.topics || []).slice(0, 4)) {
+          if (topic && topic.length <= 24) techSet.add(topic);
+        }
+        const techStack = Array.from(techSet).slice(0, 7);
+        const defaultService = TRENDING_TRACK_CONFIG[trackKey].service;
+        const recommendedService = inferServiceFromSignals(techStack, defaultService);
+        const starsBonus = repo.stargazers_count >= 5000 ? 12 : repo.stargazers_count >= 1000 ? 8 : 4;
+        const fitScore = Math.min(
+          97,
+          62 +
+            starsBonus +
+            (emailStatus === 'verified_mx' ? 14 : emailStatus === 'public_found' ? 10 : chosenEmail ? 5 : 0) +
+            Math.min(10, techStack.length * 2)
+        );
+        const dealValue = fitScore >= 88 ? 55000 : fitScore >= 78 ? 38000 : 25000;
+
+        const cleanCompany =
+          (detail?.company || '').replace(/^@/, '').trim() ||
+          detail?.name?.trim() ||
+          repo.owner.login;
+        const contactName =
+          detail?.name?.trim() && detail.name.trim() !== cleanCompany
+            ? detail.name.trim()
+            : `${cleanCompany} Engineering`;
+
+        const lead: CrmLead = {
+          id: `crm-${crypto.randomUUID().slice(0, 8)}`,
+          contact_name: contactName,
+          role_title:
+            detail?.company || chosenDomain
+              ? `Maintainer · ${repo.full_name} (${repo.stargazers_count.toLocaleString()}★)`
+              : `Open-Source Maintainer (${repo.full_name})`,
+          email: chosenEmail,
+          email_status: chosenEmail ? emailStatus : 'invalid',
+          company_name: cleanCompany,
+          company_domain: chosenDomain || extractDomainFromEmail(chosenEmail),
+          website_url: webSignals?.url || (chosenDomain ? `https://${chosenDomain}` : ''),
+          github_url: detail?.html_url || repo.owner.html_url,
+          source_type: 'github',
+          source_urls: Array.from(
+            new Set([
+              repo.html_url,
+              detail?.html_url || repo.owner.html_url,
+              ...(webSignals?.sourceUrls || [])
+            ])
+          ).slice(0, 8),
+          tech_stack: techStack,
+          research_brief: [
+            repo.description || detail?.bio || `Active open-source project ${repo.full_name}.`,
+            `GitHub Repository: ${repo.full_name} (${repo.stargazers_count.toLocaleString()} stars)`
+          ].join('\n'),
+          recommended_service: recommendedService,
+          fit_score: fitScore,
+          deal_value: dealValue,
+          stage: 'discovered',
+          proposal_subject: '',
+          proposal_body: '',
+          follow_up_sequence: [],
+          assigned_to: assignedUserId,
+          last_contacted_at: null,
+          next_followup_at: null,
+          converted_inquiry_id: null,
+          created_at: now,
+          updated_at: now
+        };
+        return lead;
+      })
+    );
+    harvestedLeads.push(...enriched);
+  }
+
+  // Fallback to live website + MX scraping of curated open-source leaders if GitHub Search is rate-limited
+  if (harvestedLeads.length === 0) {
+    const fallbackTargets = activeTracks.flatMap((tk) =>
+      TRENDING_TRACK_CONFIG[tk].fallbackDomains.map((item) => ({
+        ...item,
+        service: TRENDING_TRACK_CONFIG[tk].service,
+        trackLabel: TRENDING_TRACK_CONFIG[tk].label
+      }))
+    );
+    reposScanned = fallbackTargets.length;
+    for (const tk of activeTracks) {
+      sourcesSynced.push(`${TRENDING_TRACK_CONFIG[tk].label} (Direct Org Scrape)`);
+    }
+
+    const fallbackResults = await Promise.all(
+      fallbackTargets.slice(0, 10).map(async (target) => {
+        const webSignals = await scrapePublicWebsite(target.domain);
+        const hasMx = await verifyEmailMxDomain(`contact@${target.domain}`);
+        const email = webSignals.emails[0] || `contact@${target.domain}`;
+        const mxOk = webSignals.emails[0] ? await verifyEmailMxDomain(email) : hasMx;
+        const emailStatus: EmailVerificationStatus = webSignals.emails.length > 0
+          ? mxOk
+            ? 'verified_mx'
+            : 'public_found'
+          : mxOk
+            ? 'inferred'
+            : 'invalid';
+
+        const techStack = Array.from(
+          new Set([...target.stack, ...webSignals.techSignals])
+        ).slice(0, 7);
+
+        return {
+          id: `crm-${crypto.randomUUID().slice(0, 8)}`,
+          contact_name: `${target.company} Team`,
+          role_title: target.role,
+          email,
+          email_status: emailStatus,
+          company_name: target.company,
+          company_domain: target.domain,
+          website_url: `https://${target.domain}`,
+          github_url: `https://github.com/${target.login}`,
+          source_type: 'github' as const,
+          source_urls: Array.from(
+            new Set([`https://github.com/${target.login}`, ...webSignals.sourceUrls])
+          ).slice(0, 8),
+          tech_stack: techStack,
+          research_brief:
+            webSignals.description ||
+            `Open-source ecosystem leader (${target.company}) synced via live public website & GitHub signals.`,
+          recommended_service: target.service,
+          fit_score: emailStatus === 'verified_mx' ? 88 : 79,
+          deal_value: 40000,
+          stage: 'discovered' as const,
+          proposal_subject: '',
+          proposal_body: '',
+          follow_up_sequence: [],
+          assigned_to: assignedUserId,
+          last_contacted_at: null,
+          next_followup_at: null,
+          converted_inquiry_id: null,
+          created_at: now,
+          updated_at: now
+        } satisfies CrmLead;
+      })
+    );
+    harvestedLeads.push(...fallbackResults);
+  }
+
+  return {
+    leads: harvestedLeads,
+    reposScanned,
+    sourcesSynced: Array.from(new Set(sourcesSynced))
+  };
+}
+

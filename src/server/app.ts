@@ -42,6 +42,8 @@ import type {
   InquiryStatus,
   LarkConnectionStatus,
   NewsletterSubscriber,
+  OpenSourceSyncResult,
+  OpenSourceSyncTrack,
   PageContentConfig,
   PageKey,
   RoutingRule,
@@ -68,6 +70,7 @@ import {
 } from './lark.ts';
 import {
   discoverOpenSourceLeads,
+  harvestTrendingOpenSourceLeads,
   runProspectResearchAndProposal,
   verifyEmailMxDomain
 } from './prospecting.ts';
@@ -135,6 +138,7 @@ import {
   upsertAgentTask,
   upsertCrmLead,
   upsertCrmOAuthToken,
+  upsertMergeCrmLeads,
   upsertPageContent,
   upsertPost,
   verifyEditorToken,
@@ -2334,6 +2338,103 @@ export async function createApp(): Promise<Express> {
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Open-source lead discovery failed' });
+    }
+  });
+
+  app.post('/api/crm/sync-opensource', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { track } = (req.body || {}) as { track?: OpenSourceSyncTrack };
+      const validTrack: OpenSourceSyncTrack =
+        track === 'ai' || track === 'cloud' || track === 'devtools' ? track : 'all';
+
+      const harvested = await harvestTrendingOpenSourceLeads(validTrack, req.editor!.userId);
+      const merged = await upsertMergeCrmLeads(harvested.leads, token);
+      const mxVerifiedCount = harvested.leads.filter((l) => l.email_status === 'verified_mx').length;
+
+      const payload: OpenSourceSyncResult = {
+        track: validTrack,
+        reposScanned: harvested.reposScanned,
+        insertedCount: merged.insertedCount,
+        mergedCount: merged.mergedCount,
+        mxVerifiedCount,
+        sourcesSynced: harvested.sourcesSynced,
+        leads: merged.leads
+      };
+      res.json(payload);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Open-source database sync failed' });
+    }
+  });
+
+  app.post('/api/crm/leads/bulk-action', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { action, leadIds, stage } = req.body as {
+        action?: 'research' | 'move_stage' | 'delete';
+        leadIds?: string[];
+        stage?: CrmLeadStage;
+      };
+      if (!Array.isArray(leadIds) || leadIds.length === 0) {
+        return res.status(400).json({ error: 'Select at least one lead first.' });
+      }
+      const uniqueIds = Array.from(new Set(leadIds)).slice(0, 25);
+      const allLeads = await listCrmLeads(token);
+      const targetLeads = allLeads.filter((l) => uniqueIds.includes(l.id));
+      let processedCount = 0;
+
+      if (action === 'move_stage') {
+        const validStages: CrmLeadStage[] = [
+          'discovered',
+          'researched',
+          'proposed',
+          'follow_up',
+          'won',
+          'lost'
+        ];
+        if (!stage || !validStages.includes(stage)) {
+          return res.status(400).json({ error: 'Valid target CRM stage is required.' });
+        }
+        const now = new Date().toISOString();
+        for (const lead of targetLeads) {
+          await upsertCrmLead({ ...lead, stage, updated_at: now }, token);
+          processedCount++;
+        }
+      } else if (action === 'delete') {
+        for (const lead of targetLeads) {
+          const ok = await deleteCrmLead(lead.id, token);
+          if (ok) processedCount++;
+        }
+      } else if (action === 'research') {
+        for (const lead of targetLeads.slice(0, 8)) {
+          const result = await runProspectResearchAndProposal(lead);
+          await upsertCrmLead(
+            {
+              ...lead,
+              research_brief: result.research_brief,
+              recommended_service: result.recommended_service,
+              fit_score: result.fit_score,
+              deal_value: result.deal_value,
+              tech_stack: result.tech_stack,
+              proposal_subject: result.proposal_subject,
+              proposal_body: result.proposal_body,
+              follow_up_sequence: result.follow_up_sequence,
+              source_urls: result.source_urls,
+              stage: lead.stage === 'discovered' ? 'researched' : lead.stage,
+              updated_at: new Date().toISOString()
+            },
+            token
+          );
+          processedCount++;
+        }
+      } else {
+        return res.status(400).json({ error: 'Unsupported bulk CRM action.' });
+      }
+
+      const refreshedLeads = await listCrmLeads(token);
+      res.json({ processedCount, leads: refreshedLeads });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Bulk CRM action failed' });
     }
   });
 

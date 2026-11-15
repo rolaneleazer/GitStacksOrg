@@ -6,6 +6,8 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Database,
+  Download,
   ExternalLink,
   Globe,
   Mail,
@@ -19,7 +21,7 @@ import {
   UserPlus,
   X
 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api.ts';
 import {
   connectGmailWithGoogle,
@@ -36,6 +38,8 @@ import type {
   DiscoveredProspectCandidate,
   EmailVerificationStatus,
   LarkConnectionStatus,
+  LeadSourceType,
+  OpenSourceSyncTrack,
   ServiceCategory,
   UserWorkflowItem
 } from '../../shared/types.ts';
@@ -76,7 +80,7 @@ const EMAIL_STATUS_LABEL: Record<EmailVerificationStatus, { text: string; tone: 
 };
 
 export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
-  const [subView, setSubView] = useState<'pipeline' | 'discover' | 'logs'>('pipeline');
+  const [subView, setSubView] = useState<'directory' | 'pipeline' | 'discover' | 'logs'>('directory');
   const [showLostColumn, setShowLostColumn] = useState(false);
 
   // CRM Data
@@ -84,6 +88,33 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
   const [logs, setLogs] = useState<CrmOutreachLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  // Trending Open-Source Repo Database Sync
+  const [syncTrack, setSyncTrack] = useState<OpenSourceSyncTrack>('all');
+  const [syncingDb, setSyncingDb] = useState(false);
+  const [lastSyncInfo, setLastSyncInfo] = useState<{
+    reposScanned: number;
+    insertedCount: number;
+    mergedCount: number;
+    mxVerifiedCount: number;
+    sourcesSynced: string[];
+  } | null>(null);
+  const autoSyncedRef = useRef(false);
+
+  // Apollo-Style Directory Filters & Bulk Selection
+  const [dirSearch, setDirSearch] = useState('');
+  const [filterStage, setFilterStage] = useState<'all' | CrmLeadStage>('all');
+  const [filterSource, setFilterSource] = useState<'all' | LeadSourceType>('all');
+  const [filterEmailStatus, setFilterEmailStatus] = useState<'all' | EmailVerificationStatus>('all');
+  const [filterService, setFilterService] = useState<'all' | ServiceCategory>('all');
+  const [filterTech, setFilterTech] = useState<string>('all');
+  const [filterMinFit, setFilterMinFit] = useState<number>(0);
+  const [sortBy, setSortBy] = useState<'updated_desc' | 'fit_desc' | 'value_desc' | 'company_asc'>(
+    'fit_desc'
+  );
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkStageTarget, setBulkStageTarget] = useState<CrmLeadStage>('researched');
 
   // Lark & Gmail Mail Channels
   const [larkStatus, setLarkStatus] = useState<LarkConnectionStatus | null>(null);
@@ -133,6 +164,39 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
   } | null>(null);
   const [sendingEmail, setSendingEmail] = useState(false);
 
+  const handleSyncOpenSource = useCallback(
+    async (trackOverride?: OpenSourceSyncTrack, silentIfAuto = false) => {
+      const targetTrack = trackOverride || syncTrack;
+      setSyncingDb(true);
+      if (!silentIfAuto) setNotice(null);
+      try {
+        const res = await api.syncOpenSourceLeads(targetTrack);
+        setLeads(res.leads);
+        setLastSyncInfo({
+          reposScanned: res.reposScanned,
+          insertedCount: res.insertedCount,
+          mergedCount: res.mergedCount,
+          mxVerifiedCount: res.mxVerifiedCount,
+          sourcesSynced: res.sourcesSynced
+        });
+        setNotice({
+          type: 'ok',
+          text: `Synced ${res.reposScanned} open-source repos: ${res.insertedCount} new leads added, ${res.mergedCount} existing leads enriched (${res.mxVerifiedCount} MX verified).`
+        });
+      } catch (err) {
+        if (!silentIfAuto) {
+          setNotice({
+            type: 'err',
+            text: err instanceof Error ? err.message : 'Failed to sync open-source repositories.'
+          });
+        }
+      } finally {
+        setSyncingDb(false);
+      }
+    },
+    [syncTrack]
+  );
+
   const loadCrmData = useCallback(async () => {
     setLoading(true);
     try {
@@ -143,6 +207,11 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
       setLeads(crmRes.leads);
       setLogs(crmRes.logs);
       if (larkRes) setLarkStatus(larkRes);
+
+      if (crmRes.leads.length === 0 && !autoSyncedRef.current) {
+        autoSyncedRef.current = true;
+        handleSyncOpenSource('all', true);
+      }
     } catch (err) {
       setNotice({
         type: 'err',
@@ -151,7 +220,7 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleSyncOpenSource]);
 
   useEffect(() => {
     loadCrmData();
@@ -631,6 +700,176 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
     ? [...PRIMARY_STAGES, { id: 'lost' as CrmLeadStage, label: 'Lost', hint: 'Closed / Archived' }]
     : PRIMARY_STAGES;
 
+  const availableTechTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const l of leads) {
+      for (const t of l.tech_stack || []) {
+        counts.set(t, (counts.get(t) || 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 24)
+      .map(([tag, count]) => ({ tag, count }));
+  }, [leads]);
+
+  const filteredLeads = useMemo(() => {
+    const q = dirSearch.trim().toLowerCase();
+    const rows = leads.filter((l) => {
+      if (filterStage !== 'all' && l.stage !== filterStage) return false;
+      if (filterSource !== 'all' && l.source_type !== filterSource) return false;
+      if (filterEmailStatus !== 'all' && l.email_status !== filterEmailStatus) return false;
+      if (filterService !== 'all' && l.recommended_service !== filterService) return false;
+      if (filterMinFit > 0 && (l.fit_score || 0) < filterMinFit) return false;
+      if (
+        filterTech !== 'all' &&
+        !(l.tech_stack || []).some((t) => t.toLowerCase() === filterTech.toLowerCase())
+      ) {
+        return false;
+      }
+      if (q) {
+        const hay = [
+          l.contact_name,
+          l.role_title,
+          l.company_name,
+          l.company_domain,
+          l.email,
+          l.recommended_service,
+          ...(l.tech_stack || [])
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    return [...rows].sort((a, b) => {
+      if (sortBy === 'fit_desc') return (b.fit_score || 0) - (a.fit_score || 0);
+      if (sortBy === 'value_desc') return (b.deal_value || 0) - (a.deal_value || 0);
+      if (sortBy === 'company_asc') return a.company_name.localeCompare(b.company_name);
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+  }, [
+    leads,
+    dirSearch,
+    filterStage,
+    filterSource,
+    filterEmailStatus,
+    filterService,
+    filterTech,
+    filterMinFit,
+    sortBy
+  ]);
+
+  const hasActiveFilters =
+    Boolean(dirSearch.trim()) ||
+    filterStage !== 'all' ||
+    filterSource !== 'all' ||
+    filterEmailStatus !== 'all' ||
+    filterService !== 'all' ||
+    filterTech !== 'all' ||
+    filterMinFit > 0;
+
+  const resetAllFilters = () => {
+    setDirSearch('');
+    setFilterStage('all');
+    setFilterSource('all');
+    setFilterEmailStatus('all');
+    setFilterService('all');
+    setFilterTech('all');
+    setFilterMinFit(0);
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllFiltered = () => {
+    const filteredIds = filteredLeads.map((l) => l.id);
+    const allSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredIds));
+    }
+  };
+
+  const handleBulkAction = async (action: 'research' | 'move_stage' | 'delete') => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setNotice(null);
+    try {
+      const res = await api.bulkCrmAction({
+        action,
+        leadIds: ids,
+        ...(action === 'move_stage' ? { stage: bulkStageTarget } : {})
+      });
+      setLeads(res.leads);
+      if (action === 'delete') setSelectedIds(new Set());
+      setNotice({
+        type: 'ok',
+        text:
+          action === 'research'
+            ? `Agent researched and drafted proposals for ${res.processedCount} selected lead(s).`
+            : action === 'move_stage'
+              ? `Moved ${res.processedCount} lead(s) to ${
+                  ALL_STAGES.find((s) => s.id === bulkStageTarget)?.label || bulkStageTarget
+                }.`
+              : `Removed ${res.processedCount} lead(s) from database.`
+      });
+    } catch (err) {
+      setNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Bulk action failed.'
+      });
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleExportLeadsCsv = (onlySelected = false) => {
+    const targetRows =
+      onlySelected && selectedIds.size > 0
+        ? filteredLeads.filter((l) => selectedIds.has(l.id))
+        : filteredLeads;
+    const header =
+      'Contact Name,Role,Company,Domain,Email,Email Status,Stage,Service Fit,Fit Score,Deal Value,Tech Stack,Website,GitHub\n';
+    const esc = (v: string | number) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const body = targetRows
+      .map((l) =>
+        [
+          esc(l.contact_name),
+          esc(l.role_title),
+          esc(l.company_name),
+          esc(l.company_domain),
+          esc(l.email),
+          esc(l.email_status),
+          esc(l.stage),
+          esc(l.recommended_service),
+          l.fit_score,
+          l.deal_value,
+          esc((l.tech_stack || []).join('; ')),
+          esc(l.website_url),
+          esc(l.github_url)
+        ].join(',')
+      )
+      .join('\n');
+    const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gitstack-opensource-leads-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Top KPI Summary Strip */}
@@ -805,6 +1044,72 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
         )}
       </div>
 
+      {/* Open-Source Multi-Repo Database Sync Bar */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Database className="h-4 w-4 text-[var(--gs-primary)] shrink-0" />
+              <h2 className="font-display text-sm font-bold text-slate-900">
+                Open-Source Repository Lead Database Sync
+              </h2>
+              <span className="text-xs text-slate-400">·</span>
+              <span className="font-mono text-xs font-semibold text-slate-700 tabular-nums">
+                {leads.length} loaded lead{leads.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-slate-600">
+              Pull maintainers, company domains, and MX-verified contacts from trending AI, Cloud,
+              and DevTools GitHub repositories directly into Supabase with automatic signal merging.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <select
+              aria-label="Trending open-source ecosystem track"
+              value={syncTrack}
+              onChange={(e) => setSyncTrack(e.target.value as OpenSourceSyncTrack)}
+              className="min-h-[42px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 focus:border-[var(--gs-primary)] focus:outline-none"
+            >
+              <option value="all">All Trending (AI + Cloud + DevTools)</option>
+              <option value="ai">Trending AI &amp; LLM Repos</option>
+              <option value="cloud">Trending Cloud &amp; Infra Repos</option>
+              <option value="devtools">Trending DevTools &amp; SaaS Repos</option>
+            </select>
+            <button
+              type="button"
+              disabled={syncingDb}
+              onClick={() => handleSyncOpenSource()}
+              className="min-h-[42px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncingDb ? 'animate-spin' : ''}`} />
+              <span>{syncingDb ? 'Syncing Repos...' : 'Sync Open-Source Leads'}</span>
+            </button>
+          </div>
+        </div>
+
+        {lastSyncInfo && (
+          <div className="border-t border-slate-200 pt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+            <span className="font-semibold text-slate-800">Last Sync:</span>
+            <span className="font-mono tabular-nums">{lastSyncInfo.reposScanned} repos scanned</span>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono text-emerald-700 font-semibold tabular-nums">
+              +{lastSyncInfo.insertedCount} inserted
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono tabular-nums">{lastSyncInfo.mergedCount} merged</span>
+            <span aria-hidden="true">·</span>
+            <span className="font-mono tabular-nums">{lastSyncInfo.mxVerifiedCount} MX verified</span>
+            {lastSyncInfo.sourcesSynced.length > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="truncate">{lastSyncInfo.sourcesSynced.join(', ')}</span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Inline Feedback Notice */}
       {notice && (
         <div
@@ -831,6 +1136,21 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
         <div className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
           <button
             type="button"
+            onClick={() => setSubView('directory')}
+            className={`min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+              subView === 'directory'
+                ? 'bg-[var(--gs-primary)] text-white'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <Database className="h-3.5 w-3.5" />
+            <span>
+              Lead Database ({filteredLeads.length}
+              {hasActiveFilters ? `/${leads.length}` : ''})
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setSubView('pipeline')}
             className={`min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-semibold transition-colors ${
               subView === 'pipeline'
@@ -851,7 +1171,7 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
             }`}
           >
             <Search className="h-3.5 w-3.5" />
-            <span>Open-Source Lead Finder</span>
+            <span>Custom Repo / Domain Finder</span>
           </button>
           <button
             type="button"
@@ -879,6 +1199,15 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
           )}
           <button
             type="button"
+            onClick={() => handleExportLeadsCsv(false)}
+            disabled={filteredLeads.length === 0}
+            className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Export CSV</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowAddModal(true)}
             className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-50"
           >
@@ -896,6 +1225,436 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
           </button>
         </div>
       </div>
+
+      {/* VIEW 0: APOLLO-STYLE FILTERABLE LEAD DATABASE DIRECTORY */}
+      {subView === 'directory' && (
+        <div className="space-y-4">
+          {/* Multi-Facet Filter Bar */}
+          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+            <div className="flex flex-col gap-3 md:flex-row">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={dirSearch}
+                  onChange={(e) => setDirSearch(e.target.value)}
+                  placeholder="Filter leads by contact, role, company, email, domain, or tech stack..."
+                  className="min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <select
+                  aria-label="Sort lead directory"
+                  value={sortBy}
+                  onChange={(e) =>
+                    setSortBy(
+                      e.target.value as 'updated_desc' | 'fit_desc' | 'value_desc' | 'company_asc'
+                    )
+                  }
+                  className="min-h-[42px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 focus:border-[var(--gs-primary)] focus:outline-none"
+                >
+                  <option value="fit_desc">Sort: Highest Fit Score</option>
+                  <option value="value_desc">Sort: Highest Deal Value</option>
+                  <option value="updated_desc">Sort: Recently Synced</option>
+                  <option value="company_asc">Sort: Company A–Z</option>
+                </select>
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    onClick={resetAllFilters}
+                    className="min-h-[42px] whitespace-nowrap shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Reset Filters
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+              <select
+                aria-label="Filter by CRM stage"
+                value={filterStage}
+                onChange={(e) => setFilterStage(e.target.value as 'all' | CrmLeadStage)}
+                className="min-h-[38px] rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-800 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+              >
+                <option value="all">Stage: All</option>
+                {ALL_STAGES.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.label}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by data source"
+                value={filterSource}
+                onChange={(e) => setFilterSource(e.target.value as 'all' | LeadSourceType)}
+                className="min-h-[38px] rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-800 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+              >
+                <option value="all">Source: All</option>
+                <option value="github">GitHub Repo</option>
+                <option value="website">Company Website</option>
+                <option value="gemini_search">Gemini Search</option>
+                <option value="manual">Manual Entry</option>
+              </select>
+
+              <select
+                aria-label="Filter by email verification"
+                value={filterEmailStatus}
+                onChange={(e) =>
+                  setFilterEmailStatus(e.target.value as 'all' | EmailVerificationStatus)
+                }
+                className="min-h-[38px] rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-800 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+              >
+                <option value="all">Email: All</option>
+                <option value="verified_mx">MX Verified</option>
+                <option value="public_found">Public Found</option>
+                <option value="inferred">Domain Inferred</option>
+                <option value="invalid">Unverified</option>
+              </select>
+
+              <select
+                aria-label="Filter by recommended service"
+                value={filterService}
+                onChange={(e) => setFilterService(e.target.value as 'all' | ServiceCategory)}
+                className="min-h-[38px] rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-800 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+              >
+                <option value="all">Service: All</option>
+                {SERVICES.map((svc) => (
+                  <option key={svc} value={svc}>
+                    {svc}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by tech stack"
+                value={filterTech}
+                onChange={(e) => setFilterTech(e.target.value)}
+                className="min-h-[38px] rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-800 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+              >
+                <option value="all">Stack: All ({availableTechTags.length})</option>
+                {availableTechTags.map((item) => (
+                  <option key={item.tag} value={item.tag}>
+                    {item.tag} ({item.count})
+                  </option>
+                ))}
+              </select>
+
+              <select
+                aria-label="Filter by minimum fit score"
+                value={filterMinFit}
+                onChange={(e) => setFilterMinFit(Number(e.target.value))}
+                className="min-h-[38px] rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-1.5 text-xs text-slate-800 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+              >
+                <option value={0}>Fit Score: Any</option>
+                <option value={70}>Fit ≥ 70%</option>
+                <option value={80}>Fit ≥ 80%</option>
+                <option value={90}>Fit ≥ 90%</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Bulk Selection Toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs font-semibold text-slate-900 tabular-nums">
+                {selectedIds.size} lead{selectedIds.size === 1 ? '' : 's'} selected
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={() => handleBulkAction('research')}
+                  className="min-h-[38px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>{bulkBusy ? 'Working...' : 'Bulk AI Research'}</span>
+                </button>
+                <div className="inline-flex items-center gap-1">
+                  <select
+                    aria-label="Bulk target CRM stage"
+                    value={bulkStageTarget}
+                    onChange={(e) => setBulkStageTarget(e.target.value as CrmLeadStage)}
+                    className="min-h-[38px] rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-800"
+                  >
+                    {ALL_STAGES.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() => handleBulkAction('move_stage')}
+                    className="min-h-[38px] whitespace-nowrap shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    Move Stage
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleExportLeadsCsv(true)}
+                  className="min-h-[38px] whitespace-nowrap shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>Export Selected</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={() => handleBulkAction('delete')}
+                  className="min-h-[38px] whitespace-nowrap shrink-0 inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="min-h-[38px] px-2 text-xs font-medium text-slate-500 hover:text-slate-900"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* High-Density Apollo-Style Table */}
+          <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            {loading || (syncingDb && leads.length === 0) ? (
+              <div className="divide-y divide-slate-100">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <div key={n} className="px-4 py-3.5 flex items-center gap-4 animate-pulse">
+                    <div className="h-4 w-4 rounded bg-slate-200" />
+                    <div className="h-3.5 w-40 rounded bg-slate-200" />
+                    <div className="h-3.5 w-32 rounded bg-slate-100" />
+                    <div className="h-3.5 w-48 rounded bg-slate-100 flex-1" />
+                    <div className="h-3.5 w-20 rounded bg-slate-200" />
+                  </div>
+                ))}
+              </div>
+            ) : filteredLeads.length === 0 ? (
+              <div className="p-8 text-center space-y-3">
+                <div className="font-display text-sm font-bold text-slate-900">
+                  {leads.length === 0
+                    ? 'No leads loaded in your database yet'
+                    : 'No leads match your active filters'}
+                </div>
+                <p className="mx-auto max-w-md text-xs text-slate-600">
+                  {leads.length === 0
+                    ? 'Sync trending AI, Cloud, and DevTools open-source repositories to populate your lead database right away.'
+                    : 'Adjust your search terms or clear one of the active stage, verification, or tech stack filters.'}
+                </p>
+                <div className="flex flex-wrap justify-center gap-2 pt-1">
+                  {leads.length === 0 ? (
+                    <button
+                      type="button"
+                      disabled={syncingDb}
+                      onClick={() => handleSyncOpenSource('all')}
+                      className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${syncingDb ? 'animate-spin' : ''}`} />
+                      <span>Sync Trending Repos Now</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={resetAllFilters}
+                      className="min-h-[40px] rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+                    >
+                      Reset All Filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="w-10 px-3 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all filtered leads"
+                          checked={
+                            filteredLeads.length > 0 &&
+                            filteredLeads.every((l) => selectedIds.has(l.id))
+                          }
+                          onChange={toggleSelectAllFiltered}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                      </th>
+                      <th className="px-3 py-3">Contact &amp; Role</th>
+                      <th className="px-3 py-3">Company &amp; Open Sources</th>
+                      <th className="px-3 py-3">Email &amp; Status</th>
+                      <th className="px-3 py-3">Stack &amp; Service Fit</th>
+                      <th className="px-3 py-3 text-right">Fit / Value</th>
+                      <th className="px-3 py-3">Stage</th>
+                      <th className="px-3 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredLeads.map((lead) => {
+                      const emailMeta = EMAIL_STATUS_LABEL[lead.email_status];
+                      const isChecked = selectedIds.has(lead.id);
+                      return (
+                        <tr
+                          key={lead.id}
+                          className={`hover:bg-slate-50/80 transition-colors ${
+                            isChecked ? 'bg-slate-50' : ''
+                          }`}
+                        >
+                          <td className="px-3 py-2.5 align-top">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${lead.company_name}`}
+                              checked={isChecked}
+                              onChange={() => toggleSelectRow(lead.id)}
+                              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5 align-top max-w-[210px]">
+                            <button
+                              type="button"
+                              onClick={() => openLeadDossier(lead)}
+                              className="font-semibold text-slate-900 hover:text-[var(--gs-primary)] text-left block truncate w-full"
+                            >
+                              {lead.contact_name}
+                            </button>
+                            <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                              {lead.role_title || 'Engineering Contact'}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top max-w-[220px]">
+                            <div className="font-semibold text-slate-900 truncate">
+                              {lead.company_name}
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+                              <span className="capitalize">{lead.source_type.replace('_', ' ')}</span>
+                              {lead.website_url && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <a
+                                    href={lead.website_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-0.5 text-[var(--gs-primary)] hover:underline"
+                                  >
+                                    <span>Web</span>
+                                    <ExternalLink className="h-2.5 w-2.5" />
+                                  </a>
+                                </>
+                              )}
+                              {lead.github_url && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <a
+                                    href={lead.github_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-0.5 text-[var(--gs-primary)] hover:underline"
+                                  >
+                                    <span>GitHub</span>
+                                    <ExternalLink className="h-2.5 w-2.5" />
+                                  </a>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top max-w-[220px]">
+                            <div className="font-mono text-[11px] text-slate-800 truncate">
+                              {lead.email || '—'}
+                            </div>
+                            <div className={`mt-0.5 text-[11px] font-semibold ${emailMeta.tone}`}>
+                              {emailMeta.text}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top max-w-[220px]">
+                            <div className="font-medium text-slate-800 truncate">
+                              {lead.recommended_service}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                              {lead.tech_stack.length > 0
+                                ? lead.tech_stack.slice(0, 4).join(' · ')
+                                : 'General Cloud / Web'}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                            <div className="font-mono font-bold text-slate-900 tabular-nums">
+                              {lead.fit_score}%
+                            </div>
+                            <div className="mt-0.5 font-mono text-[11px] text-slate-500 tabular-nums">
+                              ${lead.deal_value.toLocaleString()}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 align-top whitespace-nowrap">
+                            <select
+                              aria-label={`Stage for ${lead.company_name}`}
+                              value={lead.stage}
+                              onChange={(e) =>
+                                handleMoveStage(lead, e.target.value as CrmLeadStage)
+                              }
+                              className="min-h-[34px] rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-800 focus:border-[var(--gs-primary)] focus:outline-none"
+                            >
+                              {ALL_STAGES.map((st) => (
+                                <option key={st.id} value={st.id}>
+                                  {st.label}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2.5 align-top text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-1.5">
+                              {lead.proposal_body ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openApproveToSend(
+                                      lead,
+                                      lead.proposal_subject,
+                                      lead.proposal_body
+                                    )
+                                  }
+                                  className="min-h-[34px] whitespace-nowrap shrink-0 inline-flex items-center gap-1 rounded-lg bg-[var(--gs-primary)] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+                                >
+                                  <Send className="h-3 w-3" />
+                                  <span>Send</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={researchingId === lead.id}
+                                  onClick={() => handleRunAgentResearch(lead.id)}
+                                  className="min-h-[34px] whitespace-nowrap shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-[var(--gs-primary)] hover:bg-slate-100 disabled:opacity-50"
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  <span>
+                                    {researchingId === lead.id ? 'Drafting...' : 'AI Draft'}
+                                  </span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => openLeadDossier(lead)}
+                                className="min-h-[34px] whitespace-nowrap shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                Dossier
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* VIEW 1: KANBAN CRM PIPELINE */}
       {subView === 'pipeline' && (

@@ -25,6 +25,8 @@ import type {
   InquiryStatus,
   LarkConnectionStatus,
   NewsletterSubscriber,
+  OpenSourceSyncResult,
+  OpenSourceSyncTrack,
   PageContentConfig,
   PageKey,
   RoutingRule,
@@ -666,6 +668,24 @@ export const api = {
       workflowItem: UserWorkflowItem | null;
     }>(`/api/crm/leads/${encodeURIComponent(id)}/convert`, {
       method: 'POST'
+    });
+  },
+
+  async syncOpenSourceLeads(track: OpenSourceSyncTrack = 'all') {
+    return request<OpenSourceSyncResult>('/api/crm/sync-opensource', {
+      method: 'POST',
+      body: JSON.stringify({ track })
+    });
+  },
+
+  async bulkCrmAction(payload: {
+    action: 'research' | 'move_stage' | 'delete';
+    leadIds: string[];
+    stage?: CrmLead['stage'];
+  }) {
+    return request<{ processedCount: number; leads: CrmLead[] }>('/api/crm/leads/bulk-action', {
+      method: 'POST',
+      body: JSON.stringify(payload)
     });
   }
 };

@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import crypto from 'node:crypto';
 import nodemailer from 'nodemailer';
 import type {
+  ApolloCapabilityMode,
   IntegrationConfigMeta,
   IntegrationProviderId,
   IntegrationSecretRecord,
@@ -299,7 +300,12 @@ async function runProviderLiveProbe(
   provider: IntegrationProviderId,
   secret: string,
   configMeta: IntegrationConfigMeta
-): Promise<{ ok: boolean; latencyMs: number; message: string }> {
+): Promise<{
+  ok: boolean;
+  latencyMs: number;
+  message: string;
+  apolloCapability?: ApolloCapabilityMode;
+}> {
   const started = Date.now();
   if (!secret) {
     return {
@@ -343,7 +349,26 @@ async function runProviderLiveProbe(
     }
 
     if (provider === 'apollo') {
-      const res = await fetch('https://api.apollo.io/api/v1/mixed_people/api_search', {
+      const healthRes = await fetch('https://api.apollo.io/api/v1/auth/health', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+          'x-api-key': secret
+        }
+      });
+
+      if (!healthRes.ok) {
+        const latencyMs = Date.now() - started;
+        const errText = await healthRes.text().catch(() => '');
+        return {
+          ok: false,
+          latencyMs,
+          message: `Apollo key rejected on auth/health (HTTP ${healthRes.status})${errText ? `: ${errText.slice(0, 140)}` : ''}`
+        };
+      }
+
+      const searchRes = await fetch('https://api.apollo.io/api/v1/mixed_people/api_search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -353,19 +378,40 @@ async function runProviderLiveProbe(
         body: JSON.stringify({ page: 1, per_page: 1, person_titles: ['CTO'] })
       });
       const latencyMs = Date.now() - started;
-      if (!res.ok) {
-        const errText = await res.text().catch(() => '');
+
+      if (searchRes.ok) {
+        const data = (await searchRes.json().catch(() => ({}))) as { total_entries?: number };
+        return {
+          ok: true,
+          latencyMs,
+          apolloCapability: 'full_search',
+          message: `Apollo.io Full Paid API verified (${Number(data.total_entries || 0).toLocaleString()} index entries) in ${latencyMs}ms.`
+        };
+      }
+
+      if (searchRes.status === 403) {
+        return {
+          ok: true,
+          latencyMs,
+          apolloCapability: 'trial_or_scoped',
+          message: `Apollo key authenticated (auth/health 200 in ${latencyMs}ms) — Trial / Scoped Plan: People Search API returns HTTP 403 until upgraded to a paid billing plan or Master Key. Use Apollo CSV Export in CRM Import.`
+        };
+      }
+
+      if (searchRes.status === 401) {
+        const errText = await searchRes.text().catch(() => '');
         return {
           ok: false,
           latencyMs,
-          message: `Apollo API returned HTTP ${res.status}${errText ? `: ${errText.slice(0, 140)}` : ''}`
+          message: `Apollo API returned HTTP 401${errText ? `: ${errText.slice(0, 140)}` : ''}`
         };
       }
-      const data = (await res.json().catch(() => ({}))) as { total_entries?: number };
+
       return {
         ok: true,
         latencyMs,
-        message: `Apollo.io API authenticated (${Number(data.total_entries || 0).toLocaleString()} index entries) in ${latencyMs}ms.`
+        apolloCapability: 'trial_or_scoped',
+        message: `Apollo key authenticated (auth/health 200 in ${latencyMs}ms), but People Search returned HTTP ${searchRes.status}.`
       };
     }
 
@@ -517,6 +563,10 @@ export async function saveAndVerifyIntegration(
     throw new Error(testResult.message);
   }
 
+  if (provider === 'apollo' && testResult.apolloCapability) {
+    nextMeta.apollo_capability = testResult.apolloCapability;
+  }
+
   const now = new Date().toISOString();
   const record: IntegrationSecretRecord = {
     provider,
@@ -557,6 +607,12 @@ export async function testIntegrationConnection(
 
   const testResult = await runProviderLiveProbe(provider, effectiveSecret, effectiveMeta);
   const now = new Date().toISOString();
+  const updatedMeta =
+    provider === 'apollo' && testResult.apolloCapability
+      ? { ...effectiveMeta, apollo_capability: testResult.apolloCapability }
+      : resolved.row
+        ? mergeConfigMeta(provider, resolved.row.config_meta, undefined)
+        : effectiveMeta;
 
   // Persist test telemetry on stored row if one exists or if provider is active
   if (resolved.row || effectiveSecret) {
@@ -565,7 +621,7 @@ export async function testIntegrationConnection(
       enabled: resolved.row ? resolved.row.enabled : Boolean(effectiveSecret),
       encrypted_secret: resolved.row?.encrypted_secret || '',
       secret_hint: resolved.row?.secret_hint || makeSecretHint(effectiveSecret),
-      config_meta: resolved.row ? mergeConfigMeta(provider, resolved.row.config_meta, undefined) : effectiveMeta,
+      config_meta: updatedMeta,
       last_tested_at: now,
       last_test_status: testResult.ok ? 'ok' : 'error',
       last_test_message: testResult.message,
@@ -597,6 +653,9 @@ export async function disconnectIntegration(
 ): Promise<IntegrationStatusItem> {
   const existing = await getIntegrationSecretRow(provider, userToken).catch(() => null);
   const preservedMeta = mergeConfigMeta(provider, existing?.config_meta, undefined);
+  if (provider === 'apollo') {
+    delete preservedMeta.apollo_capability;
+  }
   const now = new Date().toISOString();
 
   const record: IntegrationSecretRecord = {

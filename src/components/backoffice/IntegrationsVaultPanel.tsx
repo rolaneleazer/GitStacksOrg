@@ -196,19 +196,40 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
   const apiProviders = items.filter((i) => i.provider !== 'lark_smtp');
 
   const renderStatusLabel = (item: IntegrationStatusItem) => {
+    const isApolloTrial =
+      item.provider === 'apollo' &&
+      item.connected &&
+      item.configMeta?.apollo_capability === 'trial_or_scoped';
+    const isApolloFull =
+      item.provider === 'apollo' &&
+      item.connected &&
+      item.configMeta?.apollo_capability === 'full_search';
+
     if (item.source === 'vault' && item.connected) {
       return (
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#16A34A]">
+        <span className="inline-flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#16A34A]">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
           <span>Connected (Vault)</span>
+          {isApolloTrial && (
+            <span className="text-[#D97706] font-semibold">· Trial / Scoped Plan</span>
+          )}
+          {isApolloFull && (
+            <span className="text-[#16A34A] font-semibold">· Full Paid Search</span>
+          )}
         </span>
       );
     }
     if (item.source === 'env' && item.connected) {
       return (
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#16A34A]">
+        <span className="inline-flex flex-wrap items-center gap-1.5 text-xs font-semibold text-[#16A34A]">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
           <span>Connected (Server Env)</span>
+          {isApolloTrial && (
+            <span className="text-[#D97706] font-semibold">· Trial / Scoped Plan</span>
+          )}
+          {isApolloFull && (
+            <span className="text-[#16A34A] font-semibold">· Full Paid Search</span>
+          )}
         </span>
       );
     }
@@ -576,11 +597,15 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
                 {item.lastTestMessage && (
                   <div
                     className={`text-[11px] leading-relaxed ${
+                      item.provider === 'apollo' &&
+                      item.configMeta?.apollo_capability === 'trial_or_scoped' &&
                       item.lastTestStatus === 'ok'
-                        ? 'text-[#16A34A] font-medium'
-                        : item.lastTestStatus === 'error'
-                          ? 'text-[#DC2626] font-medium'
-                          : 'text-slate-500'
+                        ? 'text-[#D97706] font-medium'
+                        : item.lastTestStatus === 'ok'
+                          ? 'text-[#16A34A] font-medium'
+                          : item.lastTestStatus === 'error'
+                            ? 'text-[#DC2626] font-medium'
+                            : 'text-slate-500'
                     }`}
                   >
                     {item.lastTestMessage}

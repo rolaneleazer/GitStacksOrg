@@ -1755,6 +1755,7 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
             }}
             onError={(msg) => setNotice({ type: 'err', text: msg })}
             onOpenSettings={onOpenSettings}
+            onOpenMapsTab={() => setSubView('maps')}
           />
 
           <form

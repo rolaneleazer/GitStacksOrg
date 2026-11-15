@@ -668,10 +668,14 @@ export interface CrmSourcesAnalyticsResponse {
   syncRuns: CrmSyncRun[];
 }
 
+export type ApolloCapabilityMode = 'full_search' | 'trial_or_scoped' | 'unknown';
+
 export interface ApolloStatusResponse {
   configured: boolean;
   envVarName: 'APOLLO_API_KEY';
   endpointMode: 'mixed_people/api_search + people/bulk_match';
+  capabilityMode?: ApolloCapabilityMode;
+  capabilityMessage?: string;
 }
 
 export interface ApolloSearchFilters {
@@ -748,6 +752,7 @@ export interface IntegrationConfigMeta {
   imap_host?: string;
   imap_port?: number;
   imap_ssl?: boolean;
+  apollo_capability?: ApolloCapabilityMode;
 }
 
 export interface IntegrationSecretRecord {

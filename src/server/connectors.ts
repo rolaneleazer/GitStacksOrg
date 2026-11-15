@@ -169,7 +169,22 @@ export async function searchApolloPeople(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Apollo API returned HTTP ${res.status}: ${errText.slice(0, 220)}`);
+    let parsedMsg = errText.slice(0, 260);
+    try {
+      const parsed = JSON.parse(errText) as { error?: string };
+      if (parsed.error) parsedMsg = parsed.error;
+    } catch {
+      // keep raw snippet
+    }
+    const err = new Error(`Apollo API returned HTTP ${res.status}: ${parsedMsg}`) as Error & {
+      status?: number;
+      code?: string;
+    };
+    err.status = res.status;
+    if (res.status === 403) {
+      err.code = 'APOLLO_TRIAL_OR_SCOPED';
+    }
+    throw err;
   }
 
   const data = (await res.json()) as {
@@ -807,10 +822,12 @@ export async function importAndAnalyzeGoogleMapsPlaces(
 
 export async function buildLeadsFromCsvInputs(
   rows: CsvImportLeadInput[],
-  assignedUserId: string | null
+  assignedUserId: string | null,
+  sourceType: 'csv_import' | 'apollo' = 'csv_import'
 ): Promise<CrmLead[]> {
   const now = new Date().toISOString();
   const validRows = rows.filter((r) => Boolean(r.company_name?.trim())).slice(0, 100);
+  const isApolloCsv = sourceType === 'apollo';
 
   return Promise.all(
     validRows.map(async (row) => {
@@ -840,11 +857,15 @@ export async function buildLeadsFromCsvInputs(
         phone: (row.phone || '').trim(),
         location: (row.location || '').trim(),
         rating: null,
-        source_detail: 'Bulk CSV Import',
-        source_type: 'csv_import',
+        source_detail: isApolloCsv ? 'Apollo.io CSV Export' : 'Bulk CSV Import',
+        source_type: isApolloCsv ? 'apollo' : 'csv_import',
         source_urls: domain ? [`https://${domain}`] : [],
         tech_stack: stack,
-        research_brief: `Imported via CSV bulk upload (${row.company_name.trim()}).`,
+        research_brief: isApolloCsv
+          ? `Imported from Apollo.io CSV Export (${row.company_name.trim()}${
+              row.role_title?.trim() ? ` · ${row.role_title.trim()}` : ''
+            }).`
+          : `Imported via CSV bulk upload (${row.company_name.trim()}).`,
         recommended_service: service,
         fit_score: emailStatus === 'verified_mx' ? 85 : 72,
         deal_value: Number(row.deal_value) || 28000,

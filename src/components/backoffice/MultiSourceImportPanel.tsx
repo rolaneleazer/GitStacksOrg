@@ -1,10 +1,12 @@
 import {
+  AlertTriangle,
   CheckCircle2,
   Database,
   ExternalLink,
   FileSpreadsheet,
   Globe,
   KeyRound,
+  MapPin,
   RefreshCw,
   Search,
   Sparkles,
@@ -23,7 +25,11 @@ interface MultiSourceImportPanelProps {
   onLeadsUpdated: (leads: CrmLead[], noticeText: string) => void;
   onError: (msg: string) => void;
   onOpenSettings?: () => void;
+  onOpenMapsTab?: () => void;
 }
+
+const APOLLO_CSV_SAMPLE =
+  'First Name,Last Name,Title,Company,Email,Website,Corporate Phone,City,Country,Industry\nElena,Vance,VP of Engineering,Nebula Cloud Systems,elena@nebulacloud.io,https://nebulacloud.io,+1-415-555-0192,San Francisco,United States,Cloud Infrastructure';
 
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -49,45 +55,91 @@ function splitCsvLine(line: string): string[] {
   return out;
 }
 
-function parseCsvOrJsonToRows(raw: string): CsvImportLeadInput[] {
+function parseCsvOrJsonToRows(raw: string): {
+  rows: CsvImportLeadInput[];
+  isApolloFormat: boolean;
+} {
   const trimmed = raw.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return { rows: [], isApolloFormat: false };
   if (trimmed.startsWith('[')) {
-    const parsed = JSON.parse(trimmed) as Partial<CsvImportLeadInput>[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((r) => Boolean(r.company_name || (r as { company?: string }).company))
-      .map((r) => ({
-        company_name: String(r.company_name || (r as { company?: string }).company || '').trim(),
-        contact_name: String(r.contact_name || (r as { name?: string }).name || '').trim(),
-        role_title: String(r.role_title || (r as { title?: string }).title || '').trim(),
-        email: String(r.email || '').trim(),
-        website_url: String(r.website_url || (r as { website?: string }).website || '').trim(),
-        phone: String(r.phone || '').trim(),
-        location: String(r.location || '').trim()
-      }));
+    try {
+      const parsed = JSON.parse(trimmed) as Partial<CsvImportLeadInput>[];
+      if (!Array.isArray(parsed)) return { rows: [], isApolloFormat: false };
+      return {
+        isApolloFormat: false,
+        rows: parsed
+          .filter((r) => Boolean(r.company_name || (r as { company?: string }).company))
+          .map((r) => ({
+            company_name: String(r.company_name || (r as { company?: string }).company || '').trim(),
+            contact_name: String(r.contact_name || (r as { name?: string }).name || '').trim(),
+            role_title: String(r.role_title || (r as { title?: string }).title || '').trim(),
+            email: String(r.email || '').trim(),
+            website_url: String(r.website_url || (r as { website?: string }).website || '').trim(),
+            phone: String(r.phone || '').trim(),
+            location: String(r.location || '').trim()
+          }))
+      };
+    } catch {
+      return { rows: [], isApolloFormat: false };
+    }
   }
 
   const lines = trimmed
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { rows: [], isApolloFormat: false };
 
-  const headers = splitCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, '_'));
+  const headers = splitCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''));
   const colIdx = (aliases: string[]) => headers.findIndex((h) => aliases.includes(h));
 
-  const idxCompany = colIdx(['company', 'company_name', 'organization', 'account']);
+  const idxCompany = colIdx([
+    'company',
+    'company_name',
+    'company_name_for_emails',
+    'organization',
+    'account',
+    'account_name'
+  ]);
   const idxContact = colIdx(['contact', 'contact_name', 'name', 'full_name']);
-  const idxRole = colIdx(['role', 'role_title', 'title', 'job_title']);
+  const idxFirstName = colIdx(['first_name', 'firstname']);
+  const idxLastName = colIdx(['last_name', 'lastname']);
+  const idxRole = colIdx(['role', 'role_title', 'title', 'job_title', 'person_title']);
   const idxEmail = colIdx(['email', 'work_email', 'email_address']);
-  const idxWebsite = colIdx(['website', 'website_url', 'domain', 'company_domain', 'url']);
-  const idxPhone = colIdx(['phone', 'telephone', 'mobile']);
-  const idxLocation = colIdx(['location', 'city', 'country', 'address']);
+  const idxWebsite = colIdx([
+    'website',
+    'company_website',
+    'website_url',
+    'domain',
+    'company_domain',
+    'url'
+  ]);
+  const idxPhone = colIdx([
+    'phone',
+    'corporate_phone',
+    'work_direct_phone',
+    'mobile_phone',
+    'telephone',
+    'mobile'
+  ]);
+  const idxLocation = colIdx(['location', 'address']);
+  const idxCity = colIdx(['city', 'company_city']);
+  const idxState = colIdx(['state', 'company_state']);
+  const idxCountry = colIdx(['country', 'company_country']);
+  const idxTech = colIdx(['technologies', 'tech_stack', 'industry']);
 
-  if (idxCompany === -1 && idxEmail === -1 && idxWebsite === -1) return [];
+  const isApolloFormat =
+    (idxFirstName >= 0 && idxLastName >= 0) ||
+    headers.includes('company_name_for_emails') ||
+    headers.includes('person_linkedin_url') ||
+    headers.includes('corporate_phone') ||
+    headers.includes('work_direct_phone');
 
-  return lines
+  if (idxCompany === -1 && idxEmail === -1 && idxWebsite === -1) {
+    return { rows: [], isApolloFormat };
+  }
+
+  const rows = lines
     .slice(1)
     .map((line) => {
       const cells = splitCsvLine(line);
@@ -98,23 +150,54 @@ function parseCsvOrJsonToRows(raw: string): CsvImportLeadInput[] {
         company ||
         (website ? website.replace(/^https?:\/\//, '').split('/')[0] : '') ||
         (email.includes('@') ? email.split('@')[1] : '');
+
+      const combinedName =
+        (idxContact >= 0 ? cells[idxContact] : '') ||
+        [idxFirstName >= 0 ? cells[idxFirstName] : '', idxLastName >= 0 ? cells[idxLastName] : '']
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+
+      const combinedLocation =
+        (idxLocation >= 0 ? cells[idxLocation] : '') ||
+        [
+          idxCity >= 0 ? cells[idxCity] : '',
+          idxState >= 0 ? cells[idxState] : '',
+          idxCountry >= 0 ? cells[idxCountry] : ''
+        ]
+          .filter(Boolean)
+          .join(', ');
+
+      const rawTech = idxTech >= 0 ? cells[idxTech] || '' : '';
+      const techStack = rawTech
+        ? rawTech
+            .split(/[,;|]/)
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .slice(0, 6)
+        : [];
+
       return {
         company_name: fallbackCompany,
-        contact_name: idxContact >= 0 ? cells[idxContact] || '' : '',
+        contact_name: combinedName,
         role_title: idxRole >= 0 ? cells[idxRole] || '' : '',
         email,
         website_url: website,
         phone: idxPhone >= 0 ? cells[idxPhone] || '' : '',
-        location: idxLocation >= 0 ? cells[idxLocation] || '' : ''
+        location: combinedLocation,
+        ...(techStack.length > 0 ? { tech_stack: techStack } : {})
       };
     })
     .filter((r) => Boolean(r.company_name));
+
+  return { rows, isApolloFormat };
 }
 
 export function MultiSourceImportPanel({
   onLeadsUpdated,
   onError,
-  onOpenSettings
+  onOpenSettings,
+  onOpenMapsTab
 }: MultiSourceImportPanelProps) {
   const [activeConnector, setActiveConnector] = useState<'apollo' | 'datasets' | 'csv'>('apollo');
 
@@ -129,6 +212,7 @@ export function MultiSourceImportPanel({
   const [apolloCandidates, setApolloCandidates] = useState<ApolloCandidate[]>([]);
   const [apolloTotal, setApolloTotal] = useState(0);
   const [selectedApolloIds, setSelectedApolloIds] = useState<Set<string>>(new Set());
+  const [apolloBlockedError, setApolloBlockedError] = useState<string | null>(null);
 
   // HN + YC Harvester state
   const [hnKeyword, setHnKeyword] = useState('AI');
@@ -137,10 +221,9 @@ export function MultiSourceImportPanel({
   const [ycBusy, setYcBusy] = useState(false);
 
   // CSV / JSON state
-  const [csvRaw, setCsvRaw] = useState(
-    'company_name,contact_name,role_title,email,website_url,location\nAcme Cloud Labs,Maya Chen,VP Engineering,maya@acmecloud.io,https://acmecloud.io,San Francisco'
-  );
-  const [csvFileName, setCsvFileName] = useState('custom-leads.csv');
+  const [csvSourceMode, setCsvSourceMode] = useState<'apollo' | 'csv_import'>('apollo');
+  const [csvRaw, setCsvRaw] = useState(APOLLO_CSV_SAMPLE);
+  const [csvFileName, setCsvFileName] = useState('apollo-contacts-export.csv');
   const [csvImporting, setCsvImporting] = useState(false);
 
   useEffect(() => {
@@ -150,11 +233,13 @@ export function MultiSourceImportPanel({
       .catch(() => {});
   }, []);
 
-  const parsedCsvRows = parseCsvOrJsonToRows(csvRaw);
+  const parsedCsv = parseCsvOrJsonToRows(csvRaw);
+  const parsedCsvRows = parsedCsv.rows;
 
   const handleApolloSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setApolloSearching(true);
+    setApolloBlockedError(null);
     try {
       const splitComma = (s: string) =>
         s
@@ -175,7 +260,11 @@ export function MultiSourceImportPanel({
         onError('Apollo.io search returned 0 people for those filters.');
       }
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Apollo.io search failed.');
+      const msg = err instanceof Error ? err.message : 'Apollo.io search failed.';
+      if (/403|API_INACCESSIBLE|not included in your|Trial/i.test(msg)) {
+        setApolloBlockedError(msg);
+      }
+      onError(msg);
     } finally {
       setApolloSearching(false);
     }
@@ -237,19 +326,32 @@ export function MultiSourceImportPanel({
     setCsvFileName(file.name);
     const text = await file.text();
     setCsvRaw(text);
+    const detected = parseCsvOrJsonToRows(text);
+    if (detected.isApolloFormat) {
+      setCsvSourceMode('apollo');
+    }
+  };
+
+  const handleOpenApolloCsvMapper = () => {
+    setCsvSourceMode('apollo');
+    if (!csvRaw.trim()) {
+      setCsvRaw(APOLLO_CSV_SAMPLE);
+      setCsvFileName('apollo-contacts-export.csv');
+    }
+    setActiveConnector('csv');
   };
 
   const handleImportCsv = async () => {
     if (parsedCsvRows.length === 0) {
-      onError('No valid rows detected. Include a company_name column header.');
+      onError('No valid rows detected. Include a Company or company_name column header.');
       return;
     }
     setCsvImporting(true);
     try {
-      const res = await api.importCsvLeads(parsedCsvRows, csvFileName);
+      const res = await api.importCsvLeads(parsedCsvRows, csvFileName, csvSourceMode);
       onLeadsUpdated(
         res.leads,
-        `CSV/JSON Upload (${csvFileName}): +${res.insertedCount} new leads added, ${res.mergedCount} merged (${res.mxVerifiedCount} MX verified).`
+        `${csvSourceMode === 'apollo' ? 'Apollo.io CSV Export' : 'CSV/JSON Upload'} (${csvFileName}): +${res.insertedCount} new leads added, ${res.mergedCount} merged (${res.mxVerifiedCount} MX verified).`
       );
     } catch (err) {
       onError(err instanceof Error ? err.message : 'CSV bulk import failed.');
@@ -316,10 +418,24 @@ export function MultiSourceImportPanel({
               <KeyRound className="h-4 w-4 text-[var(--gs-primary)] shrink-0" />
               <span className="font-semibold text-slate-900">Apollo Integration Status:</span>
               {apolloStatus?.configured ? (
-                <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>Apollo API Active (Encrypted Vault / Server Proxy)</span>
-                </span>
+                apolloStatus.capabilityMode === 'trial_or_scoped' ? (
+                  <span className="inline-flex items-center gap-1 font-semibold text-amber-700">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    <span>
+                      Connected (Vault) · Trial / Scoped Plan (API Search Gated — Use Apollo CSV Export)
+                    </span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>
+                      Apollo API Active{' '}
+                      {apolloStatus.capabilityMode === 'full_search'
+                        ? '· Full Paid Search Ready'
+                        : '(Encrypted Vault / Server Proxy)'}
+                    </span>
+                  </span>
+                )
               ) : (
                 <span className="font-medium text-amber-800">
                   Not connected. Configure your <code className="font-mono text-[11px]">APOLLO_API_KEY</code> in
@@ -342,6 +458,61 @@ export function MultiSourceImportPanel({
               )}
             </div>
           </div>
+
+          {(apolloBlockedError || apolloStatus?.capabilityMode === 'trial_or_scoped') && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 space-y-3">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-950">
+                  <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0" />
+                  <span>
+                    Why Apollo People Search Returns HTTP 403 on Professional (Trial) Plans
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed text-amber-900">
+                  Your API key passes <code className="font-mono text-[11px]">auth/health</code>{' '}
+                  authentication, but Apollo blocks{' '}
+                  <code className="font-mono text-[11px]">mixed_people/api_search</code> and{' '}
+                  <code className="font-mono text-[11px]">mixed_companies/search</code> during Free &amp;
+                  Professional Trial periods until the subscription converts to an active paid billing
+                  cycle and uses a <strong>Master API Key</strong> (Apollo → Settings → Integrations → API).
+                </p>
+                {apolloBlockedError && (
+                  <p className="font-mono text-[11px] text-amber-800 break-words">
+                    {apolloBlockedError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleOpenApolloCsvMapper}
+                  className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  <span>Import Apollo CSV Export</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveConnector('datasets')}
+                  className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  <Database className="h-3.5 w-3.5" />
+                  <span>Switch to HN / YC Feeds</span>
+                </button>
+                {onOpenMapsTab && (
+                  <button
+                    type="button"
+                    onClick={onOpenMapsTab}
+                    className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                  >
+                    <MapPin className="h-3.5 w-3.5" />
+                    <span>Open Google Maps Finder</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleApolloSearch} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div>
@@ -556,48 +727,123 @@ export function MultiSourceImportPanel({
         </div>
       )}
 
-      {/* 3. CSV / JSON BULK IMPORTER */}
+      {/* 3. APOLLO CSV EXPORT & BULK CSV / JSON IMPORTER */}
       {activeConnector === 'csv' && (
         <div className="p-4 sm:p-5 space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-2">
                 <FileSpreadsheet className="h-4 w-4 text-teal-600" />
                 <h4 className="font-display text-xs font-bold text-slate-900">
-                  Bulk CSV or JSON Lead List Importer
+                  Apollo.io CSV Export &amp; Bulk Lead Mapper
                 </h4>
               </div>
               <p className="mt-0.5 text-[11px] text-slate-600">
-                Upload or paste up to 100 rows. Supports <code className="font-mono">company_name</code>,{' '}
-                <code className="font-mono">contact_name</code>, <code className="font-mono">role_title</code>,{' '}
-                <code className="font-mono">email</code>, <code className="font-mono">website_url</code>,{' '}
-                <code className="font-mono">phone</code>, and <code className="font-mono">location</code>.
+                Upload CSVs exported from Apollo.io (auto-maps <code className="font-mono">First Name</code>,{' '}
+                <code className="font-mono">Last Name</code>, <code className="font-mono">Title</code>,{' '}
+                <code className="font-mono">Company</code>, <code className="font-mono">Email</code>,{' '}
+                <code className="font-mono">Website</code>, <code className="font-mono">Corporate Phone</code>,{' '}
+                <code className="font-mono">City / Country</code>) or any generic CSV / JSON list.
               </p>
             </div>
 
-            <label className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer shrink-0">
-              <Upload className="h-3.5 w-3.5" />
-              <span>Upload .CSV / .JSON</span>
-              <input
-                type="file"
-                accept=".csv,.json,text/csv,application/json"
-                onChange={handleCsvFileUpload}
-                className="hidden"
-              />
-            </label>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setCsvSourceMode('apollo')}
+                  className={`min-h-[34px] rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    csvSourceMode === 'apollo'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Apollo.io CSV Export
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCsvSourceMode('csv_import')}
+                  className={`min-h-[34px] rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    csvSourceMode === 'csv_import'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Standard CSV / JSON
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setCsvSourceMode('apollo');
+                  setCsvFileName('apollo-contacts-export.csv');
+                  setCsvRaw(APOLLO_CSV_SAMPLE);
+                }}
+                className="min-h-[38px] rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Load Apollo Template
+              </button>
+
+              <label className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer shrink-0">
+                <Upload className="h-3.5 w-3.5" />
+                <span>Upload .CSV / .JSON</span>
+                <input
+                  type="file"
+                  accept=".csv,.json,text/csv,application/json"
+                  onChange={handleCsvFileUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
           </div>
 
           <textarea
             rows={5}
             value={csvRaw}
-            onChange={(e) => setCsvRaw(e.target.value)}
-            placeholder="company_name,contact_name,role_title,email,website_url,location"
+            onChange={(e) => {
+              const nextVal = e.target.value;
+              setCsvRaw(nextVal);
+              const detected = parseCsvOrJsonToRows(nextVal);
+              if (detected.isApolloFormat) setCsvSourceMode('apollo');
+            }}
+            placeholder="First Name,Last Name,Title,Company,Email,Website,Corporate Phone,City,Country"
             className="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2.5 font-mono text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
           />
 
+          {parsedCsvRows.length > 0 && (
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full text-left text-[11px]">
+                <thead className="border-b border-slate-200 bg-slate-50 font-semibold text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Contact</th>
+                    <th className="px-3 py-2">Title</th>
+                    <th className="px-3 py-2">Company</th>
+                    <th className="px-3 py-2">Email</th>
+                    <th className="px-3 py-2">Location</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white text-slate-800">
+                  {parsedCsvRows.slice(0, 4).map((r, i) => (
+                    <tr key={`${r.company_name}-${i}`}>
+                      <td className="px-3 py-2 font-medium">{r.contact_name || '—'}</td>
+                      <td className="px-3 py-2 text-slate-600">{r.role_title || '—'}</td>
+                      <td className="px-3 py-2 font-semibold">{r.company_name}</td>
+                      <td className="px-3 py-2 font-mono">{r.email || '—'}</td>
+                      <td className="px-3 py-2 text-slate-600">{r.location || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-slate-600 font-mono tabular-nums">
-              {parsedCsvRows.length} valid row{parsedCsvRows.length === 1 ? '' : 's'} detected ({csvFileName})
+              {parsedCsvRows.length} valid row{parsedCsvRows.length === 1 ? '' : 's'} detected ({csvFileName}) · Attribution:{' '}
+              <strong className="text-slate-900">
+                {csvSourceMode === 'apollo' ? 'Apollo.io' : 'CSV Bulk Import'}
+              </strong>
             </span>
             <button
               type="button"
@@ -609,7 +855,9 @@ export function MultiSourceImportPanel({
               <span>
                 {csvImporting
                   ? 'Validating MX & Importing...'
-                  : `Import ${parsedCsvRows.length} Lead${parsedCsvRows.length === 1 ? '' : 's'} to CRM`}
+                  : `Import ${parsedCsvRows.length} Lead${parsedCsvRows.length === 1 ? '' : 's'} as ${
+                      csvSourceMode === 'apollo' ? 'Apollo.io' : 'CSV'
+                    }`}
               </span>
             </button>
           </div>

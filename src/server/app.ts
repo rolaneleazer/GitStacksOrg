@@ -2522,11 +2522,14 @@ export async function createApp(): Promise<Express> {
   });
 
   app.get('/api/crm/apollo/status', requireRoles('super_admin', 'editor'), async (req, res) => {
-    const key = await getApolloApiKey(getBearerToken(req));
+    const resolved = await resolveIntegrationConfig('apollo', getBearerToken(req));
     res.json({
-      configured: Boolean(key),
+      configured: Boolean(resolved.secret),
       envVarName: 'APOLLO_API_KEY',
-      endpointMode: 'mixed_people/api_search + people/bulk_match'
+      endpointMode: 'mixed_people/api_search + people/bulk_match',
+      capabilityMode:
+        resolved.configMeta.apollo_capability || (resolved.secret ? 'unknown' : undefined),
+      capabilityMessage: resolved.row?.last_test_message || ''
     });
   });
 
@@ -2536,8 +2539,15 @@ export async function createApp(): Promise<Express> {
       const result = await searchApolloPeople(filters, getBearerToken(req));
       res.json(result);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Apollo.io search failed';
-      res.status(message.includes('Apollo') ? 400 : 502).json({ error: message });
+      const typed = err as Error & { status?: number; code?: string };
+      const message = typed instanceof Error ? typed.message : 'Apollo.io search failed';
+      const status =
+        typed.status === 403
+          ? 403
+          : message.includes('Apollo')
+            ? 400
+            : 502;
+      res.status(status).json({ error: message, code: typed.code || undefined });
     }
   });
 
@@ -2666,14 +2676,17 @@ export async function createApp(): Promise<Express> {
   app.post('/api/crm/sources/csv/import', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
     try {
       const token = getBearerToken(req);
-      const { rows, fileName } = req.body as {
+      const { rows, fileName, sourceType } = req.body as {
         rows?: CsvImportLeadInput[];
         fileName?: string;
+        sourceType?: 'csv_import' | 'apollo';
       };
+      const resolvedSource: 'csv_import' | 'apollo' =
+        sourceType === 'apollo' ? 'apollo' : 'csv_import';
       if (!Array.isArray(rows) || rows.length === 0) {
         return res.status(400).json({ error: 'Provide at least one row with a company_name.' });
       }
-      const builtLeads = await buildLeadsFromCsvInputs(rows, req.editor!.userId);
+      const builtLeads = await buildLeadsFromCsvInputs(rows, req.editor!.userId, resolvedSource);
       if (builtLeads.length === 0) {
         return res.status(400).json({ error: 'No valid rows containing a company name were found.' });
       }
@@ -2683,8 +2696,11 @@ export async function createApp(): Promise<Express> {
       await addCrmSyncRun(
         {
           id: `sync-${crypto.randomUUID().slice(0, 8)}`,
-          source_type: 'csv_import',
-          query_label: (fileName || 'CSV / JSON Lead Upload').slice(0, 100),
+          source_type: resolvedSource,
+          query_label: (
+            fileName ||
+            (resolvedSource === 'apollo' ? 'Apollo.io CSV Export' : 'CSV / JSON Lead Upload')
+          ).slice(0, 100),
           fetched_count: builtLeads.length,
           inserted_count: merged.insertedCount,
           merged_count: merged.mergedCount,

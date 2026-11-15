@@ -756,7 +756,11 @@ export const api = {
     });
   },
 
-  async importCsvLeads(rows: CsvImportLeadInput[], fileName?: string) {
+  async importCsvLeads(
+    rows: CsvImportLeadInput[],
+    fileName?: string,
+    sourceType: 'csv_import' | 'apollo' = 'csv_import'
+  ) {
     return request<{
       insertedCount: number;
       mergedCount: number;
@@ -764,7 +768,7 @@ export const api = {
       leads: CrmLead[];
     }>('/api/crm/sources/csv/import', {
       method: 'POST',
-      body: JSON.stringify({ rows, fileName })
+      body: JSON.stringify({ rows, fileName, sourceType })
     });
   },
 

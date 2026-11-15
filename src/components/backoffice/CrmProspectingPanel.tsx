@@ -4,9 +4,6 @@ import {
   Bot,
   Briefcase,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Copy,
   Database,
   Download,
   ExternalLink,
@@ -54,6 +51,7 @@ interface CrmProspectingPanelProps {
     inquiry: ClientInquiry | null;
     workflowItem: UserWorkflowItem | null;
   }) => void;
+  onOpenSettings?: () => void;
 }
 
 const PRIMARY_STAGES: { id: CrmLeadStage; label: string; hint: string }[] = [
@@ -84,7 +82,7 @@ const EMAIL_STATUS_LABEL: Record<EmailVerificationStatus, { text: string; tone: 
   invalid: { text: 'Unverified', tone: 'text-slate-500' }
 };
 
-export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
+export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectingPanelProps) {
   const [subView, setSubView] = useState<
     'directory' | 'pipeline' | 'discover' | 'maps' | 'sources' | 'logs'
   >('directory');
@@ -126,8 +124,6 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
   // Lark & Gmail Mail Channels
   const [larkStatus, setLarkStatus] = useState<LarkConnectionStatus | null>(null);
   const [larkBusy, setLarkBusy] = useState(false);
-  const [showLarkSetup, setShowLarkSetup] = useState(false);
-  const [copiedUri, setCopiedUri] = useState<string | null>(null);
   const [gmailEmail, setGmailEmail] = useState<string | null>(null);
   const [gmailBusy, setGmailBusy] = useState(false);
 
@@ -242,79 +238,13 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
     return () => unsub();
   }, []);
 
-  // Listen for Lark OAuth popup postMessage
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      try {
-        const origin = event.origin || '';
-        const isAllowedOrigin =
-          origin === window.location.origin ||
-          origin.endsWith('.run.app') ||
-          origin.endsWith('.vercel.app') ||
-          origin.startsWith('http://localhost');
-        if (!isAllowedOrigin) return;
-      } catch {
-        return;
-      }
-
-      const data = event.data as {
-        type?: string;
-        email?: string;
-        name?: string;
-        error?: string;
-      } | null;
-      if (!data || typeof data !== 'object') return;
-
-      if (data.type === 'LARK_OAUTH_SUCCESS') {
-        setLarkBusy(false);
-        setNotice({
-          type: 'ok',
-          text: `Lark Mail connected${data.email ? ` (${data.email})` : ''}. Ready to send proposals.`
-        });
-        api.getLarkStatus().then(setLarkStatus).catch(() => {});
-      } else if (data.type === 'LARK_OAUTH_ERROR') {
-        setLarkBusy(false);
-        setNotice({
-          type: 'err',
-          text: data.error || 'Lark Mail authorization was cancelled or failed.'
-        });
-      }
-    };
-
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, []);
-
-  const handleConnectLark = async () => {
-    setNotice(null);
-    setLarkBusy(true);
-    try {
-      const { url } = await api.getLarkAuthUrl();
-      const popup = window.open(url, 'lark_oauth_popup', 'width=600,height=720');
-      if (!popup) {
-        setLarkBusy(false);
-        setNotice({
-          type: 'err',
-          text: 'Popup was blocked by your browser. Allow popups for this workspace and retry Lark Mail connection.'
-        });
-      }
-    } catch (err) {
-      setLarkBusy(false);
-      setShowLarkSetup(true);
-      setNotice({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'Unable to initialize Lark OAuth.'
-      });
-    }
-  };
-
   const handleDisconnectLark = async () => {
     setLarkBusy(true);
     try {
       await api.disconnectLark();
       const status = await api.getLarkStatus();
       setLarkStatus(status);
-      setNotice({ type: 'ok', text: 'Lark Mail account disconnected.' });
+      setNotice({ type: 'ok', text: 'Lark Mail SMTP account disconnected.' });
     } catch (err) {
       setNotice({
         type: 'err',
@@ -339,16 +269,6 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
       });
     } finally {
       setGmailBusy(false);
-    }
-  };
-
-  const handleCopyText = async (label: string, value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopiedUri(label);
-      setTimeout(() => setCopiedUri(null), 2000);
-    } catch {
-      // ignore clipboard restriction
     }
   };
 
@@ -925,55 +845,62 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
         </div>
       </div>
 
-      {/* Mail Channels Bar (Lark Open Platform OAuth + Gmail Fallback) */}
+      {/* Mail Channels Bar (Lark SMTP SSL + Gmail Fallback) */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Mail className="h-4 w-4 text-[var(--gs-primary)] shrink-0" />
               <h2 className="font-display text-sm font-bold text-slate-900">
-                Lark Open Platform Mail &amp; Gmail Outreach
+                Lark Mail SMTP SSL &amp; Gmail Outreach
               </h2>
               <span className="text-xs text-slate-400">·</span>
               {larkStatus?.connected ? (
                 <span className="text-xs font-semibold text-emerald-700">
-                  Lark Connected ({larkStatus.lark_email || larkStatus.lark_name})
-                </span>
-              ) : larkStatus?.configured ? (
-                <span className="text-xs font-semibold text-sky-700">
-                  Lark OAuth Ready
+                  SMTP Connected ({larkStatus.lark_email || larkStatus.lark_name} ·{' '}
+                  <span className="font-mono">
+                    {larkStatus.smtp_host || 'smtp.larksuite.com'}:{larkStatus.smtp_port || 465}
+                  </span>
+                  )
                 </span>
               ) : (
                 <span className="text-xs font-medium text-amber-700">
-                  Lark App Credentials Required
+                  Not Configured — Set Lark Email &amp; Authorization Code in Settings
                 </span>
               )}
             </div>
             <p className="mt-1 text-xs text-slate-600">
-              Every proposal and follow-up pauses at an Approve &amp; Send modal before sending via
-              your authenticated Lark mailbox or Gmail.
+              Every proposal and follow-up pauses at an Approve &amp; Send modal before dispatching
+              via encrypted Lark SMTP SSL (port 465) or Gmail OAuth.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {larkStatus?.connected ? (
+            {larkStatus?.connected && (
               <button
                 type="button"
                 disabled={larkBusy}
                 onClick={handleDisconnectLark}
                 className="min-h-[42px] whitespace-nowrap shrink-0 rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
-                Disconnect Lark
+                {larkBusy ? 'Disconnecting...' : 'Disconnect Lark'}
               </button>
-            ) : (
+            )}
+
+            {onOpenSettings && (
               <button
                 type="button"
-                disabled={larkBusy}
-                onClick={handleConnectLark}
-                className="min-h-[42px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
+                onClick={onOpenSettings}
+                className={`min-h-[42px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold ${
+                  larkStatus?.connected
+                    ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    : 'bg-[var(--gs-primary)] text-white hover:bg-[var(--gs-primary-hover)]'
+                }`}
               >
                 <ShieldCheck className="h-3.5 w-3.5" />
-                <span>{larkBusy ? 'Opening Lark...' : 'Connect Lark Mail'}</span>
+                <span>
+                  {larkStatus?.connected ? 'Manage Integrations' : 'Configure Lark SMTP'}
+                </span>
               </button>
             )}
 
@@ -986,69 +913,8 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
               <Mail className="h-3.5 w-3.5" />
               <span>{gmailEmail ? `Gmail: ${gmailEmail}` : gmailBusy ? 'Connecting...' : 'Connect Gmail'}</span>
             </button>
-
-            <button
-              type="button"
-              onClick={() => setShowLarkSetup((p) => !p)}
-              className="min-h-[42px] whitespace-nowrap shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
-              <span>Lark Setup URLs</span>
-              {showLarkSetup ? (
-                <ChevronUp className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronDown className="h-3.5 w-3.5" />
-              )}
-            </button>
           </div>
         </div>
-
-        {showLarkSetup && (
-          <div className="border-t border-slate-200 pt-3 text-xs text-slate-600 space-y-2">
-            <div className="font-semibold text-slate-900">
-              Lark Developer Console Redirect URLs &amp; Scopes
-            </div>
-            <p className="text-[11px] text-slate-600">
-              Add these exact Redirect URLs in your Lark Open Platform App →{' '}
-              <strong>Security Settings → Redirect URLs</strong>, enable{' '}
-              <code className="font-mono text-slate-800">
-                mail:user_mailbox.message:send
-              </code>{' '}
-              and set <code className="font-mono text-slate-800">LARK_APP_ID</code> &amp;{' '}
-              <code className="font-mono text-slate-800">LARK_APP_SECRET</code> in your server
-              environment secrets.
-            </p>
-            {larkStatus?.redirect_uris && (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                {(
-                  [
-                    ['Development Redirect URL', larkStatus.redirect_uris.development],
-                    ['Shared / Preview Redirect URL', larkStatus.redirect_uris.shared]
-                  ] as const
-                ).map(([label, uri]) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                        {label}
-                      </div>
-                      <div className="font-mono text-[11px] text-slate-800 truncate">{uri}</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyText(label, uri)}
-                      className="shrink-0 inline-flex items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
-                    >
-                      <Copy className="h-3 w-3" />
-                      <span>{copiedUri === label ? 'Copied' : 'Copy'}</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Open-Source Multi-Repo Database Sync Bar */}
@@ -1888,6 +1754,7 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
               setNotice({ type: 'ok', text });
             }}
             onError={(msg) => setNotice({ type: 'err', text: msg })}
+            onOpenSettings={onOpenSettings}
           />
 
           <form
@@ -2082,6 +1949,7 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
           }}
           onOpenLead={(lead) => openLeadDossier(lead)}
           onError={(msg) => setNotice({ type: 'err', text: msg })}
+          onOpenSettings={onOpenSettings}
         />
       )}
 
@@ -2735,10 +2603,10 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
                   className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                 >
                   <option value="lark_mail">
-                    Lark Open Platform Mail{' '}
+                    Lark Mail SMTP SSL{' '}
                     {larkStatus?.connected
                       ? `(${larkStatus.lark_email || 'Connected'})`
-                      : '(Connect First)'}
+                      : '(Configure in Settings)'}
                   </option>
                   <option value="gmail_api">
                     Gmail OAuth ({gmailEmail || 'Sign in on Send'})
@@ -2765,16 +2633,21 @@ export function CrmProspectingPanel({ onDealWon }: CrmProspectingPanelProps) {
             {sendModal.channel === 'lark_mail' && !larkStatus?.connected && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
                 <span>
-                  Lark Mail is not connected for this session yet. Connect your Lark account or
-                  switch channel to Gmail OAuth above.
+                  Lark Mail SMTP SSL is not configured yet. Set your Lark email &amp; Authorization
+                  Code in Settings &amp; Integrations, or switch channel to Gmail OAuth above.
                 </span>
-                <button
-                  type="button"
-                  onClick={handleConnectLark}
-                  className="rounded-lg bg-amber-700 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-800"
-                >
-                  Connect Lark Mail
-                </button>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSendModal(null);
+                      onOpenSettings();
+                    }}
+                    className="rounded-lg bg-amber-700 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-800"
+                  >
+                    Open Settings &amp; Integrations
+                  </button>
+                )}
               </div>
             )}
 

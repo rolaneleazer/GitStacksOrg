@@ -30,6 +30,9 @@ import type {
   GoogleMapsPlaceCandidate,
   InfrastructureMetricsResponse,
   InquiryStatus,
+  IntegrationConfigMeta,
+  IntegrationProviderId,
+  IntegrationStatusItem,
   LarkConnectionStatus,
   NewsletterSubscriber,
   OpenSourceSyncResult,
@@ -792,6 +795,53 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ places, runAnalysis, searchLabel })
     });
+  },
+
+  // --- Encrypted Integrations & Connections Vault ---
+  async listIntegrations() {
+    return request<{ integrations: IntegrationStatusItem[] }>('/api/integrations');
+  },
+
+  async saveIntegration(
+    provider: IntegrationProviderId,
+    payload: {
+      secret?: string;
+      configMeta?: IntegrationConfigMeta;
+      useEnvFallback?: boolean;
+      skipVerify?: boolean;
+    }
+  ) {
+    return request<{
+      integration: IntegrationStatusItem;
+      testResult: { ok: boolean; latencyMs: number; message: string };
+    }>(`/api/integrations/${encodeURIComponent(provider)}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async testIntegration(
+    provider: IntegrationProviderId,
+    payload?: {
+      secret?: string;
+      configMeta?: IntegrationConfigMeta;
+    }
+  ) {
+    return request<{
+      integration: IntegrationStatusItem;
+      testResult: { ok: boolean; latencyMs: number; message: string };
+    }>(`/api/integrations/${encodeURIComponent(provider)}/test`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  },
+
+  async disconnectIntegration(provider: IntegrationProviderId) {
+    return request<{ integration: IntegrationStatusItem }>(
+      `/api/integrations/${encodeURIComponent(provider)}`,
+      { method: 'DELETE' }
+    );
   }
 };
+
 

@@ -9,9 +9,10 @@ import type {
   OpenSourceSyncTrack,
   ServiceCategory
 } from '../shared/types.ts';
+import { resolveIntegrationSecret } from './vault.ts';
 
-function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+async function getGeminiClient(userToken?: string): Promise<GoogleGenAI | null> {
+  const apiKey = await resolveIntegrationSecret('gemini', userToken);
   if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') return null;
   return new GoogleGenAI({
     apiKey,
@@ -217,11 +218,11 @@ interface GitHubUserDetail {
   public_repos: number;
 }
 
-async function fetchGitHubJson<T>(url: string): Promise<T | null> {
+async function fetchGitHubJson<T>(url: string, userToken?: string): Promise<T | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
   try {
-    const ghToken = process.env.GITHUB_TOKEN?.trim();
+    const ghToken = await resolveIntegrationSecret('github', userToken);
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
@@ -241,7 +242,8 @@ async function fetchGitHubJson<T>(url: string): Promise<T | null> {
 
 export async function discoverOpenSourceLeads(
   query: string,
-  mode: 'auto' | 'github' | 'website' = 'auto'
+  mode: 'auto' | 'github' | 'website' = 'auto',
+  userToken?: string
 ): Promise<{
   candidates: DiscoveredProspectCandidate[];
   sourcesChecked: string[];
@@ -301,7 +303,8 @@ export async function discoverOpenSourceLeads(
   if (mode === 'auto' || mode === 'github') {
     const ghQuery = maybeDomain ? maybeDomain.split('.')[0] : cleanQuery;
     const repoSearch = await fetchGitHubJson<{ items?: GitHubRepoSearchItem[] }>(
-      `https://api.github.com/search/repositories?q=${encodeURIComponent(ghQuery)}&sort=stars&per_page=5`
+      `https://api.github.com/search/repositories?q=${encodeURIComponent(ghQuery)}&sort=stars&per_page=5`,
+      userToken
     );
 
     if (repoSearch?.items?.length) {
@@ -311,7 +314,8 @@ export async function discoverOpenSourceLeads(
       const userDetails = await Promise.all(
         uniqueLogins.map(async (login) => {
           const detail = await fetchGitHubJson<GitHubUserDetail>(
-            `https://api.github.com/users/${encodeURIComponent(login)}`
+            `https://api.github.com/users/${encodeURIComponent(login)}`,
+            userToken
           );
           const repo = repoSearch.items!.find((r) => r.owner.login === login);
           return { detail, repo };
@@ -376,7 +380,7 @@ export async function discoverOpenSourceLeads(
   }
 
   // 3. Optional Server-Side Gemini Search Grounding Fallback if sparse results
-  const ai = getGeminiClient();
+  const ai = await getGeminiClient(userToken);
   if (ai && candidates.length < 2 && mode !== 'github') {
     try {
       const searchResp = await ai.models.generateContent({
@@ -483,7 +487,10 @@ export async function discoverOpenSourceLeads(
   };
 }
 
-export async function runProspectResearchAndProposal(lead: CrmLead): Promise<{
+export async function runProspectResearchAndProposal(
+  lead: CrmLead,
+  userToken?: string
+): Promise<{
   research_brief: string;
   recommended_service: ServiceCategory;
   fit_score: number;
@@ -501,7 +508,8 @@ export async function runProspectResearchAndProposal(lead: CrmLead): Promise<{
   const ghMatch = lead.github_url.match(/github\.com\/([^/]+)/i);
   if (ghMatch?.[1]) {
     const detail = await fetchGitHubJson<GitHubUserDetail>(
-      `https://api.github.com/users/${encodeURIComponent(ghMatch[1])}`
+      `https://api.github.com/users/${encodeURIComponent(ghMatch[1])}`,
+      userToken
     );
     if (detail) {
       ghBio = `GitHub Profile: ${detail.login}, Public Repos: ${detail.public_repos}, Bio: ${detail.bio || 'N/A'}`;
@@ -515,7 +523,7 @@ export async function runProspectResearchAndProposal(lead: CrmLead): Promise<{
     new Set([...(lead.source_urls || []), ...(web?.sourceUrls || [])])
   ).slice(0, 8);
 
-  const ai = getGeminiClient();
+  const ai = await getGeminiClient(userToken);
   if (ai) {
     try {
       const prompt = [
@@ -772,7 +780,8 @@ function isNonGenericWebsiteDomain(domain: string): boolean {
 
 export async function harvestTrendingOpenSourceLeads(
   track: OpenSourceSyncTrack = 'all',
-  assignedUserId: string | null = null
+  assignedUserId: string | null = null,
+  userToken?: string
 ): Promise<{
   leads: CrmLead[];
   reposScanned: number;
@@ -793,7 +802,7 @@ export async function harvestTrendingOpenSourceLeads(
   const searchResponses = await Promise.all(
     searchJobs.map(async (job) => {
       const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(job.query)}&sort=updated&per_page=7`;
-      const data = await fetchGitHubJson<{ items?: GitHubRepoSearchItem[] }>(url);
+      const data = await fetchGitHubJson<{ items?: GitHubRepoSearchItem[] }>(url, userToken);
       return { ...job, url, items: data?.items || [] };
     })
   );
@@ -830,7 +839,8 @@ export async function harvestTrendingOpenSourceLeads(
     const enriched = await Promise.all(
       selectedEntries.map(async ({ login, repo, trackKey }) => {
         const detail = await fetchGitHubJson<GitHubUserDetail>(
-          `https://api.github.com/users/${encodeURIComponent(login)}`
+          `https://api.github.com/users/${encodeURIComponent(login)}`,
+          userToken
         );
         const homepageDomain = normalizeDomain(repo.homepage || '');
         const blogDomain = normalizeDomain(detail?.blog || '');

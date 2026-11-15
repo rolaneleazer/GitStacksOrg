@@ -604,6 +604,10 @@ export interface LarkConnectionStatus {
   lark_email: string;
   lark_name: string;
   expires_at: string | null;
+  mode?: 'smtp' | 'oauth';
+  smtp_host?: string;
+  smtp_port?: number;
+  source?: 'vault' | 'env' | 'disconnected';
   redirect_uris: {
     development: string;
     shared: string;
@@ -727,4 +731,54 @@ export interface CsvImportLeadInput {
   recommended_service?: ServiceCategory;
   deal_value?: number;
 }
+
+export type IntegrationProviderId =
+  | 'lark_smtp'
+  | 'apollo'
+  | 'google_maps'
+  | 'gemini'
+  | 'github';
+
+export interface IntegrationConfigMeta {
+  email?: string;
+  sender_name?: string;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_ssl?: boolean;
+  imap_host?: string;
+  imap_port?: number;
+  imap_ssl?: boolean;
+}
+
+export interface IntegrationSecretRecord {
+  provider: IntegrationProviderId;
+  enabled: boolean;
+  encrypted_secret: string;
+  secret_hint: string;
+  config_meta: IntegrationConfigMeta;
+  last_tested_at: string | null;
+  last_test_status: 'ok' | 'error' | 'untested';
+  last_test_message: string;
+  updated_by: string;
+  updated_at: string;
+}
+
+export interface IntegrationStatusItem {
+  provider: IntegrationProviderId;
+  label: string;
+  category: 'Email Outreach' | 'Lead Prospecting' | 'AI & Grounding' | 'Open-Source Scraping';
+  description: string;
+  connected: boolean;
+  enabled: boolean;
+  source: 'vault' | 'env' | 'disconnected';
+  envFallbackAvailable: boolean;
+  maskedHint: string;
+  configMeta: IntegrationConfigMeta;
+  lastTestedAt: string | null;
+  lastTestStatus: 'ok' | 'error' | 'untested';
+  lastTestMessage: string;
+  updatedAt: string | null;
+  docsHint: string;
+}
+
 

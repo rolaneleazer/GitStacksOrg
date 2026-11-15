@@ -13,6 +13,7 @@ import {
   scrapePublicWebsite,
   verifyEmailMxDomain
 } from './prospecting.ts';
+import { resolveIntegrationSecret } from './vault.ts';
 
 function normalizeDomain(input: string): string {
   const clean = input
@@ -105,8 +106,8 @@ function inferServiceFromStack(stack: string[], hint = ''): ServiceCategory {
 
 // --- 1. APOLLO.IO SERVER-SECRET CONNECTOR ---
 
-export function getApolloApiKey(): string {
-  return process.env.APOLLO_API_KEY?.trim() || '';
+export async function getApolloApiKey(userToken?: string): Promise<string> {
+  return resolveIntegrationSecret('apollo', userToken);
 }
 
 interface ApolloApiPerson {
@@ -131,14 +132,17 @@ interface ApolloApiPerson {
   };
 }
 
-export async function searchApolloPeople(filters: ApolloSearchFilters): Promise<{
+export async function searchApolloPeople(
+  filters: ApolloSearchFilters,
+  userToken?: string
+): Promise<{
   candidates: ApolloCandidate[];
   totalEntries: number;
 }> {
-  const apiKey = getApolloApiKey();
+  const apiKey = await getApolloApiKey(userToken);
   if (!apiKey) {
     throw new Error(
-      'APOLLO_API_KEY is not configured in server environment secrets. Add APOLLO_API_KEY on the server to query Apollo.io.'
+      'Apollo.io API key is not configured or is disconnected. Connect Apollo.io in Settings -> Integrations Vault.'
     );
   }
 
@@ -217,11 +221,12 @@ export async function searchApolloPeople(filters: ApolloSearchFilters): Promise<
 
 export async function enrichAndBuildApolloLeads(
   selectedCandidates: ApolloCandidate[],
-  assignedUserId: string | null
+  assignedUserId: string | null,
+  userToken?: string
 ): Promise<CrmLead[]> {
-  const apiKey = getApolloApiKey();
+  const apiKey = await getApolloApiKey(userToken);
   if (!apiKey) {
-    throw new Error('APOLLO_API_KEY is required on the server to enrich Apollo contacts.');
+    throw new Error('Apollo.io API key is required to enrich Apollo contacts. Connect it in Settings -> Integrations Vault.');
   }
 
   const enrichedMap = new Map<string, ApolloApiPerson>();
@@ -604,12 +609,8 @@ export class MapsQuotaExceededError extends Error {
   }
 }
 
-export function getGoogleMapsApiKey(): string {
-  return (
-    process.env.GOOGLE_MAPS_API_KEY?.trim() ||
-    process.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ||
-    ''
-  );
+export async function getGoogleMapsApiKey(userToken?: string): Promise<string> {
+  return resolveIntegrationSecret('google_maps', userToken);
 }
 
 interface PlacesApiNewPlace {
@@ -628,12 +629,13 @@ interface PlacesApiNewPlace {
 
 export async function searchGoogleMapsEstablishments(
   textQuery: string,
-  regionCode = ''
+  regionCode = '',
+  userToken?: string
 ): Promise<GoogleMapsPlaceCandidate[]> {
-  const apiKey = getGoogleMapsApiKey();
+  const apiKey = await getGoogleMapsApiKey(userToken);
   if (!apiKey) {
     throw new Error(
-      'Google Maps API key is not active in the server environment yet. Please restart or verify Google Maps setup.'
+      'Google Maps API key is not connected. Configure or reconnect Google Maps in Settings -> Integrations Vault.'
     );
   }
 
@@ -708,7 +710,8 @@ export async function searchGoogleMapsEstablishments(
 export async function importAndAnalyzeGoogleMapsPlaces(
   places: GoogleMapsPlaceCandidate[],
   assignedUserId: string | null,
-  runGeminiAnalysis = true
+  runGeminiAnalysis = true,
+  userToken?: string
 ): Promise<CrmLead[]> {
   const now = new Date().toISOString();
   const createdLeads: CrmLead[] = [];
@@ -776,7 +779,7 @@ export async function importAndAnalyzeGoogleMapsPlaces(
 
     if (runGeminiAnalysis) {
       try {
-        const analysis = await runProspectResearchAndProposal(baseLead);
+        const analysis = await runProspectResearchAndProposal(baseLead, userToken);
         baseLead.research_brief = analysis.research_brief;
         baseLead.recommended_service = analysis.recommended_service;
         baseLead.fit_score = analysis.fit_score;

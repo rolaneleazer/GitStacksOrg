@@ -34,6 +34,7 @@ import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
+import { IntegrationsVaultPanel } from '../components/backoffice/IntegrationsVaultPanel.tsx';
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
 import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
@@ -951,7 +952,7 @@ export function StudioPage({
     { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
-    { id: 'adsense', label: 'AdSense & Supabase', icon: ShieldCheck },
+    { id: 'adsense', label: 'Settings & Integrations', icon: ShieldCheck },
     { id: 'profile', label: 'My Profile', icon: UserCheck }
   ];
 
@@ -1132,6 +1133,9 @@ export function StudioPage({
           {/* PANEL 1B: APOLLO-STYLE CRM, OPEN-SOURCE LEAD FINDER & LARK MAIL */}
           {currentTab === 'crm' && (
             <CrmProspectingPanel
+              onOpenSettings={
+                currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
+              }
               onDealWon={({ inquiry, workflowItem }) => {
                 if (inquiry) {
                   setInquiries((prev) => [inquiry, ...prev]);
@@ -1868,9 +1872,12 @@ export function StudioPage({
             </div>
           )}
 
-          {/* PANEL 7: ADSENSE READINESS AUDIT, ADS.TXT & SUPABASE SCHEMA */}
+          {/* PANEL 7: SETTINGS, INTEGRATIONS VAULT, ADSENSE AUDIT & SUPABASE SCHEMA */}
           {currentTab === 'adsense' && (
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+            <div className="space-y-8">
+              <IntegrationsVaultPanel />
+
+              <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
               <div className="space-y-6 lg:col-span-7 min-w-0">
                 <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
                   <div className="flex items-center justify-between">
@@ -2191,6 +2198,7 @@ export function StudioPage({
                     <p className="mt-3 text-xs font-medium text-slate-700">{seedMessage}</p>
                   )}
                 </div>
+              </div>
               </div>
             </div>
           )}

@@ -643,4 +643,29 @@ CREATE POLICY "Authenticated team manage crm sync runs"
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
 
+-- 21. Encrypted Server-Side Integrations & Mail Vault
+CREATE TABLE IF NOT EXISTS public.crm_integration_secrets (
+  provider TEXT PRIMARY KEY CHECK (provider IN ('lark_smtp', 'apollo', 'google_maps', 'gemini', 'github')),
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  encrypted_secret TEXT NOT NULL DEFAULT '',
+  secret_hint TEXT NOT NULL DEFAULT '',
+  config_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+  last_tested_at TIMESTAMPTZ,
+  last_test_status TEXT NOT NULL CHECK (last_test_status IN ('ok', 'error', 'untested')) DEFAULT 'untested',
+  last_test_message TEXT NOT NULL DEFAULT '',
+  updated_by TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.crm_integration_secrets TO authenticated, service_role;
+
+ALTER TABLE public.crm_integration_secrets ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated team manage integration secrets" ON public.crm_integration_secrets;
+CREATE POLICY "Authenticated team manage integration secrets"
+  ON public.crm_integration_secrets FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+
 

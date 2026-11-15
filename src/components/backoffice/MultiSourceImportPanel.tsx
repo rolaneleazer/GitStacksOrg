@@ -22,6 +22,7 @@ import type {
 interface MultiSourceImportPanelProps {
   onLeadsUpdated: (leads: CrmLead[], noticeText: string) => void;
   onError: (msg: string) => void;
+  onOpenSettings?: () => void;
 }
 
 function splitCsvLine(line: string): string[] {
@@ -112,7 +113,8 @@ function parseCsvOrJsonToRows(raw: string): CsvImportLeadInput[] {
 
 export function MultiSourceImportPanel({
   onLeadsUpdated,
-  onError
+  onError,
+  onOpenSettings
 }: MultiSourceImportPanelProps) {
   const [activeConnector, setActiveConnector] = useState<'apollo' | 'datasets' | 'csv'>('apollo');
 
@@ -310,24 +312,35 @@ export function MultiSourceImportPanel({
       {activeConnector === 'apollo' && (
         <div className="p-4 sm:p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <KeyRound className="h-4 w-4 text-[var(--gs-primary)] shrink-0" />
-              <span className="font-semibold text-slate-900">Server Secret Status:</span>
+              <span className="font-semibold text-slate-900">Apollo Integration Status:</span>
               {apolloStatus?.configured ? (
                 <span className="inline-flex items-center gap-1 font-semibold text-emerald-700">
                   <CheckCircle2 className="h-3.5 w-3.5" />
-                  <span>APOLLO_API_KEY Active (Server Proxy)</span>
+                  <span>Apollo API Active (Encrypted Vault / Server Proxy)</span>
                 </span>
               ) : (
                 <span className="font-medium text-amber-800">
-                  Add <code className="font-mono text-[11px]">APOLLO_API_KEY</code> in your server
-                  environment secrets to enable Apollo search &amp; enrichment.
+                  Not connected. Configure your <code className="font-mono text-[11px]">APOLLO_API_KEY</code> in
+                  Settings &amp; Integrations to enable search &amp; enrichment.
                 </span>
               )}
             </div>
-            <span className="font-mono text-[11px] text-slate-500">
-              Preview search uses 0 credits · Enrich on import
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[11px] text-slate-500">
+                Preview search uses 0 credits · Enrich on import
+              </span>
+              {!apolloStatus?.configured && onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="rounded-lg bg-[var(--gs-primary)] px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+                >
+                  Configure in Settings →
+                </button>
+              )}
+            </div>
           </div>
 
           <form onSubmit={handleApolloSearch} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

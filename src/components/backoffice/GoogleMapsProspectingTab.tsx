@@ -25,6 +25,7 @@ interface GoogleMapsProspectingTabProps {
   onLeadsUpdated: (leads: CrmLead[], noticeText: string) => void;
   onOpenLead: (lead: CrmLead) => void;
   onError: (msg: string) => void;
+  onOpenSettings?: () => void;
 }
 
 interface ViewportControllerProps {
@@ -71,9 +72,11 @@ export function GoogleMapsProspectingTab({
   existingDomains,
   onLeadsUpdated,
   onOpenLead,
-  onError
+  onError,
+  onOpenSettings
 }: GoogleMapsProspectingTabProps) {
   const [configApiKey, setConfigApiKey] = useState('');
+  const [configConfigured, setConfigConfigured] = useState<boolean | null>(null);
   const [configLoaded, setConfigLoaded] = useState(false);
 
   const [query, setQuery] = useState('software consulting & clinics in San Francisco');
@@ -87,13 +90,14 @@ export function GoogleMapsProspectingTab({
   const [lastImportedLeads, setLastImportedLeads] = useState<CrmLead[]>([]);
 
   const envViteKey = (import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim();
-  const activeMapsKey = envViteKey || configApiKey;
+  const activeMapsKey = configConfigured === false ? '' : configApiKey || envViteKey;
 
   useEffect(() => {
     api
       .getGoogleMapsConfig()
       .then((res) => {
-        if (res.apiKey) setConfigApiKey(res.apiKey);
+        setConfigConfigured(Boolean(res.configured));
+        setConfigApiKey(res.apiKey || '');
       })
       .catch(() => {})
       .finally(() => setConfigLoaded(true));
@@ -311,15 +315,24 @@ export function GoogleMapsProspectingTab({
                 Initializing Google Maps Platform...
               </div>
             ) : !activeMapsKey ? (
-              <div className="flex h-full flex-col items-center justify-center p-6 text-center space-y-2">
+              <div className="flex h-full flex-col items-center justify-center p-6 text-center space-y-3">
                 <MapPin className="h-6 w-6 text-slate-400" />
                 <div className="text-xs font-bold text-slate-800">
-                  Google Maps key is activating in your server environment
+                  Google Maps Platform is not connected
                 </div>
                 <p className="max-w-sm text-[11px] text-slate-600">
-                  Wait a moment or refresh after server restart for the provisioned Google Maps key to
-                  take effect.
+                  Connect and verify your Google Maps API key inside Settings &amp; Integrations to
+                  unlock live map markers and establishment scraping.
                 </p>
+                {onOpenSettings && (
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="rounded-lg bg-[var(--gs-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+                  >
+                    Configure Google Maps in Settings →
+                  </button>
+                )}
               </div>
             ) : (
               <APIProvider apiKey={activeMapsKey}>

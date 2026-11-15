@@ -49,6 +49,8 @@ import type {
   CrmSyncRun,
   DirectoryUser,
   InquiryStatus,
+  IntegrationProviderId,
+  IntegrationSecretRecord,
   LeadSourceType,
   NewsletterSubscriber,
   PageContentConfig,
@@ -83,6 +85,7 @@ interface LocalDatabase {
   crm_outreach_logs?: CrmOutreachLog[];
   crm_oauth_tokens?: CrmOAuthTokenRecord[];
   crm_sync_runs?: CrmSyncRun[];
+  crm_integration_secrets?: IntegrationSecretRecord[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -2509,5 +2512,77 @@ export async function getCrmSourcesAnalytics(
     syncRuns: syncRuns.slice(0, 40)
   };
 }
+
+// --- Encrypted Server-Side Integrations Vault ---
+
+export async function listIntegrationSecretRows(
+  userToken?: string
+): Promise<IntegrationSecretRecord[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_integration_secrets')
+      .select('*');
+    if (!error && Array.isArray(data)) {
+      return data as IntegrationSecretRecord[];
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  return [...(db.crm_integration_secrets || [])];
+}
+
+export async function getIntegrationSecretRow(
+  provider: IntegrationProviderId,
+  userToken?: string
+): Promise<IntegrationSecretRecord | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_integration_secrets')
+      .select('*')
+      .eq('provider', provider)
+      .limit(1);
+    if (!error && data && data[0]) {
+      return data[0] as IntegrationSecretRecord;
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  return (db.crm_integration_secrets || []).find((r) => r.provider === provider) || null;
+}
+
+export async function upsertIntegrationSecretRow(
+  record: IntegrationSecretRecord,
+  userToken?: string
+): Promise<IntegrationSecretRecord> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('crm_integration_secrets')
+      .upsert(record, { onConflict: 'provider' })
+      .select()
+      .single();
+    if (!error && data) {
+      return data as IntegrationSecretRecord;
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  const list = db.crm_integration_secrets || [];
+  const idx = list.findIndex((r) => r.provider === record.provider);
+  if (idx >= 0) list[idx] = record;
+  else list.push(record);
+  db.crm_integration_secrets = list;
+  await writeLocalDb(db);
+  return record;
+}
+
 
 

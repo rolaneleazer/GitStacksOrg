@@ -44,6 +44,8 @@ import type {
   GoogleMapsPlaceCandidate,
   HeaderSurface,
   InquiryStatus,
+  IntegrationConfigMeta,
+  IntegrationProviderId,
   LarkConnectionStatus,
   NewsletterSubscriber,
   OpenSourceSyncResult,
@@ -162,6 +164,15 @@ import {
   verifyEditorToken,
   type EditorSession
 } from './repository.ts';
+import {
+  disconnectIntegration,
+  getAllIntegrationStatuses,
+  resolveIntegrationConfig,
+  saveAndVerifyIntegration,
+  sendLarkSmtpMail,
+  testIntegrationConnection,
+  VALID_INTEGRATION_PROVIDERS
+} from './vault.ts';
 
 interface AuthReq extends Request {
   editor?: EditorSession;
@@ -2205,13 +2216,99 @@ export async function createApp(): Promise<Express> {
     }
   });
 
-  // --- Lark Open Platform OAuth & Mail Integration ---
+  // --- Integrations & Connections Vault (AES-256-GCM Encrypted) ---
+
+  app.get('/api/integrations', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const integrations = await getAllIntegrationStatuses(getBearerToken(req));
+      res.json({ integrations });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to inspect integration statuses'
+      });
+    }
+  });
+
+  app.put('/api/integrations/:provider', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const provider = req.params.provider as IntegrationProviderId;
+      if (!VALID_INTEGRATION_PROVIDERS.includes(provider)) {
+        return res.status(400).json({ error: 'Unknown integration provider.' });
+      }
+      const payload = (req.body || {}) as {
+        secret?: string;
+        configMeta?: IntegrationConfigMeta;
+        useEnvFallback?: boolean;
+        skipVerify?: boolean;
+      };
+      const result = await saveAndVerifyIntegration(
+        provider,
+        payload,
+        req.editor!.email,
+        getBearerToken(req)
+      );
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to verify and save integration'
+      });
+    }
+  });
+
+  app.post('/api/integrations/:provider/test', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
+    try {
+      const provider = req.params.provider as IntegrationProviderId;
+      if (!VALID_INTEGRATION_PROVIDERS.includes(provider)) {
+        return res.status(400).json({ error: 'Unknown integration provider.' });
+      }
+      const payload = (req.body || {}) as {
+        secret?: string;
+        configMeta?: IntegrationConfigMeta;
+      };
+      const hasDraft = Boolean(
+        payload.secret?.trim() ||
+          (payload.configMeta && Object.keys(payload.configMeta).length > 0)
+      );
+      const result = await testIntegrationConnection(
+        provider,
+        hasDraft ? payload : null,
+        req.editor!.email,
+        getBearerToken(req)
+      );
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Integration connectivity test failed'
+      });
+    }
+  });
+
+  app.delete('/api/integrations/:provider', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const provider = req.params.provider as IntegrationProviderId;
+      if (!VALID_INTEGRATION_PROVIDERS.includes(provider)) {
+        return res.status(400).json({ error: 'Unknown integration provider.' });
+      }
+      const integration = await disconnectIntegration(
+        provider,
+        req.editor!.email,
+        getBearerToken(req)
+      );
+      res.json({ integration });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to disconnect integration'
+      });
+    }
+  });
+
+  // --- Lark Mail SMTP SSL (Primary) & Legacy OAuth Compatibility ---
 
   app.get('/api/lark/status', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
     try {
-      const env = getLarkEnvStatus();
       const token = getBearerToken(req);
-      const record = await getCrmOAuthToken(req.editor!.userId, 'lark', token);
+      const smtpResolved = await resolveIntegrationConfig('lark_smtp', token);
+      const env = getLarkEnvStatus();
       const currentRedirect = getLarkRedirectUri(req);
       const baseOrigin = getLarkBaseOrigin(req);
       const devRedirect = baseOrigin.includes('ais-pre-')
@@ -2221,17 +2318,24 @@ export async function createApp(): Promise<Express> {
         ? `${baseOrigin.replace('ais-dev-', 'ais-pre-')}/api/lark/callback`
         : `${(process.env.SHARED_APP_URL || baseOrigin).replace(/\/$/, '')}/api/lark/callback`;
 
+      const smtpConnected = Boolean(smtpResolved.secret && smtpResolved.configMeta.email);
       const status: LarkConnectionStatus = {
-        configured: env.configured,
-        connected: Boolean(record && record.access_token),
-        lark_email: record?.account_email || '',
-        lark_name: record?.account_name || '',
-        expires_at: record?.expires_at || null,
+        configured: smtpConnected || env.configured,
+        connected: smtpConnected,
+        lark_email: smtpConnected ? smtpResolved.configMeta.email || '' : '',
+        lark_name: smtpConnected
+          ? smtpResolved.configMeta.sender_name || smtpResolved.configMeta.email || 'Lark SMTP'
+          : '',
+        expires_at: null,
+        mode: 'smtp',
+        smtp_host: smtpResolved.configMeta.smtp_host || 'smtp.larksuite.com',
+        smtp_port: Number(smtpResolved.configMeta.smtp_port) || 465,
+        source: smtpResolved.source,
         redirect_uris: {
           development: devRedirect,
           shared: sharedRedirect
         },
-        missing_env: env.missing
+        missing_env: smtpConnected ? [] : ['Lark Mail SMTP Authorization Code (Settings -> Integrations Vault)']
       };
       res.json(status);
     } catch (err) {
@@ -2243,7 +2347,7 @@ export async function createApp(): Promise<Express> {
     const env = getLarkEnvStatus();
     if (!env.configured) {
       return res.status(400).json({
-        error: `Lark Open Platform credentials missing: ${env.missing.join(', ')}. Configure them in your environment secrets.`,
+        error: `Connect Lark Mail via SMTP SSL (smtp.larksuite.com:465) inside Back Office -> Settings & Integrations.`,
         missing_env: env.missing
       });
     }
@@ -2332,7 +2436,9 @@ export async function createApp(): Promise<Express> {
 
   app.delete('/api/lark/disconnect', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
     try {
-      await deleteCrmOAuthToken(req.editor!.userId, 'lark', getBearerToken(req));
+      const token = getBearerToken(req);
+      await disconnectIntegration('lark_smtp', req.editor!.email, token);
+      await deleteCrmOAuthToken(req.editor!.userId, 'lark', token).catch(() => {});
       res.clearCookie('gs_lark_connected', { httpOnly: true, secure: true, sameSite: 'none' });
       res.json({ ok: true });
     } catch (err) {
@@ -2352,7 +2458,7 @@ export async function createApp(): Promise<Express> {
         return res.status(400).json({ error: 'Search query, GitHub topic, or company domain is required.' });
       }
       const validMode = mode === 'github' || mode === 'website' ? mode : 'auto';
-      const result = await discoverOpenSourceLeads(query.trim(), validMode);
+      const result = await discoverOpenSourceLeads(query.trim(), validMode, getBearerToken(req));
       res.json(result);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Open-source lead discovery failed' });
@@ -2366,7 +2472,7 @@ export async function createApp(): Promise<Express> {
       const validTrack: OpenSourceSyncTrack =
         track === 'ai' || track === 'cloud' || track === 'devtools' ? track : 'all';
 
-      const harvested = await harvestTrendingOpenSourceLeads(validTrack, req.editor!.userId);
+      const harvested = await harvestTrendingOpenSourceLeads(validTrack, req.editor!.userId, token);
       const merged = await upsertMergeCrmLeads(harvested.leads, token);
       const mxVerifiedCount = harvested.leads.filter((l) => l.email_status === 'verified_mx').length;
 
@@ -2415,9 +2521,10 @@ export async function createApp(): Promise<Express> {
     }
   });
 
-  app.get('/api/crm/apollo/status', requireRoles('super_admin', 'editor'), async (_req, res) => {
+  app.get('/api/crm/apollo/status', requireRoles('super_admin', 'editor'), async (req, res) => {
+    const key = await getApolloApiKey(getBearerToken(req));
     res.json({
-      configured: Boolean(getApolloApiKey()),
+      configured: Boolean(key),
       envVarName: 'APOLLO_API_KEY',
       endpointMode: 'mixed_people/api_search + people/bulk_match'
     });
@@ -2426,11 +2533,11 @@ export async function createApp(): Promise<Express> {
   app.post('/api/crm/apollo/search', requireRoles('super_admin', 'editor'), async (req, res) => {
     try {
       const filters = (req.body || {}) as ApolloSearchFilters;
-      const result = await searchApolloPeople(filters);
+      const result = await searchApolloPeople(filters, getBearerToken(req));
       res.json(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Apollo.io search failed';
-      res.status(message.includes('APOLLO_API_KEY') ? 400 : 502).json({ error: message });
+      res.status(message.includes('Apollo') ? 400 : 502).json({ error: message });
     }
   });
 
@@ -2444,7 +2551,7 @@ export async function createApp(): Promise<Express> {
       if (!Array.isArray(candidates) || candidates.length === 0) {
         return res.status(400).json({ error: 'Select at least one Apollo prospect to import.' });
       }
-      const builtLeads = await enrichAndBuildApolloLeads(candidates, req.editor!.userId);
+      const builtLeads = await enrichAndBuildApolloLeads(candidates, req.editor!.userId, token);
       const merged = await upsertMergeCrmLeads(builtLeads, token);
       const mxVerifiedCount = builtLeads.filter((l) => l.email_status === 'verified_mx').length;
 
@@ -2601,8 +2708,8 @@ export async function createApp(): Promise<Express> {
     }
   });
 
-  app.get('/api/crm/maps/config', requireRoles('super_admin', 'editor'), async (_req, res) => {
-    const apiKey = getGoogleMapsApiKey();
+  app.get('/api/crm/maps/config', requireRoles('super_admin', 'editor'), async (req, res) => {
+    const apiKey = await getGoogleMapsApiKey(getBearerToken(req));
     res.json({
       configured: Boolean(apiKey),
       apiKey
@@ -2615,7 +2722,11 @@ export async function createApp(): Promise<Express> {
       if (!query || !query.trim()) {
         return res.status(400).json({ error: 'Establishment search query is required.' });
       }
-      const places = await searchGoogleMapsEstablishments(query.trim(), regionCode || '');
+      const places = await searchGoogleMapsEstablishments(
+        query.trim(),
+        regionCode || '',
+        getBearerToken(req)
+      );
       res.json({ places });
     } catch (err) {
       if (err instanceof MapsQuotaExceededError) {
@@ -2644,7 +2755,8 @@ export async function createApp(): Promise<Express> {
       const imported = await importAndAnalyzeGoogleMapsPlaces(
         places,
         req.editor!.userId,
-        runAnalysis !== false
+        runAnalysis !== false,
+        token
       );
       const merged = await upsertMergeCrmLeads(imported, token);
       const mxVerifiedCount = imported.filter((l) => l.email_status === 'verified_mx').length;
@@ -2721,7 +2833,7 @@ export async function createApp(): Promise<Express> {
         }
       } else if (action === 'research') {
         for (const lead of targetLeads.slice(0, 8)) {
-          const result = await runProspectResearchAndProposal(lead);
+          const result = await runProspectResearchAndProposal(lead, token);
           await upsertCrmLead(
             {
               ...lead,
@@ -2914,7 +3026,7 @@ export async function createApp(): Promise<Express> {
       const existing = leads.find((l) => l.id === req.params.id);
       if (!existing) return res.status(404).json({ error: 'CRM lead not found.' });
 
-      const result = await runProspectResearchAndProposal(existing);
+      const result = await runProspectResearchAndProposal(existing, token);
       const updated: CrmLead = {
         ...existing,
         research_brief: result.research_brief,
@@ -2978,50 +3090,20 @@ export async function createApp(): Promise<Express> {
       let errorDetail = client_error || '';
 
       if (sendChannel === 'lark_mail') {
-        const oauthRecord = await getCrmOAuthToken(req.editor!.userId, 'lark', token);
-        if (!oauthRecord || !oauthRecord.access_token) {
-          return res.status(400).json({
-            error: 'Lark Mail is not connected for your operator session. Connect Lark Mail first or select Gmail.'
-          });
-        }
-
-        let activeAccessToken = oauthRecord.access_token;
-        const expiresMs = new Date(oauthRecord.expires_at).getTime();
-        if (Number.isFinite(expiresMs) && expiresMs - Date.now() < 120_000 && oauthRecord.refresh_token) {
-          try {
-            const refreshed = await refreshLarkUserToken(oauthRecord.refresh_token);
-            activeAccessToken = refreshed.access_token;
-            await upsertCrmOAuthToken(
-              {
-                ...oauthRecord,
-                access_token: refreshed.access_token,
-                refresh_token: refreshed.refresh_token,
-                expires_at: new Date(Date.now() + refreshed.expires_in * 1000).toISOString(),
-                updated_at: now
-              },
-              token
-            );
-          } catch (refreshErr) {
-            return res.status(401).json({
-              error:
-                refreshErr instanceof Error
-                  ? refreshErr.message
-                  : 'Lark session expired. Please reconnect Lark Mail.'
-            });
-          }
-        }
-
         try {
-          const sent = await sendLarkMailMessage(activeAccessToken, {
-            toEmail: targetEmail,
-            toName: existing.contact_name,
-            subject: cleanSubject,
-            bodyText: cleanBody
-          });
+          const sent = await sendLarkSmtpMail(
+            {
+              toEmail: targetEmail,
+              toName: existing.contact_name,
+              subject: cleanSubject,
+              bodyText: cleanBody
+            },
+            token
+          );
           messageId = sent.messageId;
         } catch (sendErr) {
           deliveryStatus = 'failed';
-          errorDetail = sendErr instanceof Error ? sendErr.message : 'Lark Mail dispatch failed';
+          errorDetail = sendErr instanceof Error ? sendErr.message : 'Lark Mail SMTP dispatch failed';
         }
       } else {
         if (client_error) {

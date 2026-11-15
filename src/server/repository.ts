@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { Client as PgClient } from 'pg';
 import { DEFAULT_PAGE_CONTENTS } from '../shared/pageDefaults.ts';
@@ -58,7 +59,10 @@ interface LocalDatabase {
   routing_rules?: RoutingRule[];
 }
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DATA_DIR = IS_VERCEL
+  ? path.join(os.tmpdir(), 'gitstack-data')
+  : path.resolve(process.cwd(), 'data');
 const DATA_FILE = path.join(DATA_DIR, 'gitstack-store.json');
 
 const LOCAL_TOKEN_SECRET =
@@ -104,7 +108,7 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(getSupabaseUrl() && (getSupabasePublicKey() || getSupabaseServiceKey()));
 }
 
-function getSupabaseClient(userToken?: string): SupabaseClient {
+export function getSupabaseClient(userToken?: string): SupabaseClient {
   const url = getSupabaseUrl()!;
   const serviceKey = getSupabaseServiceKey();
   const publicKey = getSupabasePublicKey();
@@ -149,7 +153,7 @@ export function getSupabaseAutomationMode(): SupabaseAutomationMode {
   return 'manual';
 }
 
-function getSupabaseProjectRef(): string | undefined {
+export function getSupabaseProjectRef(): string | undefined {
   const url = getSupabaseUrl();
   if (!url) return undefined;
   const match = url.match(/^https?:\/\/([a-z0-9-]+)\.supabase\.co/i);
@@ -179,7 +183,7 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
   }
 }
 
-function normalizePostgresUrl(raw: string): { url: string; host: string } {
+export function normalizePostgresUrl(raw: string): { url: string; host: string } {
   const trimmed = raw.trim();
   const schemeIdx = trimmed.indexOf('://');
   const lastAt = trimmed.lastIndexOf('@');
@@ -237,7 +241,9 @@ export async function autoMigrateSupabaseSchema(): Promise<{
 
     const pg = new PgClient({
       connectionString: dbUrl,
-      ssl: { rejectUnauthorized: false }
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 4500,
+      query_timeout: 8000
     });
     try {
       await pg.connect();

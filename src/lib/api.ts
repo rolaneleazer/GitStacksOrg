@@ -13,6 +13,7 @@ import type {
   ClientInquiry,
   CommentStatus,
   DirectoryUser,
+  InfrastructureMetricsResponse,
   InquiryStatus,
   NewsletterSubscriber,
   PageContentConfig,
@@ -478,5 +479,9 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ rules })
     });
+  },
+
+  async getInfrastructureMetrics() {
+    return request<InfrastructureMetricsResponse>('/api/infrastructure/metrics');
   }
 };

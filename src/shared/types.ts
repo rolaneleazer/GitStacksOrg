@@ -328,3 +328,78 @@ export interface RoutingRule {
   updated_at: string;
 }
 
+// --- Vercel & Supabase Infrastructure Resource Telemetry ---
+
+export interface InfrastructureTableMetric {
+  tableName: string;
+  totalMb: number;
+  dataMb: number;
+  indexMb: number;
+  rowEstimate: number;
+}
+
+export interface InfrastructureAlert {
+  id: string;
+  provider: 'vercel' | 'supabase' | 'runtime';
+  severity: 'nominal' | 'warning' | 'critical';
+  title: string;
+  detail: string;
+}
+
+export interface InfrastructureSamplePoint {
+  timestamp: string;
+  cpuPercent: number;
+  eventLoopLagMs: number;
+  rssMb: number;
+  heapUsedMb: number;
+  dbSizeMb: number;
+  apiLatencyMs: number;
+}
+
+export interface InfrastructureMetricsResponse {
+  sampledAt: string;
+  environment: 'vercel' | 'local';
+  region: string;
+  nodeVersion: string;
+  uptimeSeconds: number;
+  coldStart: boolean;
+  vercel: {
+    cpuPercent: number;
+    eventLoopLagMs: number;
+    rssMb: number;
+    heapUsedMb: number;
+    heapTotalMb: number;
+    externalMb: number;
+    ramLimitMb: number;
+    ramUsedPercent: number;
+    functionMaxDurationSec: number;
+    bandwidthLimitGb: number;
+    sourceMode: 'runtime+api' | 'runtime-only';
+    apiConfigured: boolean;
+    projectName: string | null;
+    framework: string | null;
+    latestDeploymentState: string | null;
+    latestDeploymentUrl: string | null;
+    latestDeploymentCreatedAt: string | null;
+  };
+  supabase: {
+    databaseSizeMb: number;
+    storageLimitMb: number;
+    storageUsedPercent: number;
+    activeConnections: number;
+    maxConnections: number;
+    cacheHitRatioPercent: number;
+    totalRowsEstimate: number;
+    tables: InfrastructureTableMetric[];
+    sourceMode: 'postgres+api' | 'postgres' | 'supabase-rest-estimate';
+    postgresDirectConnected: boolean;
+    apiConfigured: boolean;
+    projectRef: string | null;
+    projectName: string | null;
+    projectRegion: string | null;
+    projectStatus: string | null;
+  };
+  history: InfrastructureSamplePoint[];
+  alerts: InfrastructureAlert[];
+}
+

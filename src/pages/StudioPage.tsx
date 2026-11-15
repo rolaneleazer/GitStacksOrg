@@ -1,4 +1,5 @@
 import {
+  Activity,
   AlertTriangle,
   BarChart3,
   Bot,
@@ -30,6 +31,7 @@ import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
+import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
 import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
@@ -84,6 +86,7 @@ type StudioTab =
   | 'chat'
   | 'workflows'
   | 'analytics'
+  | 'resources'
   | 'articles'
   | 'users'
   | 'adsense'
@@ -98,13 +101,14 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'chat',
     'workflows',
     'analytics',
+    'resources',
     'articles',
     'users',
     'adsense',
     'profile'
   ],
-  editor: ['agents', 'pages', 'articles', 'workflows', 'analytics', 'profile'],
-  support_agent: ['inbox', 'chat', 'workflows', 'profile']
+  editor: ['agents', 'pages', 'articles', 'workflows', 'analytics', 'resources', 'profile'],
+  support_agent: ['inbox', 'chat', 'workflows', 'resources', 'profile']
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -939,6 +943,7 @@ export function StudioPage({
       count: workflows.filter((w) => w.status !== 'done').length
     },
     { id: 'analytics', label: 'Google Analytics', icon: BarChart3 },
+    { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
     { id: 'adsense', label: 'AdSense & Supabase', icon: ShieldCheck },
@@ -1206,6 +1211,11 @@ export function StudioPage({
               onChangeDays={handleChangeAnalyticsDays}
               onSaveGa4Settings={handleSaveGa4Settings}
             />
+          )}
+
+          {/* PANEL 5B: VERCEL & SUPABASE LIVE RESOURCE MONITOR */}
+          {currentTab === 'resources' && (
+            <InfrastructureMonitor currentUserRole={currentUserRole} />
           )}
 
           {/* PANEL 8: USER ACCESS MANAGEMENT (SUPER ADMIN) */}

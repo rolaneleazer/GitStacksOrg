@@ -32,6 +32,7 @@ import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
+import { DemoUsersDashboardPanel } from '../components/backoffice/DemoUsersDashboardPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
 import { IntegrationsVaultPanel } from '../components/backoffice/IntegrationsVaultPanel.tsx';
@@ -93,6 +94,7 @@ type StudioTab =
   | 'resources'
   | 'articles'
   | 'users'
+  | 'demo_users'
   | 'adsense'
   | 'profile';
 
@@ -109,10 +111,21 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'resources',
     'articles',
     'users',
+    'demo_users',
     'adsense',
     'profile'
   ],
-  editor: ['agents', 'crm', 'pages', 'articles', 'workflows', 'analytics', 'resources', 'profile'],
+  editor: [
+    'agents',
+    'crm',
+    'pages',
+    'articles',
+    'demo_users',
+    'workflows',
+    'analytics',
+    'resources',
+    'profile'
+  ],
   support_agent: ['inbox', 'chat', 'workflows', 'resources', 'profile']
 };
 
@@ -857,7 +870,7 @@ export function StudioPage({
           </h1>
           <p className="mt-2 text-xs leading-relaxed text-slate-600">
             Sign in with your Supabase Email/Password credentials (no Google Sign-In) to manage
-            all 7 operational agents, public page content, branding, team workflows, Gmail &amp;
+            all 7 operational agents, public page content, branding, team workflows, Lark Mail &amp;
             lead inbox, internal chat, and Google Analytics.
           </p>
 
@@ -935,7 +948,7 @@ export function StudioPage({
     { id: 'crm', label: 'CRM & Prospecting', icon: Briefcase },
     { id: 'pages', label: 'Page Content Editor', icon: FileEdit },
     { id: 'branding', label: 'Branding & Theme', icon: Palette },
-    { id: 'inbox', label: 'Gmail & Lead Inbox', icon: Mail, count: inquiries.length },
+    { id: 'inbox', label: 'Lark Mail & Lead Inbox', icon: Mail, count: inquiries.length },
     {
       id: 'chat',
       label: 'Live Q&A Chat Box',
@@ -952,6 +965,7 @@ export function StudioPage({
     { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
+    { id: 'demo_users', label: 'Demo Users & Leads', icon: UserCheck },
     { id: 'adsense', label: 'Settings & Integrations', icon: ShieldCheck },
     { id: 'profile', label: 'My Profile', icon: UserCheck }
   ];
@@ -1167,7 +1181,7 @@ export function StudioPage({
             />
           )}
 
-          {/* PANEL 3: GMAIL & LEAD INBOX */}
+          {/* PANEL 3: LARK MAIL & LEAD INBOX */}
           {currentTab === 'inbox' && (
             <InboxWorkspace
               inquiries={inquiries}
@@ -1175,6 +1189,9 @@ export function StudioPage({
               subscribers={subscribers}
               teamUsers={teamDirectory}
               onAssignInquiry={canAssignLeads ? handleAssignInquiry : undefined}
+              onOpenSettings={
+                currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
+              }
               onUpdateInquiryStatus={async (id, status) => {
                 await api.updateInquiryStatus(id, status);
                 setInquiries((prev) =>
@@ -1250,6 +1267,11 @@ export function StudioPage({
               onUpdateUser={handleUpdateTeamUser}
               onDeleteUser={handleDeleteTeamUser}
             />
+          )}
+
+          {/* PANEL 8B: ISOLATED LIVE DEMO USERS & TELEMETRY */}
+          {currentTab === 'demo_users' && (
+            <DemoUsersDashboardPanel onOpenCrm={() => setActiveTab('crm')} />
           )}
 
           {/* PANEL 9: MY PROFILE & PICTURE */}

@@ -180,7 +180,7 @@ export function UserAccessPanel({
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5">
             <div className="font-bold text-slate-900">Support Agent</div>
             <p className="mt-1 leading-relaxed">
-              Client operations: Gmail &amp; Lead Inbox, Live Q&amp;A Chat Box, inquiry/thread ownership, own workflow queue, and My Profile.
+              Client operations: Lark Mail &amp; Lead Inbox, Live Q&amp;A Chat Box, inquiry/thread ownership, own workflow queue, and My Profile.
             </p>
           </div>
         </div>

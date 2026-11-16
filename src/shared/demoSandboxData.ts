@@ -279,11 +279,11 @@ export function createInitialDemoLogs(): CrmOutreachLog[] {
     {
       id: 'demo-log-2',
       lead_id: 'demo-lead-3',
-      channel: 'gmail_api',
+      channel: 'lark_mail',
       recipient_email: 'hannah@kestrelbio.ai',
       subject: 'AWS GPU Spot Fallback Blueprint — Kestrel BioCompute',
       body: 'Delivered Step 1 GPU spot orchestration follow-up.',
-      provider_message_id: 'gmail-sim-77b10d3e',
+      provider_message_id: 'smtp-sim-77b10d3e',
       status: 'sent',
       error_detail: '',
       step_label: 'Follow-Up Step 1',

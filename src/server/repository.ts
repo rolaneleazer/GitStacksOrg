@@ -47,7 +47,10 @@ import type {
   CrmOutreachLog,
   CrmSourcesAnalyticsResponse,
   CrmSyncRun,
+  DemoUser,
+  DemoUsersSummaryStats,
   DirectoryUser,
+  InboxEmailLog,
   InquiryStatus,
   IntegrationProviderId,
   IntegrationSecretRecord,
@@ -55,6 +58,7 @@ import type {
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
+  PublicDemoUser,
   RoutingRule,
   SourceBreakdownMetric,
   UserProfile,
@@ -86,6 +90,8 @@ interface LocalDatabase {
   crm_oauth_tokens?: CrmOAuthTokenRecord[];
   crm_sync_runs?: CrmSyncRun[];
   crm_integration_secrets?: IntegrationSecretRecord[];
+  demo_users?: DemoUser[];
+  inbox_email_logs?: InboxEmailLog[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -193,17 +199,29 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
   try {
     const client = getSupabaseClient();
-    const [postsRes, pagesRes, profilesRes, wfRes, rulesRes, officeRes, reportsRes, crmRes] =
-      await Promise.all([
-        client.from('posts').select('id').limit(1),
-        client.from('page_contents').select('page_key').limit(1),
-        client.from('user_profiles').select('user_id').limit(1),
-        client.from('user_workflow_items').select('id').limit(1),
-        client.from('routing_rules').select('id').limit(1),
-        client.from('agent_office_profiles').select('agent_id').limit(1),
-        client.from('agent_email_reports').select('id').limit(1),
-        client.from('crm_leads').select('id').limit(1)
-      ]);
+    const [
+      postsRes,
+      pagesRes,
+      profilesRes,
+      wfRes,
+      rulesRes,
+      officeRes,
+      reportsRes,
+      crmRes,
+      demoRes,
+      inboxRes
+    ] = await Promise.all([
+      client.from('posts').select('id').limit(1),
+      client.from('page_contents').select('page_key').limit(1),
+      client.from('user_profiles').select('user_id').limit(1),
+      client.from('user_workflow_items').select('id').limit(1),
+      client.from('routing_rules').select('id').limit(1),
+      client.from('agent_office_profiles').select('agent_id').limit(1),
+      client.from('agent_email_reports').select('id').limit(1),
+      client.from('crm_leads').select('id').limit(1),
+      client.from('demo_users').select('id').limit(1),
+      client.from('inbox_email_logs').select('id').limit(1)
+    ]);
     return (
       !postsRes.error &&
       !pagesRes.error &&
@@ -212,7 +230,9 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
       !rulesRes.error &&
       !officeRes.error &&
       !reportsRes.error &&
-      !crmRes.error
+      !crmRes.error &&
+      !demoRes.error &&
+      !inboxRes.error
     );
   } catch {
     return false;
@@ -376,7 +396,10 @@ function ensureLocalShape(db: LocalDatabase): LocalDatabase {
     crm_leads: db.crm_leads || [],
     crm_outreach_logs: db.crm_outreach_logs || [],
     crm_oauth_tokens: db.crm_oauth_tokens || [],
-    crm_sync_runs: db.crm_sync_runs || []
+    crm_sync_runs: db.crm_sync_runs || [],
+    crm_integration_secrets: db.crm_integration_secrets || [],
+    demo_users: db.demo_users || [],
+    inbox_email_logs: db.inbox_email_logs || []
   };
 }
 
@@ -2206,14 +2229,16 @@ export async function upsertMergeCrmLeads(
   }
 
   if (isSupabaseConfigured() && toPersist.length > 0) {
-    const { error } = await getSupabaseClient(userToken)
-      .from('crm_leads')
-      .upsert(toPersist, { onConflict: 'id' });
+    const client = getSupabaseClient(userToken);
+    const { error } =
+      !userToken && mergedCount === 0
+        ? await client.from('crm_leads').insert(toPersist)
+        : await client.from('crm_leads').upsert(toPersist, { onConflict: 'id' });
     if (!error) {
       return {
         insertedCount,
         mergedCount,
-        leads: await listCrmLeads(userToken)
+        leads: userToken ? await listCrmLeads(userToken) : toPersist
       };
     }
     if (!isFallbackableDbError(error)) throw new Error(error.message);
@@ -2373,6 +2398,7 @@ const LEAD_SOURCE_LABELS: Record<LeadSourceType, string> = {
   hacker_news: 'Hacker News Hiring',
   ycombinator: 'Y Combinator Directory',
   csv_import: 'CSV / JSON Import',
+  demo_signup: 'Live Demo Signups',
   manual: 'Manual Entry'
 };
 
@@ -2438,6 +2464,7 @@ export async function getCrmSourcesAnalytics(
     'website',
     'gemini_search',
     'csv_import',
+    'demo_signup',
     'manual'
   ];
 
@@ -2560,6 +2587,7 @@ export async function upsertIntegrationSecretRow(
   record: IntegrationSecretRecord,
   userToken?: string
 ): Promise<IntegrationSecretRecord> {
+  let savedFromSupabase: IntegrationSecretRecord | null = null;
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('crm_integration_secrets')
@@ -2567,7 +2595,90 @@ export async function upsertIntegrationSecretRow(
       .select()
       .single();
     if (!error && data) {
-      return data as IntegrationSecretRecord;
+      savedFromSupabase = data as IntegrationSecretRecord;
+    } else if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  // Always mirror lark_smtp locally too so unauthenticated public routes (Demo Signup / Contact / Cron) can resolve encrypted credentials cleanly.
+  if (!savedFromSupabase || record.provider === 'lark_smtp') {
+    const db = await readLocalDb();
+    const list = db.crm_integration_secrets || [];
+    const idx = list.findIndex((r) => r.provider === record.provider);
+    if (idx >= 0) list[idx] = savedFromSupabase || record;
+    else list.push(savedFromSupabase || record);
+    db.crm_integration_secrets = list;
+    await writeLocalDb(db);
+  }
+  return savedFromSupabase || record;
+}
+
+// --- Customer Demo Users Auth & Telemetry + Unified Inbox Lark Email Logs ---
+
+export function toPublicDemoUser(user: DemoUser): PublicDemoUser {
+  const { password_hash: _ignored, ...rest } = user;
+  return rest;
+}
+
+export function hashDemoPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${derived}`;
+}
+
+export function verifyDemoPassword(password: string, storedHash: string): boolean {
+  const [salt, expectedHex] = storedHash.split(':');
+  if (!salt || !expectedHex) return false;
+  try {
+    const derived = crypto.scryptSync(password, salt, 64);
+    const expected = Buffer.from(expectedHex, 'hex');
+    if (derived.length !== expected.length) return false;
+    return crypto.timingSafeEqual(derived, expected);
+  } catch {
+    return false;
+  }
+}
+
+export function issueDemoSessionToken(user: { id: string; email: string }): string {
+  const exp = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  const payload = Buffer.from(
+    JSON.stringify({ id: user.id, email: user.email.toLowerCase(), exp, typ: 'demo' })
+  ).toString('base64url');
+  const sig = crypto.createHmac('sha256', LOCAL_TOKEN_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+export function verifyDemoSessionToken(token: string): { id: string; email: string } | null {
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  const expected = crypto.createHmac('sha256', LOCAL_TOKEN_SECRET).update(payload).digest('base64url');
+  if (sig.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      id: string;
+      email: string;
+      exp: number;
+      typ?: string;
+    };
+    if (parsed.typ !== 'demo' || !parsed.exp || Date.now() > parsed.exp || !parsed.id) return null;
+    return { id: parsed.id, email: parsed.email };
+  } catch {
+    return null;
+  }
+}
+
+export async function listDemoUsersRaw(userToken?: string): Promise<DemoUser[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('demo_users')
+      .select('*')
+      .order('last_active_at', { ascending: false })
+      .limit(500);
+    if (!error && Array.isArray(data)) {
+      return data as DemoUser[];
     }
     if (error && !isFallbackableDbError(error)) {
       throw new Error(error.message);
@@ -2575,14 +2686,122 @@ export async function upsertIntegrationSecretRow(
   }
 
   const db = await readLocalDb();
-  const list = db.crm_integration_secrets || [];
-  const idx = list.findIndex((r) => r.provider === record.provider);
-  if (idx >= 0) list[idx] = record;
-  else list.push(record);
-  db.crm_integration_secrets = list;
-  await writeLocalDb(db);
-  return record;
+  return [...(db.demo_users || [])].sort(
+    (a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime()
+  );
 }
+
+export async function findDemoUserByEmail(email: string): Promise<DemoUser | null> {
+  const normalized = email.trim().toLowerCase();
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient()
+      .from('demo_users')
+      .select('*')
+      .eq('email', normalized)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as DemoUser;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.demo_users || []).find((u) => u.email.toLowerCase() === normalized) || null;
+}
+
+export async function findDemoUserById(id: string): Promise<DemoUser | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient()
+      .from('demo_users')
+      .select('*')
+      .eq('id', id)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as DemoUser;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.demo_users || []).find((u) => u.id === id) || null;
+}
+
+export async function upsertDemoUser(user: DemoUser): Promise<DemoUser> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient()
+      .from('demo_users')
+      .upsert(user, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) return data as DemoUser;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.demo_users || [];
+  const idx = list.findIndex((u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase());
+  if (idx >= 0) list[idx] = user;
+  else list.unshift(user);
+  db.demo_users = list;
+  await writeLocalDb(db);
+  return user;
+}
+
+export async function listDemoUsersWithStats(userToken?: string): Promise<{
+  users: PublicDemoUser[];
+  summary: DemoUsersSummaryStats;
+}> {
+  const raw = await listDemoUsersRaw(userToken);
+  const users = raw.map(toPublicDemoUser);
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const summary: DemoUsersSummaryStats = {
+    totalUsers: users.length,
+    activeLast7Days: users.filter((u) => new Date(u.last_active_at).getTime() >= sevenDaysAgo).length,
+    totalActions: users.reduce((sum, u) => sum + (Number(u.actions_count) || 0), 0),
+    totalLogins: users.reduce((sum, u) => sum + (Number(u.login_count) || 0), 0),
+    totalConversions: users.reduce((sum, u) => sum + (Number(u.sandbox_conversions) || 0), 0),
+    linkedCrmLeads: users.filter((u) => Boolean(u.crm_lead_id)).length
+  };
+  return { users, summary };
+}
+
+export async function listInboxEmailLogs(userToken?: string): Promise<InboxEmailLog[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('inbox_email_logs')
+      .select('*')
+      .order('sent_at', { ascending: false })
+      .limit(100);
+    if (!error && Array.isArray(data)) {
+      return data as InboxEmailLog[];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.inbox_email_logs || [])].sort(
+    (a, b) => new Date(b.sent_at).getTime() - new Date(a.sent_at).getTime()
+  );
+}
+
+export async function addInboxEmailLog(
+  log: InboxEmailLog,
+  userToken?: string
+): Promise<InboxEmailLog> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('inbox_email_logs')
+      .insert(log)
+      .select()
+      .single();
+    if (!error && data) return data as InboxEmailLog;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.inbox_email_logs || [];
+  list.unshift(log);
+  db.inbox_email_logs = list.slice(0, 200);
+  await writeLocalDb(db);
+  return log;
+}
+
 
 
 

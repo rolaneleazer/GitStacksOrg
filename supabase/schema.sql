@@ -502,6 +502,16 @@ CREATE POLICY "Authenticated team manage email reports"
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
 
+ALTER TABLE public.agent_report_settings DROP CONSTRAINT IF EXISTS agent_report_settings_preferred_channel_check;
+ALTER TABLE public.agent_report_settings
+  ADD CONSTRAINT agent_report_settings_preferred_channel_check
+  CHECK (preferred_channel IN ('lark_smtp', 'gmail', 'resend'));
+
+ALTER TABLE public.agent_email_reports DROP CONSTRAINT IF EXISTS agent_email_reports_channel_check;
+ALTER TABLE public.agent_email_reports
+  ADD CONSTRAINT agent_email_reports_channel_check
+  CHECK (channel IN ('lark_smtp', 'cron_dispatch', 'gmail_api', 'resend_api'));
+
 INSERT INTO public.agent_report_settings (
   id,
   enabled,
@@ -514,7 +524,7 @@ VALUES (
   TRUE,
   'gitstackitsolution@gmail.com',
   8,
-  'gmail'
+  'lark_smtp'
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -559,7 +569,7 @@ ALTER TABLE public.crm_leads ADD COLUMN IF NOT EXISTS source_detail TEXT NOT NUL
 ALTER TABLE public.crm_leads DROP CONSTRAINT IF EXISTS crm_leads_source_type_check;
 ALTER TABLE public.crm_leads
   ADD CONSTRAINT crm_leads_source_type_check
-  CHECK (source_type IN ('github', 'website', 'gemini_search', 'apollo', 'google_maps', 'hacker_news', 'ycombinator', 'csv_import', 'manual'));
+  CHECK (source_type IN ('github', 'website', 'gemini_search', 'apollo', 'google_maps', 'hacker_news', 'ycombinator', 'csv_import', 'demo_signup', 'manual'));
 
 CREATE INDEX IF NOT EXISTS idx_crm_leads_stage ON public.crm_leads (stage, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_crm_leads_source ON public.crm_leads (source_type, updated_at DESC);
@@ -667,5 +677,66 @@ CREATE POLICY "Authenticated team manage integration secrets"
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
 
+GRANT INSERT ON public.crm_leads TO anon;
 
+DROP POLICY IF EXISTS "Public demo signup can insert crm lead" ON public.crm_leads;
+CREATE POLICY "Public demo signup can insert crm lead"
+  ON public.crm_leads FOR INSERT
+  WITH CHECK (source_type = 'demo_signup' AND position('@' IN email) > 1);
 
+-- 22. Customer Demo Sandbox Accounts & Activity Stats
+CREATE TABLE IF NOT EXISTS public.demo_users (
+  id TEXT PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  company TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  password_hash TEXT NOT NULL,
+  crm_lead_id TEXT,
+  login_count INTEGER NOT NULL DEFAULT 1,
+  actions_count INTEGER NOT NULL DEFAULT 0,
+  explored_modules JSONB NOT NULL DEFAULT '[]'::jsonb,
+  sandbox_conversions INTEGER NOT NULL DEFAULT 0,
+  last_action_label TEXT NOT NULL DEFAULT 'Signed Up',
+  last_active_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_demo_users_email ON public.demo_users (email);
+CREATE INDEX IF NOT EXISTS idx_demo_users_last_active ON public.demo_users (last_active_at DESC);
+
+GRANT ALL ON public.demo_users TO anon, authenticated, service_role;
+ALTER TABLE public.demo_users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service or team manage demo users" ON public.demo_users;
+CREATE POLICY "Service or team manage demo users"
+  ON public.demo_users FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 23. Unified Inbox & Admin Notification Lark Mail Dispatch Log
+CREATE TABLE IF NOT EXISTS public.inbox_email_logs (
+  id TEXT PRIMARY KEY,
+  recipient_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('lark_smtp')) DEFAULT 'lark_smtp',
+  category TEXT NOT NULL CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert')) DEFAULT 'direct_compose',
+  related_id TEXT,
+  provider_message_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('sent', 'failed')) DEFAULT 'sent',
+  error_detail TEXT NOT NULL DEFAULT '',
+  sent_by TEXT NOT NULL DEFAULT 'system',
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inbox_email_logs_sent ON public.inbox_email_logs (sent_at DESC);
+
+GRANT ALL ON public.inbox_email_logs TO anon, authenticated, service_role;
+ALTER TABLE public.inbox_email_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public or team log inbox lark emails" ON public.inbox_email_logs;
+CREATE POLICY "Public or team log inbox lark emails"
+  ON public.inbox_email_logs FOR ALL
+  USING (true)
+  WITH CHECK (true);

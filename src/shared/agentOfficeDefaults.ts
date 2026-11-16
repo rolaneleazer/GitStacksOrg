@@ -163,7 +163,7 @@ export const DEFAULT_AGENT_OFFICE_PROFILES: AgentOfficeProfile[] = [
     desk_x: 10.3,
     desk_y: 6.1,
     work_status: 'working',
-    current_mission: 'Track <24h client inquiry triage SLA and Gmail consultation invites',
+    current_mission: 'Track <24h client inquiry triage SLA and Lark Mail consultation invites',
     updated_at: '2026-11-15T00:00:00Z'
   }
 ];
@@ -208,7 +208,7 @@ export const SEED_AGENT_CONVERSATIONS: AgentConversationEntry[] = [
     sender_type: 'agent',
     sender_name: 'Bantay (Cyber)',
     message:
-      'Verified /obama noindex headers, Bearer auth enforcement across all admin APIs, and in-memory Gmail OAuth isolation.',
+      'Verified /obama noindex headers, Bearer auth enforcement across all admin APIs, and encrypted Lark SMTP secret isolation.',
     finding_status: 'nominal',
     created_at: '2026-11-15T01:14:00Z'
   },
@@ -230,7 +230,7 @@ export const SEED_AGENT_CONVERSATIONS: AgentConversationEntry[] = [
     sender_type: 'agent',
     sender_name: 'Mira (Booking)',
     message:
-      'Monitoring incoming consultation briefs and Gmail discovery invitations against the 24-hour SLA.',
+      'Monitoring incoming consultation briefs and Lark Mail discovery invitations against the 24-hour SLA.',
     finding_status: 'info',
     created_at: '2026-11-15T01:18:00Z'
   },
@@ -263,7 +263,7 @@ export const DEFAULT_AGENT_REPORT_SETTINGS: AgentReportSettings = {
   enabled: true,
   recipient_email: 'gitstackitsolution@gmail.com',
   send_hour_utc: 8,
-  preferred_channel: 'gmail',
+  preferred_channel: 'lark_smtp',
   include_agents: ['ceo', 'marketing', 'booking', 'cybersecurity', 'qa', 'adsense', 'traffic'],
   last_sent_at: null,
   updated_at: '2026-11-15T00:00:00Z'

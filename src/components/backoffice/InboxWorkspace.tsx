@@ -6,23 +6,18 @@ import {
   RefreshCw,
   Search,
   Send,
-  X
+  ShieldCheck,
+  X,
+  XCircle
 } from 'lucide-react';
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  connectGmailWithGoogle,
-  disconnectGmail,
-  getCachedGmailToken,
-  initGmailAuth,
-  listGmailMessages,
-  sendGmailMessage,
-  type GmailHeaderSummary
-} from '../../lib/gmail.ts';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from '../../lib/api.ts';
 import type {
   ArticleComment,
   ClientInquiry,
   CommentStatus,
   DirectoryUser,
+  InboxEmailLog,
   InquiryStatus,
   NewsletterSubscriber
 } from '../../shared/types.ts';
@@ -36,9 +31,17 @@ interface InboxWorkspaceProps {
   onUpdateInquiryStatus: (id: string, status: InquiryStatus) => Promise<void>;
   onUpdateCommentStatus: (id: string, status: CommentStatus) => Promise<void>;
   onExportSubscribersCsv: () => void;
+  onOpenSettings?: () => void;
 }
 
-type InboxSubTab = 'gmail' | 'inquiries' | 'community';
+type InboxSubTab = 'inquiries' | 'lark' | 'community';
+
+const CATEGORY_LABELS: Record<InboxEmailLog['category'], string> = {
+  inquiry_reply: 'Inquiry Reply',
+  direct_compose: 'Direct Dispatch',
+  contact_alert: 'Contact Form Alert',
+  demo_signup_alert: 'Demo Signup Alert'
+};
 
 export function InboxWorkspace({
   inquiries,
@@ -48,112 +51,94 @@ export function InboxWorkspace({
   onAssignInquiry,
   onUpdateInquiryStatus,
   onUpdateCommentStatus,
-  onExportSubscribersCsv
+  onExportSubscribersCsv,
+  onOpenSettings
 }: InboxWorkspaceProps) {
-  const [subTab, setSubTab] = useState<InboxSubTab>('gmail');
+  const [subTab, setSubTab] = useState<InboxSubTab>('inquiries');
 
-  // Gmail OAuth state (in-memory token only)
-  const [gmailUserEmail, setGmailUserEmail] = useState<string | null>(null);
-  const [gmailToken, setGmailToken] = useState<string | null>(() => getCachedGmailToken());
-  const [connectingGmail, setConnectingGmail] = useState(false);
-  const [gmailError, setGmailError] = useState<string | null>(null);
-  const [gmailMessages, setGmailMessages] = useState<GmailHeaderSummary[]>([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
+  // Lark Mail SMTP SSL state
+  const [larkInfo, setLarkInfo] = useState<{
+    connected: boolean;
+    email: string;
+    senderName: string;
+    smtpHost: string;
+    smtpPort: number;
+  }>({
+    connected: false,
+    email: '',
+    senderName: 'GitStack Solutions',
+    smtpHost: 'smtp.larksuite.com',
+    smtpPort: 465
+  });
+  const [emailLogs, setEmailLogs] = useState<InboxEmailLog[]>([]);
+  const [loadingLark, setLoadingLark] = useState(false);
+  const [larkError, setLarkError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedEmail, setSelectedEmail] = useState<GmailHeaderSummary | null>(null);
+  const [selectedLog, setSelectedLog] = useState<InboxEmailLog | null>(null);
 
-  // Compose / Reply state + Mandatory Send Confirmation Modal
+  // Compose / Reply state + Confirmation Modal
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeTo, setComposeTo] = useState('');
+  const [composeToName, setComposeToName] = useState('');
   const [composeSubject, setComposeSubject] = useState('');
   const [composeBody, setComposeBody] = useState('');
-  const [composeThreadId, setComposeThreadId] = useState<string | undefined>(undefined);
+  const [composeCategory, setComposeCategory] = useState<'inquiry_reply' | 'direct_compose'>(
+    'direct_compose'
+  );
+  const [composeRelatedId, setComposeRelatedId] = useState<string | undefined>(undefined);
   const [confirmSendOpen, setConfirmSendOpen] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
 
-  const loadInbox = useCallback(async (token: string, q = '') => {
-    setLoadingMessages(true);
-    setGmailError(null);
+  const loadLarkLogs = useCallback(async () => {
+    setLoadingLark(true);
+    setLarkError(null);
     try {
-      const items = await listGmailMessages(token, q, 15);
-      setGmailMessages(items);
-      if (items.length > 0 && !selectedEmail) {
-        setSelectedEmail(items[0]);
-      }
+      const res = await api.getInboxLarkEmails();
+      setLarkInfo(res.lark);
+      setEmailLogs(res.logs);
+      setSelectedLog((prev) => {
+        if (prev) {
+          return res.logs.find((l) => l.id === prev.id) || res.logs[0] || null;
+        }
+        return res.logs[0] || null;
+      });
     } catch (err) {
-      setGmailError(err instanceof Error ? err.message : 'Unable to read Gmail messages.');
-      if ((err instanceof Error ? err.message : '').toLowerCase().includes('expired')) {
-        setGmailToken(null);
-      }
+      setLarkError(err instanceof Error ? err.message : 'Unable to load Lark Mail dispatch log.');
     } finally {
-      setLoadingMessages(false);
+      setLoadingLark(false);
     }
-  }, [selectedEmail]);
-
-  useEffect(() => {
-    const unsub = initGmailAuth(
-      (user, token) => {
-        setGmailUserEmail(user.email || null);
-        setGmailToken(token);
-      },
-      () => {
-        setGmailToken(null);
-        setGmailUserEmail(null);
-      }
-    );
-    return () => unsub();
   }, []);
 
   useEffect(() => {
-    if (gmailToken) {
-      loadInbox(gmailToken, '');
-    }
-  }, [gmailToken, loadInbox]);
+    loadLarkLogs();
+  }, [loadLarkLogs]);
 
-  const handleConnectGoogle = async () => {
-    setConnectingGmail(true);
-    setGmailError(null);
-    try {
-      const res = await connectGmailWithGoogle();
-      setGmailUserEmail(res.user.email || 'Connected Gmail Account');
-      setGmailToken(res.accessToken);
-    } catch (err) {
-      setGmailError(err instanceof Error ? err.message : 'Google sign-in was cancelled or failed.');
-    } finally {
-      setConnectingGmail(false);
-    }
-  };
-
-  const handleDisconnectGoogle = async () => {
-    await disconnectGmail();
-    setGmailToken(null);
-    setGmailUserEmail(null);
-    setGmailMessages([]);
-    setSelectedEmail(null);
-  };
+  const filteredLogs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return emailLogs;
+    return emailLogs.filter(
+      (l) =>
+        l.recipient_email.toLowerCase().includes(q) ||
+        l.subject.toLowerCase().includes(q) ||
+        l.body.toLowerCase().includes(q) ||
+        CATEGORY_LABELS[l.category].toLowerCase().includes(q)
+    );
+  }, [emailLogs, searchQuery]);
 
   const openComposeForInquiry = (inq: ClientInquiry) => {
-    setSubTab('gmail');
+    setSubTab('lark');
     setComposeOpen(true);
     setComposeTo(inq.work_email);
+    setComposeToName(inq.full_name);
+    setComposeCategory('inquiry_reply');
+    setComposeRelatedId(inq.id);
     setComposeSubject(`Re: GitStack Architecture Consultation (${inq.reference_code})`);
     setComposeBody(
       `Hi ${inq.full_name},\n\nThank you for contacting GitStack regarding ${inq.service_interest} for ${inq.company}.\n\nWe reviewed your brief (${inq.reference_code}) and would like to schedule a technical discovery call with our principal engineering lead.\n\nBest regards,\nGitStack Engineering Team`
     );
-    setComposeThreadId(undefined);
     setSendSuccess(null);
-  };
-
-  const openReplyToGmail = (msg: GmailHeaderSummary) => {
-    const match = msg.from.match(/<([^>]+)>/);
-    const replyAddr = match ? match[1] : msg.from;
-    setComposeOpen(true);
-    setComposeTo(replyAddr);
-    setComposeSubject(msg.subject.startsWith('Re:') ? msg.subject : `Re: ${msg.subject}`);
-    setComposeBody('');
-    setComposeThreadId(msg.threadId);
-    setSendSuccess(null);
+    setLarkError(null);
   };
 
   const handleRequestSend = (e: React.FormEvent) => {
@@ -163,27 +148,28 @@ export function InboxWorkspace({
   };
 
   const handleConfirmedSend = async () => {
-    if (!gmailToken) {
-      setGmailError('Please connect Gmail with Google first before sending emails.');
-      setConfirmSendOpen(false);
-      return;
-    }
     setSendingEmail(true);
-    setGmailError(null);
+    setLarkError(null);
     try {
-      await sendGmailMessage(gmailToken, {
-        to: composeTo,
-        subject: composeSubject,
-        body: composeBody,
-        threadId: composeThreadId
+      const res = await api.sendInboxLarkEmail({
+        toEmail: composeTo.trim(),
+        toName: composeToName.trim() || undefined,
+        subject: composeSubject.trim(),
+        bodyText: composeBody.trim(),
+        category: composeCategory,
+        relatedId: composeRelatedId
       });
       setConfirmSendOpen(false);
       setComposeOpen(false);
-      setSendSuccess(`Email sent to ${composeTo} via Gmail.`);
-      await loadInbox(gmailToken, searchQuery);
+      setSendSuccess(
+        `Email sent to ${res.log.recipient_email} via Lark Mail SMTP (ID: ${res.log.provider_message_id}).`
+      );
+      await loadLarkLogs();
+      setSelectedLog(res.log);
     } catch (err) {
       setConfirmSendOpen(false);
-      setGmailError(err instanceof Error ? err.message : 'Failed to send email via Gmail.');
+      setLarkError(err instanceof Error ? err.message : 'Failed to send email via Lark Mail SMTP.');
+      await loadLarkLogs();
     } finally {
       setSendingEmail(false);
     }
@@ -197,21 +183,12 @@ export function InboxWorkspace({
             Unified Communications &amp; Lead Inbox
           </h2>
           <p className="mt-1 text-xs text-slate-600">
-            Read and reply to Gmail messages, triage client project inquiries, and moderate reader
-            comments and newsletter signups.
+            Triage client consultation inquiries, reply via encrypted Lark Mail SMTP SSL, and inspect
+            automatic Contact &amp; Demo signup alerts.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 w-full sm:w-fit">
-          <button
-            type="button"
-            onClick={() => setSubTab('gmail')}
-            className={`min-h-[38px] flex-1 sm:flex-none rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
-              subTab === 'gmail' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
-            }`}
-          >
-            Gmail Inbox ({gmailMessages.length})
-          </button>
           <button
             type="button"
             onClick={() => setSubTab('inquiries')}
@@ -220,6 +197,15 @@ export function InboxWorkspace({
             }`}
           >
             Client Inquiries ({inquiries.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubTab('lark')}
+            className={`min-h-[38px] flex-1 sm:flex-none rounded-md px-3 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
+              subTab === 'lark' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            Lark Mail Dispatch ({emailLogs.length})
           </button>
           <button
             type="button"
@@ -233,298 +219,19 @@ export function InboxWorkspace({
         </div>
       </div>
 
-      {/* TAB 1: GMAIL OAUTH INBOX */}
-      {subTab === 'gmail' && (
-        <div className="space-y-4">
-          {!gmailToken ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8 text-center max-w-xl mx-auto">
-              <Mail className="mx-auto h-8 w-8 text-[var(--gs-primary)]" />
-              <h3 className="mt-3 font-display text-base font-bold text-slate-900">
-                Connect Your Gmail Account to Read &amp; Send Client Emails
-              </h3>
-              <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                Authorize Gmail access directly in your browser. Access tokens remain strictly in
-                memory and every outgoing email requires your explicit confirmation before sending.
-              </p>
-
-              {gmailError && (
-                <p className="mt-3 text-xs font-medium text-red-700">{gmailError}</p>
-              )}
-
-              <div className="mt-5 flex justify-center">
-                <button
-                  type="button"
-                  disabled={connectingGmail}
-                  onClick={handleConnectGoogle}
-                  className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-xs font-semibold text-slate-800 shadow-xs hover:bg-slate-50 disabled:opacity-60"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 48 48"
-                    className="h-4 w-4 shrink-0"
-                  >
-                    <path
-                      fill="#EA4335"
-                      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                    />
-                    <path
-                      fill="#4285F4"
-                      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                    />
-                  </svg>
-                  <span>{connectingGmail ? 'Connecting...' : 'Sign in with Google'}</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Connected Gmail Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 sm:px-5 py-3.5">
-                <div className="flex flex-wrap items-center gap-2 text-xs min-w-0">
-                  <CheckCircle2 className="h-4 w-4 text-[#16A34A] shrink-0" />
-                  <span className="font-semibold text-slate-900">Gmail Connected</span>
-                  <span aria-hidden="true" className="text-slate-300">
-                    ·
-                  </span>
-                  <span className="font-mono text-slate-600 truncate">{gmailUserEmail}</span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      loadInbox(gmailToken, searchQuery);
-                    }}
-                    className="flex items-center gap-1.5 w-full sm:w-auto"
-                  >
-                    <div className="relative flex-1 sm:flex-none">
-                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search Gmail..."
-                        className="min-h-[40px] w-full rounded-lg border border-slate-200 pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="min-h-[40px] rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Search
-                    </button>
-                  </form>
-                  <button
-                    type="button"
-                    onClick={() => loadInbox(gmailToken, searchQuery)}
-                    className="min-h-[40px] inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${loadingMessages ? 'animate-spin' : ''}`} />
-                    <span>Sync</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setComposeOpen(true);
-                      setComposeTo('');
-                      setComposeSubject('');
-                      setComposeBody('');
-                      setComposeThreadId(undefined);
-                    }}
-                    className="min-h-[40px] inline-flex items-center gap-1 rounded-lg bg-[var(--gs-primary)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    <span>Compose</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDisconnectGoogle}
-                    className="min-h-[40px] rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              </div>
-
-              {gmailError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-800">
-                  {gmailError}
-                </div>
-              )}
-              {sendSuccess && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-medium text-emerald-800">
-                  {sendSuccess}
-                </div>
-              )}
-
-              {/* Compose Drawer */}
-              {composeOpen && (
-                <form
-                  onSubmit={handleRequestSend}
-                  className="rounded-xl border border-slate-200 bg-white p-5 space-y-3"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
-                    <h3 className="font-display text-sm font-bold text-slate-900">
-                      Compose Gmail Message
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => setComposeOpen(false)}
-                      className="text-slate-400 hover:text-slate-700"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <input
-                      type="email"
-                      required
-                      value={composeTo}
-                      onChange={(e) => setComposeTo(e.target.value)}
-                      placeholder="Recipient email (client@company.com)"
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
-                    />
-                    <input
-                      type="text"
-                      required
-                      value={composeSubject}
-                      onChange={(e) => setComposeSubject(e.target.value)}
-                      placeholder="Subject"
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
-                    />
-                  </div>
-                  <textarea
-                    rows={5}
-                    required
-                    value={composeBody}
-                    onChange={(e) => setComposeBody(e.target.value)}
-                    placeholder="Write your reply..."
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-900"
-                  />
-                  <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setComposeOpen(false)}
-                      className="min-h-[42px] rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="min-h-[42px] inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
-                    >
-                      <Send className="h-3.5 w-3.5" />
-                      <span>Review &amp; Send Email</span>
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              {/* Master-Detail Email Grid */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-200 lg:col-span-5 max-h-[520px] overflow-y-auto">
-                  {loadingMessages && gmailMessages.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-slate-500">
-                      Loading Gmail messages...
-                    </div>
-                  ) : gmailMessages.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-slate-500">
-                      No Gmail messages matched this filter.
-                    </div>
-                  ) : (
-                    gmailMessages.map((msg) => {
-                      const active = selectedEmail?.id === msg.id;
-                      return (
-                        <button
-                          key={msg.id}
-                          type="button"
-                          onClick={() => setSelectedEmail(msg)}
-                          className={`w-full p-4 text-left transition-colors ${
-                            active ? 'bg-[var(--gs-soft-bg)]' : 'hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2 text-xs">
-                            <span
-                              className={`truncate ${
-                                msg.unread ? 'font-bold text-slate-900' : 'font-medium text-slate-700'
-                              }`}
-                            >
-                              {msg.from}
-                            </span>
-                            {msg.unread && (
-                              <span className="text-[11px] font-semibold text-[var(--gs-primary)] shrink-0">
-                                Unread
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-1 text-xs font-semibold text-slate-900 truncate">
-                            {msg.subject}
-                          </div>
-                          <p className="mt-1 text-[11px] text-slate-500 line-clamp-2">
-                            {msg.snippet}
-                          </p>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 lg:col-span-7 min-h-[360px]">
-                  {selectedEmail ? (
-                    <div>
-                      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
-                        <div className="min-w-0">
-                          <h3 className="font-display text-base font-bold text-slate-900">
-                            {selectedEmail.subject}
-                          </h3>
-                          <div className="mt-1 text-xs text-slate-500 break-all">
-                            From: <span className="text-slate-800">{selectedEmail.from}</span>
-                            {selectedEmail.date && ` · ${selectedEmail.date}`}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => openReplyToGmail(selectedEmail)}
-                          className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg border border-[var(--gs-primary)] px-3 py-1.5 text-xs font-semibold text-[var(--gs-primary)] hover:bg-[var(--gs-soft-bg)] whitespace-nowrap shrink-0"
-                        >
-                          <Send className="h-3.5 w-3.5" />
-                          <span>Reply</span>
-                        </button>
-                      </div>
-                      <pre className="mt-4 whitespace-pre-wrap font-sans text-xs leading-relaxed text-slate-700 max-h-[400px] overflow-y-auto">
-                        {selectedEmail.bodyText}
-                      </pre>
-                    </div>
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-slate-500">
-                      Select an email thread on the left to read its full message.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: SUPABASE CLIENT INQUIRIES */}
+      {/* TAB 1: CLIENT INQUIRIES */}
       {subTab === 'inquiries' && (
         <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-4">
             <div className="flex items-center gap-2">
               <Inbox className="h-4 w-4 text-[var(--gs-primary)]" />
               <h3 className="font-display text-sm font-bold text-slate-900">
                 Client Project Inquiries ({inquiries.length})
               </h3>
             </div>
+            <span className="text-xs text-slate-500">
+              Lark Mail alerts active for every new Contact submission
+            </span>
           </div>
           <div className="divide-y divide-slate-200">
             {inquiries.length === 0 ? (
@@ -577,7 +284,7 @@ export function InboxWorkspace({
                         className="min-h-[38px] inline-flex items-center gap-1 rounded border border-[var(--gs-primary)] px-2.5 py-1.5 text-xs font-semibold text-[var(--gs-primary)] hover:bg-[var(--gs-soft-bg)] whitespace-nowrap shrink-0"
                       >
                         <Mail className="h-3.5 w-3.5" />
-                        <span>Reply via Gmail</span>
+                        <span>Reply via Lark Mail</span>
                       </button>
                     </div>
                   </div>
@@ -585,6 +292,255 @@ export function InboxWorkspace({
                 </div>
               ))
             )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: LARK MAIL SMTP DISPATCH & AUDIT LOG */}
+      {subTab === 'lark' && (
+        <div className="space-y-4">
+          {/* Lark SMTP Status Toolbar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 sm:px-5 py-3.5">
+            <div className="flex flex-wrap items-center gap-2 text-xs min-w-0">
+              {larkInfo.connected ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 text-[#16A34A] shrink-0" />
+                  <span className="font-semibold text-slate-900">Lark Mail SMTP Connected</span>
+                  <span aria-hidden="true" className="text-slate-300">
+                    ·
+                  </span>
+                  <span className="font-mono text-slate-700 truncate">{larkInfo.email}</span>
+                  <span aria-hidden="true" className="text-slate-300">
+                    ·
+                  </span>
+                  <span className="font-mono text-slate-500">
+                    {larkInfo.smtpHost}:{larkInfo.smtpPort}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="h-4 w-4 text-amber-600 shrink-0" />
+                  <span className="font-semibold text-amber-800">
+                    Lark Mail SMTP not connected — configure Authorization Code in Settings
+                  </span>
+                </>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-none">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filter sent mail..."
+                  className="min-h-[40px] w-full rounded-lg border border-slate-200 pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={loadLarkLogs}
+                className="min-h-[40px] inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${loadingLark ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setComposeOpen(true);
+                  setComposeTo('');
+                  setComposeToName('');
+                  setComposeSubject('');
+                  setComposeBody('');
+                  setComposeCategory('direct_compose');
+                  setComposeRelatedId(undefined);
+                }}
+                className="min-h-[40px] inline-flex items-center gap-1 rounded-lg bg-[var(--gs-primary)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+              >
+                <Send className="h-3.5 w-3.5" />
+                <span>Compose Lark Email</span>
+              </button>
+              {!larkInfo.connected && onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="min-h-[40px] rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  Connect Lark SMTP
+                </button>
+              )}
+            </div>
+          </div>
+
+          {larkError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-800">
+              {larkError}
+            </div>
+          )}
+          {sendSuccess && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-medium text-emerald-800">
+              {sendSuccess}
+            </div>
+          )}
+
+          {/* Compose Drawer */}
+          {composeOpen && (
+            <form
+              onSubmit={handleRequestSend}
+              className="rounded-xl border border-slate-200 bg-white p-5 space-y-3"
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+                <h3 className="font-display text-sm font-bold text-slate-900">
+                  Compose Outbound Lark Mail
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setComposeOpen(false)}
+                  className="text-slate-400 hover:text-slate-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <input
+                  type="email"
+                  required
+                  value={composeTo}
+                  onChange={(e) => setComposeTo(e.target.value)}
+                  placeholder="Recipient email (client@company.com)"
+                  className="min-h-[40px] rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
+                />
+                <input
+                  type="text"
+                  required
+                  value={composeSubject}
+                  onChange={(e) => setComposeSubject(e.target.value)}
+                  placeholder="Subject"
+                  className="min-h-[40px] rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
+                />
+              </div>
+              <textarea
+                rows={5}
+                required
+                value={composeBody}
+                onChange={(e) => setComposeBody(e.target.value)}
+                placeholder="Write your reply..."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs leading-relaxed text-slate-900"
+              />
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setComposeOpen(false)}
+                  className="min-h-[42px] rounded-lg border border-slate-200 px-3.5 py-2 text-xs font-medium text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="min-h-[42px] inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Review &amp; Send via Lark Mail</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Master-Detail Dispatch Log */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+            <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-200 lg:col-span-5 max-h-[520px] overflow-y-auto">
+              {loadingLark && filteredLogs.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  Loading Lark Mail dispatch history...
+                </div>
+              ) : filteredLogs.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-500">
+                  No outbound Lark Mail dispatches or alerts recorded yet.
+                </div>
+              ) : (
+                filteredLogs.map((log) => {
+                  const active = selectedLog?.id === log.id;
+                  return (
+                    <button
+                      key={log.id}
+                      type="button"
+                      onClick={() => setSelectedLog(log)}
+                      className={`w-full p-4 text-left transition-colors ${
+                        active ? 'bg-[var(--gs-soft-bg)]' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-slate-900 truncate">
+                          {log.recipient_email}
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 text-[11px] font-semibold shrink-0 ${
+                            log.status === 'sent' ? 'text-emerald-700' : 'text-red-700'
+                          }`}
+                        >
+                          {log.status === 'sent' ? (
+                            <CheckCircle2 className="h-3 w-3" />
+                          ) : (
+                            <XCircle className="h-3 w-3" />
+                          )}
+                          <span>{log.status === 'sent' ? 'Sent' : 'Failed'}</span>
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs font-medium text-slate-800 truncate">
+                        {log.subject}
+                      </div>
+                      <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+                        <span>{CATEGORY_LABELS[log.category]}</span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-mono tabular-nums">
+                          {new Date(log.sent_at).toLocaleString()}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 lg:col-span-7 min-h-[360px]">
+              {selectedLog ? (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 pb-4">
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-semibold text-slate-500">
+                        {CATEGORY_LABELS[selectedLog.category]} · Lark Mail SMTP SSL
+                      </div>
+                      <h3 className="mt-1 font-display text-base font-bold text-slate-900">
+                        {selectedLog.subject}
+                      </h3>
+                      <div className="mt-1 text-xs text-slate-500 break-all font-mono tabular-nums">
+                        To: {selectedLog.recipient_email} · Sent by {selectedLog.sent_by} ·{' '}
+                        {new Date(selectedLog.sent_at).toLocaleString()}
+                      </div>
+                      {selectedLog.provider_message_id && (
+                        <div className="mt-1 text-[11px] font-mono text-slate-500">
+                          SMTP Message ID: {selectedLog.provider_message_id}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {selectedLog.error_detail && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      {selectedLog.error_detail}
+                    </div>
+                  )}
+                  <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed text-slate-700 max-h-[380px] overflow-y-auto">
+                    {selectedLog.body}
+                  </pre>
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center text-xs text-slate-500">
+                  Select a Lark Mail log entry on the left or compose a new email.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -649,21 +605,24 @@ export function InboxWorkspace({
         </div>
       )}
 
-      {/* MANDATORY CONFIRMATION DIALOG BEFORE SENDING GMAIL */}
+      {/* CONFIRMATION DIALOG BEFORE SENDING LARK MAIL */}
       {confirmSendOpen && (
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="Confirm Send Email"
+          aria-label="Confirm Send Lark Email"
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
         >
           <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xl space-y-4">
             <h3 className="font-display text-base font-bold text-slate-900">
-              Confirm Sending Email via Gmail
+              Confirm Sending Email via Lark Mail SMTP SSL
             </h3>
             <p className="text-xs text-slate-600">
-              You are about to send this email from{' '}
-              <span className="font-mono font-semibold text-slate-900">{gmailUserEmail}</span>:
+              Sending from{' '}
+              <span className="font-mono font-semibold text-slate-900">
+                {larkInfo.email || 'Configured Lark Mail Vault'}
+              </span>{' '}
+              ({larkInfo.smtpHost}:{larkInfo.smtpPort}):
             </p>
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs space-y-1">
               <div>
@@ -690,7 +649,7 @@ export function InboxWorkspace({
                 onClick={handleConfirmedSend}
                 className="min-h-[42px] rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60"
               >
-                {sendingEmail ? 'Sending...' : 'Confirm & Send Email'}
+                {sendingEmail ? 'Sending via Lark...' : 'Confirm & Send Email'}
               </button>
             </div>
           </div>

@@ -597,7 +597,7 @@ export const SEED_AGENT_TASKS = [
     title: 'Send technical discovery calendar slots to reviewed Veridian inquiry',
     priority: 'high' as const,
     completed: false,
-    notes: 'Use Gmail Inbox reply workflow with Elena Vance.',
+    notes: 'Use Lark Mail Dispatch reply workflow with Elena Vance.',
     updated_at: '2026-11-12T10:00:00Z'
   },
   {

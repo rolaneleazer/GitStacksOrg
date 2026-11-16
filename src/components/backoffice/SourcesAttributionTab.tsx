@@ -31,6 +31,7 @@ const SOURCE_ACCENTS: Record<LeadSourceType, string> = {
   website: 'bg-sky-600',
   gemini_search: 'bg-violet-600',
   csv_import: 'bg-teal-600',
+  demo_signup: 'bg-blue-600',
   manual: 'bg-slate-500'
 };
 
@@ -378,6 +379,7 @@ export function SourcesAttributionTab({
               <option value="ycombinator">Y Combinator</option>
               <option value="website">Company Website</option>
               <option value="gemini_search">Gemini Search</option>
+              <option value="demo_signup">Live Demo Signups</option>
               <option value="csv_import">CSV Import</option>
               <option value="manual">Manual Entry</option>
             </select>

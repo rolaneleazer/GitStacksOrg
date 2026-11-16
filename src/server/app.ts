@@ -41,8 +41,10 @@ import type {
   CrmOAuthTokenRecord,
   CrmOutreachLog,
   CsvImportLeadInput,
+  DemoUser,
   GoogleMapsPlaceCandidate,
   HeaderSurface,
+  InboxEmailLog,
   InquiryStatus,
   IntegrationConfigMeta,
   IntegrationProviderId,
@@ -97,6 +99,7 @@ import {
   addChatMessage,
   addCrmOutreachLog,
   addCrmSyncRun,
+  addInboxEmailLog,
   addSubscriber,
   assignChatThread,
   assignInquiry,
@@ -115,6 +118,8 @@ import {
   deletePost,
   deleteTeamUser,
   deleteWorkflowItem,
+  findDemoUserByEmail,
+  findDemoUserById,
   getAdSenseSettings,
   getAgentReportSettings,
   getAnalyticsSummary,
@@ -123,7 +128,9 @@ import {
   getPostBySlug,
   getSupabaseAutomationMode,
   getSupabaseUrl,
+  hashDemoPassword,
   isSupabaseConfigured,
+  issueDemoSessionToken,
   listAgentConversations,
   listAgentEmailReports,
   listAgentOfficeProfiles,
@@ -133,6 +140,8 @@ import {
   listComments,
   listCrmLeads,
   listCrmOutreachLogs,
+  listDemoUsersWithStats,
+  listInboxEmailLogs,
   listInquiries,
   listPageContents,
   listPosts,
@@ -148,6 +157,7 @@ import {
   saveRoutingRules,
   seedStarterDataToSupabase,
   signInEditor,
+  toPublicDemoUser,
   updateChatThreadStatus,
   updateCommentStatus,
   updateInquiryStatus,
@@ -158,9 +168,12 @@ import {
   upsertAgentTask,
   upsertCrmLead,
   upsertCrmOAuthToken,
+  upsertDemoUser,
   upsertMergeCrmLeads,
   upsertPageContent,
   upsertPost,
+  verifyDemoPassword,
+  verifyDemoSessionToken,
   verifyEditorToken,
   type EditorSession
 } from './repository.ts';
@@ -899,6 +912,27 @@ export async function createApp(): Promise<Express> {
         meta: { service: inquiry.service_interest },
         created_at: inquiry.created_at
       });
+      await notifyAdminViaLarkMail({
+        category: 'contact_alert',
+        relatedId: saved.id,
+        subject: `[GitStack Inquiry] ${saved.company} — ${saved.service_interest} (${saved.reference_code})`,
+        bodyText: [
+          `New client consultation inquiry received on GitStack:`,
+          ``,
+          `Reference: ${saved.reference_code}`,
+          `Full Name: ${saved.full_name}`,
+          `Company: ${saved.company}`,
+          `Work Email: ${saved.work_email}`,
+          `Service Interest: ${saved.service_interest}`,
+          `Budget Range: ${saved.budget_range}`,
+          `Timeline: ${saved.timeline}`,
+          ``,
+          `Project Brief:`,
+          saved.project_brief,
+          ``,
+          `Reply directly from Back Office -> Inbox & Leads via Lark Mail.`
+        ].join('\n')
+      });
       res.status(201).json({ inquiry: saved });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to submit inquiry' });
@@ -1275,6 +1309,63 @@ export async function createApp(): Promise<Express> {
     };
   }
 
+  async function notifyAdminViaLarkMail(params: {
+    category: 'contact_alert' | 'demo_signup_alert';
+    relatedId: string;
+    subject: string;
+    bodyText: string;
+  }) {
+    const nowIso = new Date().toISOString();
+    let adminEmail = (process.env.STUDIO_ADMIN_EMAIL || 'gitstackitsolution@gmail.com').trim().toLowerCase();
+    try {
+      const reportCfg = await getAgentReportSettings();
+      if (reportCfg?.recipient_email && isValidEmail(reportCfg.recipient_email)) {
+        adminEmail = reportCfg.recipient_email.trim().toLowerCase();
+      }
+    } catch {
+      // use fallback admin email
+    }
+
+    try {
+      const sent = await sendLarkSmtpMail({
+        toEmail: adminEmail,
+        toName: 'GitStack Admin',
+        subject: params.subject,
+        bodyText: params.bodyText
+      });
+      await addInboxEmailLog({
+        id: `inblog-${crypto.randomUUID().slice(0, 8)}`,
+        recipient_email: adminEmail,
+        subject: params.subject,
+        body: params.bodyText,
+        channel: 'lark_smtp',
+        category: params.category,
+        related_id: params.relatedId,
+        provider_message_id: sent.messageId,
+        status: 'sent',
+        error_detail: '',
+        sent_by: 'system',
+        sent_at: nowIso
+      }).catch(() => {});
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Lark Mail notification skipped';
+      await addInboxEmailLog({
+        id: `inblog-${crypto.randomUUID().slice(0, 8)}`,
+        recipient_email: adminEmail,
+        subject: params.subject,
+        body: params.bodyText,
+        channel: 'lark_smtp',
+        category: params.category,
+        related_id: params.relatedId,
+        provider_message_id: '',
+        status: 'failed',
+        error_detail: msg,
+        sent_by: 'system',
+        sent_at: nowIso
+      }).catch(() => {});
+    }
+  }
+
   async function executeServerReportDispatch(
     triggerType: 'manual' | 'daily_cron',
     token?: string
@@ -1294,52 +1385,30 @@ export async function createApp(): Promise<Express> {
       generatedAt: nowIso
     });
 
-    const resendKey = process.env.RESEND_API_KEY?.trim();
-    const fromEmail = process.env.RESEND_FROM_EMAIL?.trim() || 'GitStack Agents <onboarding@resend.dev>';
-
     let status: AgentEmailReport['status'] = 'skipped_unconfigured';
-    let channel: AgentEmailReport['channel'] = 'cron_dispatch';
+    const channel: AgentEmailReport['channel'] =
+      triggerType === 'daily_cron' ? 'cron_dispatch' : 'lark_smtp';
     let providerMessageId = '';
     let errorDetail = '';
     let deliveredViaServer = false;
 
-    if (resendKey) {
-      channel = triggerType === 'daily_cron' ? 'cron_dispatch' : 'resend_api';
-      try {
-        const resendRes = await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${resendKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            from: fromEmail,
-            to: [settings.recipient_email],
-            subject: digest.subject,
-            text: digest.bodyText
-          })
-        });
-        const payload = (await resendRes.json().catch(() => ({}))) as {
-          id?: string;
-          message?: string;
-          error?: { message?: string };
-        };
-        if (resendRes.ok && payload.id) {
-          status = 'sent';
-          providerMessageId = payload.id;
-          deliveredViaServer = true;
-        } else {
-          status = 'failed';
-          errorDetail =
-            payload.message || payload.error?.message || `Resend returned HTTP ${resendRes.status}.`;
-        }
-      } catch (err) {
-        status = 'failed';
-        errorDetail = err instanceof Error ? err.message : 'Resend network delivery error.';
-      }
-    } else {
-      errorDetail =
-        'RESEND_API_KEY is not configured for unattended background cron email sending. Use "Send via Gmail Now" in Back Office or configure RESEND_API_KEY in Vercel environment variables.';
+    try {
+      const sent = await sendLarkSmtpMail(
+        {
+          toEmail: settings.recipient_email,
+          toName: 'GitStack Admin',
+          subject: digest.subject,
+          bodyText: digest.bodyText
+        },
+        token
+      );
+      status = 'sent';
+      providerMessageId = sent.messageId;
+      deliveredViaServer = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Lark Mail SMTP dispatch failed.';
+      status = msg.toLowerCase().includes('not connected') ? 'skipped_unconfigured' : 'failed';
+      errorDetail = msg;
     }
 
     const proofHash = computeReportProofHash({
@@ -1624,10 +1693,7 @@ export async function createApp(): Promise<Express> {
         enabled: payload.enabled !== undefined ? Boolean(payload.enabled) : current.enabled,
         recipient_email: nextRecipient,
         send_hour_utc: sendHour,
-        preferred_channel:
-          payload.preferred_channel === 'resend' || payload.preferred_channel === 'gmail'
-            ? payload.preferred_channel
-            : current.preferred_channel,
+        preferred_channel: 'lark_smtp',
         include_agents: filteredAgents.length > 0 ? filteredAgents : VALID_AGENT_IDS,
         last_sent_at: current.last_sent_at,
         updated_at: new Date().toISOString()
@@ -1650,10 +1716,7 @@ export async function createApp(): Promise<Express> {
         return res.status(400).json({ error: 'Report subject and body_text are required.' });
       }
       const sentAt = new Date().toISOString();
-      const channel =
-        payload.channel === 'resend_api' || payload.channel === 'cron_dispatch'
-          ? payload.channel
-          : 'gmail_api';
+      const channel = payload.channel === 'cron_dispatch' ? 'cron_dispatch' : 'lark_smtp';
       const status =
         payload.status === 'failed' || payload.status === 'skipped_unconfigured'
           ? payload.status
@@ -3099,36 +3162,26 @@ export async function createApp(): Promise<Express> {
         return res.status(400).json({ error: 'Subject and email body are required.' });
       }
 
-      const sendChannel: 'lark_mail' | 'gmail_api' = channel === 'gmail_api' ? 'gmail_api' : 'lark_mail';
+      const sendChannel = 'lark_mail' as const;
       const now = new Date().toISOString();
       let deliveryStatus: 'sent' | 'failed' = 'sent';
-      let messageId = provider_message_id || '';
-      let errorDetail = client_error || '';
+      let messageId = '';
+      let errorDetail = '';
 
-      if (sendChannel === 'lark_mail') {
-        try {
-          const sent = await sendLarkSmtpMail(
-            {
-              toEmail: targetEmail,
-              toName: existing.contact_name,
-              subject: cleanSubject,
-              bodyText: cleanBody
-            },
-            token
-          );
-          messageId = sent.messageId;
-        } catch (sendErr) {
-          deliveryStatus = 'failed';
-          errorDetail = sendErr instanceof Error ? sendErr.message : 'Lark Mail SMTP dispatch failed';
-        }
-      } else {
-        if (client_error) {
-          deliveryStatus = 'failed';
-        } else if (!messageId) {
-          return res.status(400).json({
-            error: 'Gmail API dispatch requires client OAuth completion before logging.'
-          });
-        }
+      try {
+        const sent = await sendLarkSmtpMail(
+          {
+            toEmail: targetEmail,
+            toName: existing.contact_name,
+            subject: cleanSubject,
+            bodyText: cleanBody
+          },
+          token
+        );
+        messageId = sent.messageId;
+      } catch (sendErr) {
+        deliveryStatus = 'failed';
+        errorDetail = sendErr instanceof Error ? sendErr.message : 'Lark Mail SMTP dispatch failed';
       }
 
       const stepLabel = step_number ? `Follow-Up Step ${step_number}` : 'Initial Proposal';
@@ -3255,6 +3308,349 @@ export async function createApp(): Promise<Express> {
       res.json({ lead: updatedLead, inquiry: createdInquiry, workflowItem: createdWorkflow });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to convert lead to client' });
+    }
+  });
+
+  // --- Unified Lark Mail Inbox Dispatch & Logs ---
+
+  app.get('/api/inbox/lark-emails', requireEditor, async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const [resolved, logs] = await Promise.all([
+        resolveIntegrationConfig('lark_smtp', token).catch(() => null),
+        listInboxEmailLogs(token)
+      ]);
+      res.json({
+        lark: {
+          connected: Boolean(resolved?.secret && resolved.configMeta.email),
+          email: resolved?.configMeta.email || '',
+          senderName: resolved?.configMeta.sender_name || 'GitStack Solutions',
+          smtpHost: resolved?.configMeta.smtp_host || 'smtp.larksuite.com',
+          smtpPort: resolved?.configMeta.smtp_port || 465
+        },
+        logs
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load Lark inbox logs' });
+    }
+  });
+
+  app.post('/api/inbox/send-lark', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const token = getBearerToken(req);
+      const { toEmail, toName, subject, bodyText, category, relatedId } = req.body as {
+        toEmail?: string;
+        toName?: string;
+        subject?: string;
+        bodyText?: string;
+        category?: 'inquiry_reply' | 'direct_compose';
+        relatedId?: string;
+      };
+
+      const target = (toEmail || '').trim().toLowerCase();
+      if (!target || !isValidEmail(target)) {
+        return res.status(400).json({ error: 'A valid recipient email address is required.' });
+      }
+      if (!subject?.trim() || !bodyText?.trim()) {
+        return res.status(400).json({ error: 'Subject and email body are required.' });
+      }
+
+      const now = new Date().toISOString();
+      let status: 'sent' | 'failed' = 'sent';
+      let messageId = '';
+      let errorDetail = '';
+
+      try {
+        const sent = await sendLarkSmtpMail(
+          {
+            toEmail: target,
+            toName: toName?.trim(),
+            subject: subject.trim(),
+            bodyText: bodyText.trim()
+          },
+          token
+        );
+        messageId = sent.messageId;
+      } catch (err) {
+        status = 'failed';
+        errorDetail = err instanceof Error ? err.message : 'Lark Mail SMTP dispatch failed.';
+      }
+
+      const log = await addInboxEmailLog(
+        {
+          id: `inblog-${crypto.randomUUID().slice(0, 8)}`,
+          recipient_email: target,
+          subject: subject.trim(),
+          body: bodyText.trim(),
+          channel: 'lark_smtp',
+          category: category === 'inquiry_reply' ? 'inquiry_reply' : 'direct_compose',
+          related_id: relatedId || null,
+          provider_message_id: messageId,
+          status,
+          error_detail: errorDetail,
+          sent_by: req.editor?.email || 'admin',
+          sent_at: now
+        },
+        token
+      );
+
+      if (status === 'failed') {
+        return res.status(400).json({ error: errorDetail, log });
+      }
+
+      if (category === 'inquiry_reply' && relatedId) {
+        const currentInqs = await listInquiries(token).catch(() => []);
+        const targetInq = currentInqs.find((i) => i.id === relatedId);
+        if (targetInq && targetInq.status === 'new') {
+          await updateInquiryStatus(relatedId, 'reviewed', token).catch(() => {});
+        }
+      }
+
+      res.status(201).json({ log });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to send Lark Mail' });
+    }
+  });
+
+  // --- Customer Demo Sign Up, Ordinary Login, Telemetry & Admin Demo Users ---
+
+  app.post('/api/demo/register', async (req, res) => {
+    try {
+      const { full_name, email, company, phone, password } = req.body as {
+        full_name?: string;
+        email?: string;
+        company?: string;
+        phone?: string;
+        password?: string;
+      };
+
+      const cleanName = (full_name || '').trim();
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const cleanCompany = (company || '').trim();
+      const cleanPhone = (phone || '').trim();
+      const rawPassword = password || '';
+
+      if (cleanName.length < 2 || !cleanCompany || cleanPhone.length < 5) {
+        return res.status(400).json({
+          error: 'Full name, company name, and phone number are required to access the Live Demo.'
+        });
+      }
+      if (!isValidEmail(cleanEmail)) {
+        return res.status(400).json({ error: 'Please provide a valid email address.' });
+      }
+      if (rawPassword.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+      }
+
+      const existing = await findDemoUserByEmail(cleanEmail);
+      if (existing) {
+        return res.status(409).json({
+          error: 'An account with this email already exists. Please switch to Sign In.'
+        });
+      }
+
+      const now = new Date().toISOString();
+      const emailDomain = cleanEmail.split('@')[1] || '';
+      const freeDomains = new Set([
+        'gmail.com',
+        'yahoo.com',
+        'hotmail.com',
+        'outlook.com',
+        'icloud.com',
+        'proton.me',
+        'protonmail.com'
+      ]);
+      const companyDomain =
+        emailDomain && !freeDomains.has(emailDomain)
+          ? emailDomain
+          : `${cleanCompany.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 24) || 'demo-prospect'}.com`;
+
+      let emailStatus: CrmLead['email_status'] = 'public_found';
+      try {
+        const hasMx = await Promise.race([
+          verifyEmailMxDomain(cleanEmail),
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1500))
+        ]);
+        emailStatus = hasMx ? 'verified_mx' : 'public_found';
+      } catch {
+        emailStatus = 'public_found';
+      }
+
+      const demoId = `demo-usr-${crypto.randomUUID().slice(0, 8)}`;
+      const crmLeadId = `lead-demo-${crypto.randomUUID().slice(0, 8)}`;
+
+      const crmLead: CrmLead = {
+        id: crmLeadId,
+        contact_name: cleanName,
+        role_title: 'Live Demo Prospect',
+        email: cleanEmail,
+        email_status: emailStatus,
+        company_name: cleanCompany,
+        company_domain: companyDomain,
+        website_url: companyDomain ? `https://${companyDomain}` : '',
+        github_url: '',
+        phone: cleanPhone,
+        location: 'Live Demo Gate',
+        rating: null,
+        source_detail: 'Interactive Demo Sign Up',
+        source_type: 'demo_signup',
+        source_urls: ['/demo'],
+        tech_stack: ['Live Demo Sandbox', 'CRM & AI Evaluation'],
+        research_brief: `Registered for GitStack Interactive Live Demo on ${now.slice(0, 10)}. Phone: ${cleanPhone}. Captured automatically for sales outreach via Lark Mail.`,
+        recommended_service: 'AI Integration',
+        fit_score: 84,
+        deal_value: 35000,
+        stage: 'discovered',
+        proposal_subject: `${cleanCompany} × GitStack Live Demo Follow-Up`,
+        proposal_body: `Hi ${cleanName.split(' ')[0] || cleanName},\n\nThanks for exploring the GitStack Live Demo Sandbox for ${cleanCompany}. I noticed you registered with ${cleanEmail} and ${cleanPhone}—happy to walk you through deploying the live CRM, AI Agent fleet, and Lark Mail automation on your own infrastructure.\n\nBest regards,\nGitStack Engineering`,
+        follow_up_sequence: [],
+        assigned_to: null,
+        last_contacted_at: null,
+        next_followup_at: null,
+        converted_inquiry_id: null,
+        created_at: now,
+        updated_at: now
+      };
+
+      const mergeRes = await upsertMergeCrmLeads([crmLead]);
+      const matchedLead =
+        mergeRes.leads.find(
+          (l) => l.email.toLowerCase() === cleanEmail || l.id === crmLeadId
+        ) || crmLead;
+
+      const demoUser: DemoUser = {
+        id: demoId,
+        full_name: cleanName,
+        email: cleanEmail,
+        company: cleanCompany,
+        phone: cleanPhone,
+        password_hash: hashDemoPassword(rawPassword),
+        crm_lead_id: matchedLead.id,
+        login_count: 1,
+        actions_count: 1,
+        explored_modules: ['Signed Up'],
+        sandbox_conversions: 0,
+        last_action_label: 'Created Demo Account',
+        last_active_at: now,
+        created_at: now
+      };
+
+      const savedUser = await upsertDemoUser(demoUser);
+      const token = issueDemoSessionToken({ id: savedUser.id, email: savedUser.email });
+
+      await notifyAdminViaLarkMail({
+        category: 'demo_signup_alert',
+        relatedId: savedUser.id,
+        subject: `[GitStack Demo Lead] ${cleanCompany} — ${cleanName} signed up`,
+        bodyText: [
+          `A visitor just registered for the GitStack Interactive Live Demo and was automatically added to your CRM Pipeline:`,
+          ``,
+          `Full Name: ${cleanName}`,
+          `Company: ${cleanCompany}`,
+          `Email: ${cleanEmail}`,
+          `Phone: ${cleanPhone}`,
+          `Linked CRM Lead ID: ${matchedLead.id}`,
+          ``,
+          `Open Back Office -> CRM Pipeline or Demo Users to review their sandbox activity and contact them via Lark Mail.`
+        ].join('\n')
+      });
+
+      res.status(201).json({
+        token,
+        user: toPublicDemoUser(savedUser)
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to register demo account' });
+    }
+  });
+
+  app.post('/api/demo/login', async (req, res) => {
+    try {
+      const { email, password } = req.body as { email?: string; password?: string };
+      const cleanEmail = (email || '').trim().toLowerCase();
+      if (!cleanEmail || !password) {
+        return res.status(400).json({ error: 'Email and password are required.' });
+      }
+      const user = await findDemoUserByEmail(cleanEmail);
+      if (!user || !verifyDemoPassword(password, user.password_hash)) {
+        return res.status(401).json({ error: 'Invalid email or password.' });
+      }
+
+      const now = new Date().toISOString();
+      const updated = await upsertDemoUser({
+        ...user,
+        login_count: (Number(user.login_count) || 0) + 1,
+        last_action_label: 'Signed In',
+        last_active_at: now
+      });
+      const token = issueDemoSessionToken({ id: updated.id, email: updated.email });
+      res.json({ token, user: toPublicDemoUser(updated) });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to sign in to demo' });
+    }
+  });
+
+  app.get('/api/demo/me', async (req, res) => {
+    try {
+      const session = verifyDemoSessionToken(getBearerToken(req) || '');
+      if (!session) {
+        return res.status(401).json({ error: 'Demo session expired or missing.' });
+      }
+      const user = await findDemoUserById(session.id);
+      if (!user) {
+        return res.status(401).json({ error: 'Demo account not found.' });
+      }
+      res.json({ user: toPublicDemoUser(user) });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to verify demo session' });
+    }
+  });
+
+  app.post('/api/demo/activity', async (req, res) => {
+    try {
+      const session = verifyDemoSessionToken(getBearerToken(req) || '');
+      if (!session) {
+        return res.status(401).json({ error: 'Demo authentication required.' });
+      }
+      const user = await findDemoUserById(session.id);
+      if (!user) {
+        return res.status(404).json({ error: 'Demo account not found.' });
+      }
+      const { module, actionLabel, convertedInquiry } = req.body as {
+        module?: string;
+        actionLabel?: string;
+        convertedInquiry?: boolean;
+      };
+
+      const nextModules = Array.from(
+        new Set([
+          ...(Array.isArray(user.explored_modules) ? user.explored_modules : []),
+          ...(module?.trim() ? [module.trim().slice(0, 60)] : [])
+        ])
+      ).slice(0, 16);
+
+      const updated = await upsertDemoUser({
+        ...user,
+        actions_count: (Number(user.actions_count) || 0) + 1,
+        explored_modules: nextModules,
+        sandbox_conversions:
+          (Number(user.sandbox_conversions) || 0) + (convertedInquiry ? 1 : 0),
+        last_action_label: (actionLabel || module || 'Sandbox Interaction').slice(0, 100),
+        last_active_at: new Date().toISOString()
+      });
+
+      res.json({ user: toPublicDemoUser(updated) });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to log demo activity' });
+    }
+  });
+
+  app.get('/api/admin/demo-users', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const data = await listDemoUsersWithStats(getBearerToken(req));
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load demo users' });
     }
   });
 

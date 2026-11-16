@@ -24,10 +24,12 @@ import type {
   CrmOutreachLog,
   CrmSourcesAnalyticsResponse,
   CsvImportLeadInput,
+  DemoUsersSummaryStats,
   DirectoryUser,
   DiscoveredProspectCandidate,
   GoogleMapsConfigResponse,
   GoogleMapsPlaceCandidate,
+  InboxEmailLog,
   InfrastructureMetricsResponse,
   InquiryStatus,
   IntegrationConfigMeta,
@@ -39,6 +41,7 @@ import type {
   OpenSourceSyncTrack,
   PageContentConfig,
   PageKey,
+  PublicDemoUser,
   RoutingRule,
   SiteAuditReport,
   TaskPriority,
@@ -49,6 +52,7 @@ import type {
 } from '../shared/types.ts';
 
 const TOKEN_KEY = 'gitstack_studio_token';
+const DEMO_TOKEN_KEY = 'gitstack_demo_token';
 const SESSION_ID_KEY = 'gitstack_visitor_sid';
 
 export function getStoredToken(): string | null {
@@ -65,6 +69,28 @@ export function setStoredToken(token: string | null): void {
       window.sessionStorage.setItem(TOKEN_KEY, token);
     } else {
       window.sessionStorage.removeItem(TOKEN_KEY);
+    }
+  } catch {
+    // ignore storage restrictions
+  }
+}
+
+export function getStoredDemoToken(): string | null {
+  try {
+    return window.localStorage.getItem(DEMO_TOKEN_KEY) || window.sessionStorage.getItem(DEMO_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredDemoToken(token: string | null): void {
+  try {
+    if (token) {
+      window.localStorage.setItem(DEMO_TOKEN_KEY, token);
+      window.sessionStorage.setItem(DEMO_TOKEN_KEY, token);
+    } else {
+      window.localStorage.removeItem(DEMO_TOKEN_KEY);
+      window.sessionStorage.removeItem(DEMO_TOKEN_KEY);
     }
   } catch {
     // ignore storage restrictions
@@ -571,27 +597,6 @@ export const api = {
     });
   },
 
-  async logGmailAgentReport(payload: {
-    recipient_email: string;
-    subject: string;
-    body_text: string;
-    provider_message_id: string;
-    provider_thread_id?: string;
-    status: 'sent' | 'failed' | 'skipped_unconfigured';
-    overall_score: number;
-    agent_snapshots: AgentSnapshotItem[];
-    error_detail?: string;
-  }) {
-    return request<{ report: AgentEmailReport }>('/api/reports/agent-daily/log', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...payload,
-        channel: 'gmail_api',
-        trigger_type: 'manual'
-      })
-    });
-  },
-
   async dispatchServerAgentReport() {
     return request<{ report: AgentEmailReport; deliveredViaServer: boolean }>(
       '/api/reports/agent-daily/dispatch',
@@ -655,13 +660,11 @@ export const api = {
   async sendCrmProposal(
     id: string,
     payload: {
-      channel: 'lark_mail' | 'gmail_api';
+      channel: 'lark_mail';
       recipient_email: string;
       subject: string;
       body: string;
       step_number?: number;
-      provider_message_id?: string;
-      client_error?: string;
     }
   ) {
     return request<{ lead: CrmLead; log: CrmOutreachLog }>(
@@ -845,7 +848,116 @@ export const api = {
       `/api/integrations/${encodeURIComponent(provider)}`,
       { method: 'DELETE' }
     );
+  },
+
+  // --- Unified Lark Mail Inbox ---
+  async getInboxLarkEmails() {
+    return request<{
+      lark: {
+        connected: boolean;
+        email: string;
+        senderName: string;
+        smtpHost: string;
+        smtpPort: number;
+      };
+      logs: InboxEmailLog[];
+    }>('/api/inbox/lark-emails');
+  },
+
+  async sendInboxLarkEmail(payload: {
+    toEmail: string;
+    toName?: string;
+    subject: string;
+    bodyText: string;
+    category?: 'inquiry_reply' | 'direct_compose';
+    relatedId?: string;
+  }) {
+    return request<{ log: InboxEmailLog }>('/api/inbox/send-lark', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  // --- Customer Demo Sign Up, Ordinary Login, Telemetry & Admin Stats ---
+  async registerDemoUser(payload: {
+    full_name: string;
+    email: string;
+    company: string;
+    phone: string;
+    password: string;
+  }) {
+    const res = await fetch('/api/demo/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      token?: string;
+      user?: PublicDemoUser;
+      error?: string;
+    };
+    if (!res.ok || !data.token || !data.user) {
+      throw new Error(data.error || `Registration failed (HTTP ${res.status})`);
+    }
+    setStoredDemoToken(data.token);
+    return { token: data.token, user: data.user };
+  },
+
+  async loginDemoUser(payload: { email: string; password: string }) {
+    const res = await fetch('/api/demo/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      token?: string;
+      user?: PublicDemoUser;
+      error?: string;
+    };
+    if (!res.ok || !data.token || !data.user) {
+      throw new Error(data.error || `Sign in failed (HTTP ${res.status})`);
+    }
+    setStoredDemoToken(data.token);
+    return { token: data.token, user: data.user };
+  },
+
+  async getDemoMe() {
+    const token = getStoredDemoToken();
+    if (!token) return null;
+    const res = await fetch('/api/demo/me', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      if (res.status === 401) setStoredDemoToken(null);
+      return null;
+    }
+    const data = (await res.json().catch(() => ({}))) as { user?: PublicDemoUser };
+    return data.user || null;
+  },
+
+  async trackDemoActivity(payload: {
+    module?: string;
+    actionLabel?: string;
+    convertedInquiry?: boolean;
+  }) {
+    const token = getStoredDemoToken();
+    if (!token) return null;
+    const res = await fetch('/api/demo/activity', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => ({}))) as { user?: PublicDemoUser };
+    return data.user || null;
+  },
+
+  async getAdminDemoUsers() {
+    return request<{ users: PublicDemoUser[]; summary: DemoUsersSummaryStats }>(
+      '/api/admin/demo-users'
+    );
   }
 };
-
-

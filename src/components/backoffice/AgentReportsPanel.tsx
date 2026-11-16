@@ -11,19 +11,14 @@ import {
   XCircle
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
-import {
-  connectGmailWithGoogle,
-  disconnectGmail,
-  getCachedGmailToken,
-  initGmailAuth,
-  sendGmailMessage
-} from '../../lib/gmail.ts';
+import { api } from '../../lib/api.ts';
 import type {
   AgentEmailReport,
   AgentId,
   AgentOfficeProfile,
   AgentReportSettings,
-  AgentSnapshotItem
+  AgentSnapshotItem,
+  LarkConnectionStatus
 } from '../../shared/types.ts';
 
 interface AgentReportsPanelProps {
@@ -39,17 +34,6 @@ interface AgentReportsPanelProps {
   loading: boolean;
   onRefresh: () => Promise<void>;
   onSaveSettings: (payload: Partial<AgentReportSettings>) => Promise<void>;
-  onLogGmailReport: (payload: {
-    recipient_email: string;
-    subject: string;
-    body_text: string;
-    provider_message_id: string;
-    provider_thread_id?: string;
-    status: 'sent' | 'failed' | 'skipped_unconfigured';
-    overall_score: number;
-    agent_snapshots: AgentSnapshotItem[];
-    error_detail?: string;
-  }) => Promise<AgentEmailReport>;
   onDispatchServerReport: () => Promise<{ report: AgentEmailReport; deliveredViaServer: boolean }>;
 }
 
@@ -71,27 +55,17 @@ export function AgentReportsPanel({
   loading,
   onRefresh,
   onSaveSettings,
-  onLogGmailReport,
   onDispatchServerReport
 }: AgentReportsPanelProps) {
   const [recipientEmail, setRecipientEmail] = useState(settings.recipient_email);
   const [enabled, setEnabled] = useState(settings.enabled);
   const [sendHourUtc, setSendHourUtc] = useState(settings.send_hour_utc);
-  const [preferredChannel, setPreferredChannel] = useState<'gmail' | 'resend'>(
-    settings.preferred_channel
-  );
   const [includeAgents, setIncludeAgents] = useState<AgentId[]>(settings.include_agents);
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Gmail OAuth state (kept strictly in-memory via gmail.ts)
-  const [gmailUserEmail, setGmailUserEmail] = useState<string | null>(null);
-  const [gmailToken, setGmailToken] = useState<string | null>(() => getCachedGmailToken());
-  const [connectingGmail, setConnectingGmail] = useState(false);
-
-  // Confirmation modal & dispatch feedback
-  const [confirmGmailModalOpen, setConfirmGmailModalOpen] = useState(false);
-  const [sendingGmail, setSendingGmail] = useState(false);
-  const [sendingCron, setSendingCron] = useState(false);
+  const [larkStatus, setLarkStatus] = useState<LarkConnectionStatus | null>(null);
+  const [confirmSendModalOpen, setConfirmSendModalOpen] = useState(false);
+  const [sendingLark, setSendingLark] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Proof Certificate inspector modal
@@ -102,50 +76,15 @@ export function AgentReportsPanel({
     setRecipientEmail(settings.recipient_email);
     setEnabled(settings.enabled);
     setSendHourUtc(settings.send_hour_utc);
-    setPreferredChannel(settings.preferred_channel);
     setIncludeAgents(settings.include_agents);
   }, [settings]);
 
   useEffect(() => {
-    const unsub = initGmailAuth(
-      (user, token) => {
-        setGmailUserEmail(user.email || 'Google Workspace Account');
-        setGmailToken(token);
-      },
-      () => {
-        setGmailUserEmail(null);
-        setGmailToken(null);
-      }
-    );
-    return () => unsub();
+    api
+      .getLarkStatus()
+      .then((status) => setLarkStatus(status))
+      .catch(() => {});
   }, []);
-
-  const handleConnectGmail = async () => {
-    setConnectingGmail(true);
-    setFeedback(null);
-    try {
-      const { user, accessToken } = await connectGmailWithGoogle();
-      setGmailUserEmail(user.email || 'Connected Google Account');
-      setGmailToken(accessToken);
-      setFeedback({
-        type: 'ok',
-        text: `Gmail connected as ${user.email || 'Google user'}. Ready to send verified agent reports.`
-      });
-    } catch (err) {
-      setFeedback({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'Unable to connect Gmail account.'
-      });
-    } finally {
-      setConnectingGmail(false);
-    }
-  };
-
-  const handleDisconnectGmail = async () => {
-    await disconnectGmail();
-    setGmailUserEmail(null);
-    setGmailToken(null);
-  };
 
   const toggleAgent = (id: AgentId) => {
     setIncludeAgents((prev) => {
@@ -165,10 +104,10 @@ export function AgentReportsPanel({
         recipient_email: recipientEmail.trim(),
         enabled,
         send_hour_utc: sendHourUtc,
-        preferred_channel: preferredChannel,
+        preferred_channel: 'lark_smtp',
         include_agents: includeAgents
       });
-      setFeedback({ type: 'ok', text: 'Daily agent report schedule and recipient saved.' });
+      setFeedback({ type: 'ok', text: 'Daily AI agent report schedule and Lark Mail recipient saved.' });
       await onRefresh();
     } catch (err) {
       setFeedback({
@@ -180,78 +119,34 @@ export function AgentReportsPanel({
     }
   };
 
-  const handleConfirmSendViaGmail = async () => {
-    if (!gmailToken || !preview) return;
-    setSendingGmail(true);
-    setFeedback(null);
-    try {
-      const result = await sendGmailMessage(gmailToken, {
-        to: recipientEmail.trim(),
-        subject: preview.subject,
-        body: preview.bodyText
-      });
-
-      const logged = await onLogGmailReport({
-        recipient_email: recipientEmail.trim(),
-        subject: preview.subject,
-        body_text: preview.bodyText,
-        provider_message_id: result.id,
-        provider_thread_id: result.threadId || '',
-        status: 'sent',
-        overall_score: preview.overallScore,
-        agent_snapshots: preview.snapshots
-      });
-
-      setConfirmGmailModalOpen(false);
-      setSelectedProof(logged);
-      setFeedback({
-        type: 'ok',
-        text: `Report delivered to ${recipientEmail.trim()} (Gmail Message ID: ${result.id}). Proof Certificate recorded.`
-      });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Gmail send failed.';
-      await onLogGmailReport({
-        recipient_email: recipientEmail.trim(),
-        subject: preview.subject,
-        body_text: preview.bodyText,
-        provider_message_id: '',
-        provider_thread_id: '',
-        status: 'failed',
-        overall_score: preview.overallScore,
-        agent_snapshots: preview.snapshots,
-        error_detail: errMsg
-      }).catch(() => {});
-      setConfirmGmailModalOpen(false);
-      setFeedback({ type: 'err', text: errMsg });
-    } finally {
-      setSendingGmail(false);
-    }
-  };
-
-  const handleTriggerCronDispatch = async () => {
-    setSendingCron(true);
+  const handleConfirmSendViaLark = async () => {
+    setSendingLark(true);
     setFeedback(null);
     try {
       const res = await onDispatchServerReport();
+      setConfirmSendModalOpen(false);
       setSelectedProof(res.report);
       if (res.deliveredViaServer) {
         setFeedback({
           type: 'ok',
-          text: `Server report delivered to ${res.report.recipient_email} (Resend ID: ${res.report.provider_message_id}).`
+          text: `Daily AI agent digest delivered via Lark Mail SMTP to ${res.report.recipient_email} (Message ID: ${res.report.provider_message_id}).`
         });
       } else {
         setFeedback({
           type: 'err',
-          text: res.report.error_detail || 'Server cron logged as skipped_unconfigured.'
+          text:
+            res.report.error_detail ||
+            'Lark Mail SMTP is not configured. Connect Lark Mail in Settings -> Integrations Vault.'
         });
       }
     } catch (err) {
+      setConfirmSendModalOpen(false);
       setFeedback({
         type: 'err',
-        text: err instanceof Error ? err.message : 'Server dispatch failed.'
+        text: err instanceof Error ? err.message : 'Lark Mail dispatch failed.'
       });
     } finally {
-      setSendingCron(false);
+      setSendingLark(false);
     }
   };
 
@@ -296,7 +191,8 @@ export function AgentReportsPanel({
                 Daily Agent Email Report Schedule
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                Vercel Cron runs daily at 08:00 UTC or send on-demand via Gmail with cryptographic proof.
+                Automated schedule and on-demand digests dispatch exclusively via Lark Mail SMTP SSL
+                with SHA-256 verification proof.
               </p>
             </div>
             <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer shrink-0">
@@ -343,18 +239,10 @@ export function AgentReportsPanel({
               </select>
             </div>
             <div>
-              <label htmlFor="report-channel" className="block text-xs font-semibold text-slate-700">
-                Primary Channel
-              </label>
-              <select
-                id="report-channel"
-                value={preferredChannel}
-                onChange={(e) => setPreferredChannel(e.target.value as 'gmail' | 'resend')}
-                className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-900"
-              >
-                <option value="gmail">Gmail OAuth (Verified ID)</option>
-                <option value="resend">Vercel Cron + Resend API</option>
-              </select>
+              <span className="block text-xs font-semibold text-slate-700">Mail Transport</span>
+              <div className="mt-1.5 min-h-[42px] flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800">
+                Lark Mail SMTP SSL (465)
+              </div>
             </div>
           </div>
 
@@ -389,7 +277,7 @@ export function AgentReportsPanel({
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
-            <span className="text-[11px] text-slate-500 flex items-center gap-1">
+            <span className="text-[11px] text-slate-500 flex items-center gap-1 tabular-nums">
               <Clock className="h-3.5 w-3.5" />
               Last sent:{' '}
               {settings.last_sent_at
@@ -406,16 +294,17 @@ export function AgentReportsPanel({
           </div>
         </form>
 
-        {/* Right: Gmail / Cron Dispatch + Live Digest Preview (7 cols) */}
+        {/* Right: Lark Mail Dispatch + Live Digest Preview (7 cols) */}
         <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 lg:col-span-7 flex flex-col justify-between space-y-4">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div>
                 <h3 className="font-display text-sm font-bold text-slate-900">
-                  Live Daily Digest Preview &amp; Dispatch
+                  Live Daily Digest Preview &amp; Lark Mail Dispatch
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Sends the full deterministic audit across your selected agents and logs immutable proof.
+                  Sends the full deterministic audit via Lark Mail SMTP SSL and records immutable
+                  SHA-256 proof.
                 </p>
               </div>
               <button
@@ -430,59 +319,31 @@ export function AgentReportsPanel({
 
             {/* Dispatch Action Bar */}
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs">
-                  <span className="font-semibold text-slate-800">Gmail Sender: </span>
-                  {gmailToken ? (
-                    <span className="text-emerald-700 font-medium">
-                      Connected ({gmailUserEmail || 'Google Account'})
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div>
+                  <span className="font-semibold text-slate-800">Lark Mail Sender: </span>
+                  {larkStatus?.connected ? (
+                    <span className="text-emerald-700 font-medium font-mono">
+                      Connected ({larkStatus.lark_email} · {larkStatus.smtp_host || 'smtp.larksuite.com'}:
+                      {larkStatus.smtp_port || 465})
                     </span>
                   ) : (
-                    <span className="text-slate-500">Not connected in this session</span>
+                    <span className="text-amber-700 font-medium">
+                      Not configured — connect Lark Mail in Settings -&gt; Integrations Vault
+                    </span>
                   )}
                 </div>
-                {gmailToken && (
-                  <button
-                    type="button"
-                    onClick={handleDisconnectGmail}
-                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 underline"
-                  >
-                    Disconnect Gmail
-                  </button>
-                )}
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {!gmailToken ? (
-                  <button
-                    type="button"
-                    onClick={handleConnectGmail}
-                    disabled={connectingGmail}
-                    className="inline-flex min-h-[42px] items-center gap-2 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
-                  >
-                    <Mail className="h-4 w-4" />
-                    <span>{connectingGmail ? 'Connecting...' : 'Connect Google Gmail to Send'}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmGmailModalOpen(true)}
-                    disabled={!preview}
-                    className="inline-flex min-h-[42px] items-center gap-2 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                    <span>Send Daily Report via Gmail Now</span>
-                  </button>
-                )}
-
                 <button
                   type="button"
-                  onClick={handleTriggerCronDispatch}
-                  disabled={sendingCron}
-                  className="inline-flex min-h-[42px] items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                  onClick={() => setConfirmSendModalOpen(true)}
+                  disabled={!preview || sendingLark}
+                  className="inline-flex min-h-[42px] items-center gap-2 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
                 >
-                  <ShieldCheck className="h-4 w-4 text-slate-600" />
-                  <span>{sendingCron ? 'Dispatching...' : 'Run Cron Dispatch Now'}</span>
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Send Daily Report via Lark Mail Now</span>
                 </button>
               </div>
             </div>
@@ -492,7 +353,7 @@ export function AgentReportsPanel({
               <div className="rounded-xl border border-slate-200 bg-slate-950 p-4 text-slate-100">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-2.5 mb-2.5 text-xs">
                   <span className="font-semibold text-sky-300 truncate">{preview.subject}</span>
-                  <span className="font-mono text-[11px] rounded bg-slate-800 px-2 py-0.5 text-emerald-400">
+                  <span className="font-mono text-[11px] rounded bg-slate-800 px-2 py-0.5 text-emerald-400 tabular-nums">
                     Fleet Score: {preview.overallScore}%
                   </span>
                 </div>
@@ -513,7 +374,8 @@ export function AgentReportsPanel({
               Email Delivery Proof Log ({reports.length} Recorded Dispatches)
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">
-              Every outbound daily report stores the provider Message ID, exact timestamp, agent snapshot scores, and a SHA-256 verification digest.
+              Every outbound daily report stores the Lark SMTP Message ID, exact timestamp, agent
+              snapshot scores, and a SHA-256 verification digest.
             </p>
           </div>
         </div>
@@ -526,7 +388,7 @@ export function AgentReportsPanel({
                 <th className="py-2.5 pr-3">Recipient</th>
                 <th className="py-2.5 pr-3">Channel</th>
                 <th className="py-2.5 pr-3">Status</th>
-                <th className="py-2.5 pr-3">Provider Message ID</th>
+                <th className="py-2.5 pr-3">SMTP Message ID</th>
                 <th className="py-2.5 pr-3">Score</th>
                 <th className="py-2.5 pr-3">SHA-256 Proof</th>
                 <th className="py-2.5 text-right">Certificate</th>
@@ -536,18 +398,23 @@ export function AgentReportsPanel({
               {reports.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-xs text-slate-500">
-                    No email reports dispatched yet. Connect Gmail above or run Cron Dispatch to generate your first verifiable delivery proof.
+                    No email reports dispatched yet. Send a digest via Lark Mail above to record
+                    your first verifiable delivery proof.
                   </td>
                 </tr>
               ) : (
                 reports.map((rep) => (
                   <tr key={rep.id} className="hover:bg-slate-50/70">
-                    <td className="py-3 pr-3 font-mono text-[11px] text-slate-700 whitespace-nowrap">
+                    <td className="py-3 pr-3 font-mono text-[11px] text-slate-700 whitespace-nowrap tabular-nums">
                       {new Date(rep.sent_at).toLocaleString()}
                     </td>
                     <td className="py-3 pr-3 font-medium text-slate-900">{rep.recipient_email}</td>
                     <td className="py-3 pr-3 text-[11px] text-slate-600">
-                      <span className="font-mono">{rep.channel}</span>
+                      <span className="font-mono">
+                        {rep.channel === 'lark_smtp' || rep.channel === 'cron_dispatch'
+                          ? 'Lark SMTP SSL'
+                          : rep.channel}
+                      </span>
                       <span className="block text-[10px] text-slate-400">
                         {rep.trigger_type === 'daily_cron' ? 'Scheduled Cron' : 'Manual Trigger'}
                       </span>
@@ -594,27 +461,30 @@ export function AgentReportsPanel({
         </div>
       </div>
 
-      {/* Mandatory Send Confirmation Modal (Workspace Integration Rule) */}
-      {confirmGmailModalOpen && preview && (
+      {/* Confirmation Modal */}
+      {confirmSendModalOpen && preview && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="confirm-gmail-title"
+          aria-labelledby="confirm-lark-report-title"
         >
           <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xl space-y-4">
             <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
               <div>
-                <h4 id="confirm-gmail-title" className="font-display text-base font-bold text-slate-900">
+                <h4
+                  id="confirm-lark-report-title"
+                  className="font-display text-base font-bold text-slate-900"
+                >
                   Confirm Outbound Daily Agent Report
                 </h4>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Review recipient and full email body before authorizing Gmail API delivery.
+                  Review recipient and digest body before dispatching via Lark Mail SMTP SSL.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setConfirmGmailModalOpen(false)}
+                onClick={() => setConfirmSendModalOpen(false)}
                 className="p-1 text-slate-400 hover:text-slate-700"
               >
                 <X className="h-4 w-4" />
@@ -624,7 +494,9 @@ export function AgentReportsPanel({
             <div className="space-y-2 text-xs">
               <div className="flex justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
                 <span className="font-semibold text-slate-600">From Account</span>
-                <span className="font-mono text-slate-900">{gmailUserEmail || 'Connected Gmail'}</span>
+                <span className="font-mono text-slate-900">
+                  {larkStatus?.lark_email || 'Vault Lark Mail SMTP'}
+                </span>
               </div>
               <div className="flex justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
                 <span className="font-semibold text-slate-600">To Recipient</span>
@@ -643,19 +515,19 @@ export function AgentReportsPanel({
             <div className="flex flex-wrap justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setConfirmGmailModalOpen(false)}
+                onClick={() => setConfirmSendModalOpen(false)}
                 className="min-h-[40px] rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleConfirmSendViaGmail}
-                disabled={sendingGmail}
+                onClick={handleConfirmSendViaLark}
+                disabled={sendingLark}
                 className="inline-flex min-h-[40px] items-center gap-2 rounded-lg bg-[var(--gs-primary)] px-4 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
               >
                 <Send className="h-3.5 w-3.5" />
-                <span>{sendingGmail ? 'Sending via Gmail...' : 'Confirm & Send Email'}</span>
+                <span>{sendingLark ? 'Sending via Lark Mail...' : 'Confirm & Send Email'}</span>
               </button>
             </div>
           </div>
@@ -702,7 +574,7 @@ export function AgentReportsPanel({
                 <div className="mt-1 font-semibold text-slate-900 uppercase">
                   {selectedProof.status} · {selectedProof.channel}
                 </div>
-                <div className="mt-0.5 font-mono text-[11px] text-slate-600">
+                <div className="mt-0.5 font-mono text-[11px] text-slate-600 tabular-nums">
                   Score: {selectedProof.overall_score}%
                 </div>
               </div>
@@ -710,7 +582,7 @@ export function AgentReportsPanel({
 
             <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-slate-700">Provider Message ID</span>
+                <span className="font-semibold text-slate-700">SMTP Message ID</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-slate-900">
                     {selectedProof.provider_message_id || 'None'}
@@ -727,13 +599,6 @@ export function AgentReportsPanel({
                   )}
                 </div>
               </div>
-
-              {selectedProof.provider_thread_id && (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-slate-700">Gmail Thread ID</span>
-                  <span className="font-mono text-slate-900">{selectedProof.provider_thread_id}</span>
-                </div>
-              )}
 
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-slate-700">SHA-256 Proof Digest</span>
@@ -774,7 +639,9 @@ export function AgentReportsPanel({
                         <div className="font-semibold text-slate-900 truncate">{snap.display_name}</div>
                         <div className="text-[11px] text-slate-500 truncate">{snap.top_finding}</div>
                       </div>
-                      <span className="font-mono font-bold text-slate-900 shrink-0">{snap.score}%</span>
+                      <span className="font-mono font-bold text-slate-900 shrink-0 tabular-nums">
+                        {snap.score}%
+                      </span>
                     </div>
                   ))}
                 </div>

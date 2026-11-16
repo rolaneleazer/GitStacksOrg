@@ -2,12 +2,17 @@ import {
   ArrowRight,
   Bot,
   Briefcase,
+  Building2,
   CheckCircle2,
   Database,
   Globe,
+  Lock,
+  LogIn,
+  LogOut,
   Mail,
   MapPin,
   Menu,
+  Phone,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -16,10 +21,12 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  UserPlus,
   X
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { InquiryForm } from '../components/InquiryForm.tsx';
+import { api, getStoredDemoToken, setStoredDemoToken } from '../lib/api.ts';
 import { applySeoMetadata } from '../lib/seo.ts';
 import {
   createInitialDemoAgents,
@@ -38,6 +45,7 @@ import type {
   CrmOutreachLog,
   EmailVerificationStatus,
   LeadSourceType,
+  PublicDemoUser,
   ServiceCategory
 } from '../shared/types.ts';
 
@@ -64,6 +72,7 @@ const SOURCE_LABELS: Record<LeadSourceType, string> = {
   csv_import: 'CSV Upload',
   website: 'Web Scraper',
   gemini_search: 'AI Search',
+  demo_signup: 'Live Demo Signups',
   manual: 'Manual Entry'
 };
 
@@ -75,6 +84,22 @@ const EMAIL_STATUS_META: Record<EmailVerificationStatus, { text: string; tone: s
 };
 
 export function DemoPage({ onNavigate }: DemoPageProps) {
+  // Demo Visitor Authentication State (isolated from Admin Back Office auth)
+  const [authChecked, setAuthChecked] = useState(false);
+  const [demoUser, setDemoUser] = useState<PublicDemoUser | null>(null);
+  const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const [regFullName, setRegFullName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regCompany, setRegCompany] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+
   const [activeTab, setActiveTab] = useState<DemoTab>('crm');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -97,7 +122,6 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
   const [sendModalLead, setSendModalLead] = useState<CrmLead | null>(null);
   const [sendSubject, setSendSubject] = useState('');
   const [sendBody, setSendBody] = useState('');
-  const [sendChannel, setSendChannel] = useState<'lark_mail' | 'gmail_api'>('lark_mail');
 
   // Agents controls
   const [auditingAgents, setAuditingAgents] = useState(false);
@@ -123,19 +147,126 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
     });
   }, []);
 
-  const markExplored = (label: string) => {
+  useEffect(() => {
+    let active = true;
+    const token = getStoredDemoToken();
+    if (!token) {
+      setAuthChecked(true);
+      return;
+    }
+    api
+      .getDemoMe()
+      .then((user) => {
+        if (!active) return;
+        setDemoUser(user);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStoredDemoToken(null);
+        setDemoUser(null);
+      })
+      .finally(() => {
+        if (active) setAuthChecked(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const recordTelemetry = useCallback(
+    (moduleLabel: string, actionLabel: string, convertedInquiry = false) => {
+      if (!getStoredDemoToken()) return;
+      api
+        .trackDemoActivity({
+          module: moduleLabel,
+          actionLabel,
+          convertedInquiry
+        })
+        .then((user) => {
+          if (user) setDemoUser(user);
+        })
+        .catch(() => {});
+    },
+    []
+  );
+
+  const handleRegisterDemo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (
+      !regFullName.trim() ||
+      !regEmail.trim() ||
+      !regCompany.trim() ||
+      !regPhone.trim() ||
+      regPassword.length < 6
+    ) {
+      setAuthError(
+        'Please complete Full Name, Work Email, Company, Phone, and a Password (min 6 characters).'
+      );
+      return;
+    }
+    setAuthSubmitting(true);
+    try {
+      const res = await api.registerDemoUser({
+        full_name: regFullName.trim(),
+        email: regEmail.trim(),
+        company: regCompany.trim(),
+        phone: regPhone.trim(),
+        password: regPassword
+      });
+      setStoredDemoToken(res.token);
+      setDemoUser(res.user);
+      setNotice(`Welcome to the GitStack Live Demo, ${res.user.full_name}. Sandbox unlocked.`);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Unable to create your demo account.');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleLoginDemo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    if (!loginEmail.trim() || !loginPassword) {
+      setAuthError('Enter your registered email and password.');
+      return;
+    }
+    setAuthSubmitting(true);
+    try {
+      const res = await api.loginDemoUser({
+        email: loginEmail.trim(),
+        password: loginPassword
+      });
+      setStoredDemoToken(res.token);
+      setDemoUser(res.user);
+      setNotice(`Signed back in as ${res.user.full_name} (${res.user.company}).`);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Invalid demo email or password.');
+    } finally {
+      setAuthSubmitting(false);
+    }
+  };
+
+  const handleDemoSignOut = () => {
+    setStoredDemoToken(null);
+    setDemoUser(null);
+    setNotice(null);
+  };
+
+  const markExplored = (label: string, actionLabel?: string) => {
     setExploredModules((prev) => {
       if (prev.has(label)) return prev;
       const next = new Set(prev);
       next.add(label);
       return next;
     });
+    recordTelemetry(label, actionLabel || `Opened ${label}`);
   };
 
   const handleSelectTab = (tab: DemoTab, label: string) => {
     setActiveTab(tab);
     setMobileNavOpen(false);
-    markExplored(label);
+    markExplored(label, `Viewed ${label}`);
   };
 
   const handleResetSandbox = () => {
@@ -201,11 +332,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
       setSelectedLead((prev) => (prev ? { ...prev, stage: nextStage } : null));
     }
     setNotice(`Moved sandbox lead to "${nextStage.replace('_', ' ')}" stage.`);
+    recordTelemetry('CRM Pipeline', `Moved lead stage to ${nextStage}`);
   };
 
   const handleRunAiResearch = (lead: CrmLead) => {
     setResearchingId(lead.id);
-    markExplored('AI Lead Research & Proposal Draft');
+    markExplored('AI Lead Research & Proposal Draft', `AI Researched ${lead.company_name}`);
     setTimeout(() => {
       const updated = simulateDemoAiResearch(lead);
       setLeads((prev) => prev.map((l) => (l.id === lead.id ? updated : l)));
@@ -234,14 +366,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
     e.preventDefault();
     if (!sendModalLead) return;
     const now = new Date().toISOString();
-    const simId = `${sendChannel === 'lark_mail' ? 'smtp-sim' : 'gmail-sim'}-${Math.random()
-      .toString(36)
-      .slice(2, 10)}`;
+    const simId = `smtp-sim-${Math.random().toString(36).slice(2, 10)}`;
 
     const newLog: CrmOutreachLog = {
       id: `demo-log-${Date.now()}`,
       lead_id: sendModalLead.id,
-      channel: sendChannel,
+      channel: 'lark_mail',
       recipient_email: sendModalLead.email,
       subject: sendSubject.trim(),
       body: sendBody.trim(),
@@ -249,7 +379,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
       status: 'sent',
       error_detail: '',
       step_label: 'Sandbox Proposal Dispatch',
-      sent_by: 'sandbox-demo@gitstack.io',
+      sent_by: demoUser?.email || 'sandbox-demo@gitstack.io',
       sent_at: now
     };
 
@@ -266,16 +396,16 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           : l
       )
     );
-    markExplored('Approve-to-Send Mail Flow');
+    markExplored('Approve-to-Send Lark Mail', `Simulated Lark Mail to ${sendModalLead.company_name}`);
     setNotice(
-      `Sandbox simulation logged (${sendChannel === 'lark_mail' ? 'Lark SMTP SSL' : 'Gmail OAuth'} · ${simId}). No real email was dispatched.`
+      `Sandbox simulation logged (Lark SMTP SSL · ${simId}). No real email was dispatched.`
     );
     setSendModalLead(null);
   };
 
   const handleRunAgentAudit = () => {
     setAuditingAgents(true);
-    markExplored('7 Autonomous Agents');
+    markExplored('7 Autonomous Agents', 'Ran 7-Agent Health Audit');
     setTimeout(() => {
       setAgents((prev) =>
         prev.map((a) => ({
@@ -355,7 +485,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
       updated_at: now
     };
     setLeads((prev) => [newLead, ...prev]);
-    markExplored('Multi-Source & Maps Discovery');
+    markExplored('Multi-Source & Maps Discovery', `Imported ${c.company_name} in Sandbox`);
     setNotice(`Imported ${c.company_name} into your sandbox CRM pipeline.`);
   };
 
@@ -402,6 +532,270 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
 
   const activeNav = navItems.find((n) => n.id === activeTab) || navItems[0];
 
+  if (!authChecked) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-16 text-center text-xs text-slate-500">
+        Verifying your GitStack Live Demo session...
+      </div>
+    );
+  }
+
+  if (!demoUser) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-10 sm:py-16">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-12 items-start">
+          {/* Left Context Column */}
+          <div className="lg:col-span-5 space-y-5">
+            <div className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--gs-primary)]">
+              <Lock className="h-4 w-4" />
+              <span>Customer Live Demo Access</span>
+            </div>
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              Create Your Free Sandbox Account to Explore Live Demo
+            </h1>
+            <p className="text-sm leading-relaxed text-slate-600">
+              Sign up in seconds—no email verification required. Unlock our interactive Apollo-style
+              B2B CRM, AI Research Assistant, Google Maps &amp; GitHub Prospect Discovery, Lark Mail
+              Outreach simulator, and 7 Autonomous Agents console.
+            </p>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-800">
+                Included Inside the Sandbox
+              </div>
+              <ul className="space-y-2.5 text-xs text-slate-600">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16A34A] mt-0.5" />
+                  <span>Full B2B CRM Directory, Kanban Stage Board &amp; AI Proposal Drafting</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16A34A] mt-0.5" />
+                  <span>Google Maps Local Lead Finder &amp; GitHub Open-Source Discovery</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16A34A] mt-0.5" />
+                  <span>7 Autonomous Operational Agents &amp; Approve-to-Send Lark Mail</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16A34A] mt-0.5" />
+                  <span>Browser-isolated sandbox data — explore freely with zero risk</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Right Registration / Login Card */}
+          <div className="lg:col-span-7 rounded-xl border border-slate-200 bg-white p-6 sm:p-8 space-y-6">
+            <div className="grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('register');
+                  setAuthError(null);
+                }}
+                className={`min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  authMode === 'register'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <UserPlus className="h-3.5 w-3.5" />
+                <span>Sign Up for Demo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError(null);
+                }}
+                className={`min-h-[40px] inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  authMode === 'login'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LogIn className="h-3.5 w-3.5" />
+                <span>Existing Demo Login</span>
+              </button>
+            </div>
+
+            {authMode === 'register' ? (
+              <form onSubmit={handleRegisterDemo} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="demo-full-name"
+                      className="block text-xs font-semibold text-slate-700"
+                    >
+                      Full Name
+                    </label>
+                    <input
+                      id="demo-full-name"
+                      type="text"
+                      required
+                      value={regFullName}
+                      onChange={(e) => setRegFullName(e.target.value)}
+                      placeholder="Alex Rivera"
+                      className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="demo-company"
+                      className="block text-xs font-semibold text-slate-700"
+                    >
+                      Company Name
+                    </label>
+                    <input
+                      id="demo-company"
+                      type="text"
+                      required
+                      value={regCompany}
+                      onChange={(e) => setRegCompany(e.target.value)}
+                      placeholder="Acme Logistics Inc."
+                      className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="demo-email"
+                      className="block text-xs font-semibold text-slate-700"
+                    >
+                      Work Email
+                    </label>
+                    <input
+                      id="demo-email"
+                      type="email"
+                      required
+                      value={regEmail}
+                      onChange={(e) => setRegEmail(e.target.value)}
+                      placeholder="alex@company.com"
+                      className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="demo-phone"
+                      className="block text-xs font-semibold text-slate-700"
+                    >
+                      Phone Number
+                    </label>
+                    <input
+                      id="demo-phone"
+                      type="tel"
+                      required
+                      value={regPhone}
+                      onChange={(e) => setRegPhone(e.target.value)}
+                      placeholder="+1 (415) 555-0192"
+                      className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="demo-password"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
+                    Create Password (minimum 6 characters)
+                  </label>
+                  <input
+                    id="demo-password"
+                    type="password"
+                    required
+                    minLength={6}
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="Choose a password to return anytime"
+                    className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                {authError && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-700"
+                  >
+                    {authError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={authSubmitting}
+                  className="min-h-[44px] w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60"
+                >
+                  <span>
+                    {authSubmitting ? 'Unlocking Live Demo...' : 'Create Account & Launch Live Demo'}
+                  </span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+                <p className="text-[11px] text-slate-500 text-center">
+                  Instant access — no email verification link needed.
+                </p>
+              </form>
+            ) : (
+              <form onSubmit={handleLoginDemo} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="demo-login-email"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
+                    Registered Email
+                  </label>
+                  <input
+                    id="demo-login-email"
+                    type="email"
+                    required
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="alex@company.com"
+                    className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="demo-login-password"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
+                    Password
+                  </label>
+                  <input
+                    id="demo-login-password"
+                    type="password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Enter your demo password"
+                    className="mt-1.5 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3.5 py-2 text-sm text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                  />
+                </div>
+
+                {authError && (
+                  <div
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-xs font-medium text-red-700"
+                  >
+                    {authError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={authSubmitting}
+                  className="min-h-[44px] w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60"
+                >
+                  <span>{authSubmitting ? 'Signing In...' : 'Sign In to Live Demo'}</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       {/* Top Customer Sandbox Strip */}
@@ -428,6 +822,14 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           >
             <RotateCcw className="h-3.5 w-3.5" />
             <span>Reset Sandbox</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleDemoSignOut}
+            className="min-h-[42px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span>Sign Out</span>
           </button>
           <button
             type="button"
@@ -461,15 +863,20 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           className={`${mobileNavOpen ? 'block' : 'hidden'} lg:block w-full lg:w-[260px] shrink-0`}
         >
           <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4 lg:sticky lg:top-24">
-            <div className="border-b border-slate-200 pb-3">
+            <div className="border-b border-slate-200 pb-3 space-y-1">
               <div className="text-[11px] font-semibold text-[var(--gs-primary)]">
-                Guest Evaluator
+                Authenticated Demo Evaluator
               </div>
-              <div className="font-display text-sm font-bold text-slate-900">
-                Sample Client Workspace
+              <div className="font-display text-sm font-bold text-slate-900 truncate">
+                {demoUser.full_name}
               </div>
-              <div className="mt-0.5 text-[11px] text-slate-500">
-                Simulated CRM, AI &amp; Agent Console
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate">
+                <Building2 className="h-3 w-3 text-slate-400 shrink-0" />
+                <span className="truncate">{demoUser.company}</span>
+              </div>
+              <div className="flex items-center gap-1.5 font-mono text-[10px] text-slate-500 truncate">
+                <Phone className="h-3 w-3 text-slate-400 shrink-0" />
+                <span className="truncate">{demoUser.phone}</span>
               </div>
             </div>
 
@@ -508,8 +915,8 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
 
             <div className="border-t border-slate-200 pt-3 space-y-2.5">
               <div className="text-[11px] text-slate-600 leading-relaxed">
-                Want this connected to your real Supabase, Apollo.io, Google Maps, and Lark/Gmail
-                workflows?
+                Want this connected to your real Supabase, Apollo.io, Google Maps, and Lark Mail
+                SMTP workflows?
               </div>
               <button
                 type="button"
@@ -1135,9 +1542,8 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
                       <div>
                         <div className="font-semibold text-slate-900">{log.subject}</div>
                         <div className="text-[11px] text-slate-500">
-                          To: <span className="font-mono">{log.recipient_email}</span> ·{' '}
-                          {log.channel === 'lark_mail' ? 'Lark SMTP SSL' : 'Gmail OAuth'} ·{' '}
-                          {log.step_label}
+                          To: <span className="font-mono">{log.recipient_email}</span> · Lark Mail SMTP
+                          SSL · {log.step_label}
                         </div>
                       </div>
                       <div className="font-mono text-[11px] text-[#16A34A] tabular-nums shrink-0">
@@ -1288,14 +1694,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
                 <label className="block text-xs font-semibold text-slate-700">
                   Mail Channel (Simulated)
                 </label>
-                <select
-                  value={sendChannel}
-                  onChange={(e) => setSendChannel(e.target.value as 'lark_mail' | 'gmail_api')}
-                  className="mt-1 min-h-[40px] w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900"
-                >
-                  <option value="lark_mail">Lark Mail SMTP SSL (port 465)</option>
-                  <option value="gmail_api">Gmail OAuth API</option>
-                </select>
+                <input
+                  type="text"
+                  readOnly
+                  value="Lark Mail SMTP SSL (smtp.larksuite.com:465)"
+                  className="mt-1 min-h-[40px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700">
@@ -1388,6 +1792,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
               compact
               defaultService={conversionService}
               defaultBrief={conversionBrief}
+              defaultFullName={demoUser.full_name}
+              defaultCompany={demoUser.company}
+              defaultWorkEmail={demoUser.email}
+              onSubmitted={() =>
+                recordTelemetry('Inquiry Conversion', 'Submitted Real Architecture Inquiry', true)
+              }
             />
           </div>
         </div>

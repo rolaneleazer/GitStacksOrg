@@ -447,7 +447,7 @@ export interface AgentReportSettings {
   enabled: boolean;
   recipient_email: string;
   send_hour_utc: number;
-  preferred_channel: 'gmail' | 'resend';
+  preferred_channel: 'lark_smtp' | 'gmail' | 'resend';
   include_agents: AgentId[];
   last_sent_at: string | null;
   updated_at: string;
@@ -468,7 +468,7 @@ export interface AgentEmailReport {
   id: string;
   recipient_email: string;
   subject: string;
-  channel: 'gmail_api' | 'resend_api' | 'cron_dispatch';
+  channel: 'lark_smtp' | 'cron_dispatch' | 'gmail_api' | 'resend_api';
   trigger_type: 'manual' | 'daily_cron';
   status: 'sent' | 'failed' | 'skipped_unconfigured';
   provider_message_id: string;
@@ -506,6 +506,7 @@ export type LeadSourceType =
   | 'hacker_news'
   | 'ycombinator'
   | 'csv_import'
+  | 'demo_signup'
   | 'manual';
 
 export interface CrmFollowUpStep {
@@ -786,4 +787,48 @@ export interface IntegrationStatusItem {
   docsHint: string;
 }
 
+// --- Customer Demo Auth, Activity Stats & Unified Lark Inbox Logs ---
+
+export interface DemoUser {
+  id: string;
+  full_name: string;
+  email: string;
+  company: string;
+  phone: string;
+  password_hash: string;
+  crm_lead_id: string | null;
+  login_count: number;
+  actions_count: number;
+  explored_modules: string[];
+  sandbox_conversions: number;
+  last_action_label: string;
+  last_active_at: string;
+  created_at: string;
+}
+
+export type PublicDemoUser = Omit<DemoUser, 'password_hash'>;
+
+export interface DemoUsersSummaryStats {
+  totalUsers: number;
+  activeLast7Days: number;
+  totalActions: number;
+  totalLogins: number;
+  totalConversions: number;
+  linkedCrmLeads: number;
+}
+
+export interface InboxEmailLog {
+  id: string;
+  recipient_email: string;
+  subject: string;
+  body: string;
+  channel: 'lark_smtp';
+  category: 'inquiry_reply' | 'direct_compose' | 'demo_signup_alert' | 'contact_alert';
+  related_id?: string | null;
+  provider_message_id: string;
+  status: 'sent' | 'failed';
+  error_detail: string;
+  sent_by: string;
+  sent_at: string;
+}
 

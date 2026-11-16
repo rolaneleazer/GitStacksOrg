@@ -22,12 +22,6 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api.ts';
-import {
-  connectGmailWithGoogle,
-  getCachedGmailToken,
-  initGmailAuth,
-  sendGmailMessage
-} from '../../lib/gmail.ts';
 import type {
   ClientInquiry,
   CrmFollowUpStep,
@@ -121,11 +115,9 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkStageTarget, setBulkStageTarget] = useState<CrmLeadStage>('researched');
 
-  // Lark & Gmail Mail Channels
+  // Lark Mail Channel
   const [larkStatus, setLarkStatus] = useState<LarkConnectionStatus | null>(null);
   const [larkBusy, setLarkBusy] = useState(false);
-  const [gmailEmail, setGmailEmail] = useState<string | null>(null);
-  const [gmailBusy, setGmailBusy] = useState(false);
 
   // Open-Source Discovery
   const [searchQuery, setSearchQuery] = useState('');
@@ -159,7 +151,7 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
   // Approve & Send Confirmation Modal
   const [sendModal, setSendModal] = useState<{
     lead: CrmLead;
-    channel: 'lark_mail' | 'gmail_api';
+    channel: 'lark_mail';
     recipient_email: string;
     subject: string;
     body: string;
@@ -229,15 +221,6 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
     loadCrmData();
   }, [loadCrmData]);
 
-  // Listen for Firebase Gmail OAuth state
-  useEffect(() => {
-    const unsub = initGmailAuth(
-      (user) => setGmailEmail(user.email || 'Connected Gmail'),
-      () => setGmailEmail(null)
-    );
-    return () => unsub();
-  }, []);
-
   const handleDisconnectLark = async () => {
     setLarkBusy(true);
     try {
@@ -252,23 +235,6 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
       });
     } finally {
       setLarkBusy(false);
-    }
-  };
-
-  const handleConnectGmail = async () => {
-    setGmailBusy(true);
-    setNotice(null);
-    try {
-      const { user } = await connectGmailWithGoogle();
-      setGmailEmail(user.email || 'Connected Gmail');
-      setNotice({ type: 'ok', text: `Gmail connected (${user.email || 'ready'}) for CRM outreach.` });
-    } catch (err) {
-      setNotice({
-        type: 'err',
-        text: err instanceof Error ? err.message : 'Gmail sign-in failed.'
-      });
-    } finally {
-      setGmailBusy(false);
     }
   };
 
@@ -479,11 +445,9 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
     body: string,
     stepNumber?: number
   ) => {
-    const preferredChannel: 'lark_mail' | 'gmail_api' =
-      larkStatus?.connected ? 'lark_mail' : gmailEmail ? 'gmail_api' : 'lark_mail';
     setSendModal({
       lead,
-      channel: preferredChannel,
+      channel: 'lark_mail',
       recipient_email: lead.email,
       subject,
       body,
@@ -498,52 +462,13 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
     setNotice(null);
 
     try {
-      let result: { lead: CrmLead; log: CrmOutreachLog };
-
-      if (sendModal.channel === 'gmail_api') {
-        let token = getCachedGmailToken();
-        if (!token) {
-          const authRes = await connectGmailWithGoogle();
-          token = authRes.accessToken;
-          setGmailEmail(authRes.user.email || 'Connected Gmail');
-        }
-        try {
-          const gmailRes = await sendGmailMessage(token, {
-            to: sendModal.recipient_email,
-            subject: sendModal.subject,
-            body: sendModal.body
-          });
-          result = await api.sendCrmProposal(sendModal.lead.id, {
-            channel: 'gmail_api',
-            recipient_email: sendModal.recipient_email,
-            subject: sendModal.subject,
-            body: sendModal.body,
-            step_number: sendModal.step_number,
-            provider_message_id: gmailRes.id
-          });
-        } catch (gmailErr) {
-          const errMsg = gmailErr instanceof Error ? gmailErr.message : 'Gmail API dispatch failed';
-          await api
-            .sendCrmProposal(sendModal.lead.id, {
-              channel: 'gmail_api',
-              recipient_email: sendModal.recipient_email,
-              subject: sendModal.subject,
-              body: sendModal.body,
-              step_number: sendModal.step_number,
-              client_error: errMsg
-            })
-            .catch(() => {});
-          throw new Error(errMsg);
-        }
-      } else {
-        result = await api.sendCrmProposal(sendModal.lead.id, {
-          channel: 'lark_mail',
-          recipient_email: sendModal.recipient_email,
-          subject: sendModal.subject,
-          body: sendModal.body,
-          step_number: sendModal.step_number
-        });
-      }
+      const result = await api.sendCrmProposal(sendModal.lead.id, {
+        channel: 'lark_mail',
+        recipient_email: sendModal.recipient_email,
+        subject: sendModal.subject,
+        body: sendModal.body,
+        step_number: sendModal.step_number
+      });
 
       setLeads((prev) => prev.map((l) => (l.id === result.lead.id ? result.lead : l)));
       setLogs((prev) => [result.log, ...prev]);
@@ -554,9 +479,7 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
       setSendModal(null);
       setNotice({
         type: 'ok',
-        text: `Dispatched via ${
-          result.log.channel === 'lark_mail' ? 'Lark Mail' : 'Gmail'
-        } to ${result.log.recipient_email} (ID: ${result.log.provider_message_id}).`
+        text: `Dispatched via Lark Mail to ${result.log.recipient_email} (ID: ${result.log.provider_message_id}).`
       });
     } catch (err) {
       setNotice({
@@ -829,30 +752,26 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="text-[11px] font-semibold text-slate-500">Outreach Channels</div>
+          <div className="text-[11px] font-semibold text-slate-500">Outreach Channel</div>
           <div className="mt-1 text-sm font-bold text-slate-900 truncate">
-            {larkStatus?.connected
-              ? 'Lark Mail Ready'
-              : gmailEmail
-                ? 'Gmail Ready'
-                : 'Connect Mail'}
+            {larkStatus?.connected ? 'Lark Mail Ready' : 'Configure Lark Mail'}
           </div>
           <div className="mt-1 text-[11px] text-slate-500 truncate">
             {larkStatus?.connected
               ? larkStatus.lark_email || larkStatus.lark_name
-              : gmailEmail || 'Approve-to-send modal active'}
+              : 'SMTP SSL (smtp.larksuite.com:465)'}
           </div>
         </div>
       </div>
 
-      {/* Mail Channels Bar (Lark SMTP SSL + Gmail Fallback) */}
+      {/* Lark Mail SMTP SSL Channel Bar */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Mail className="h-4 w-4 text-[var(--gs-primary)] shrink-0" />
               <h2 className="font-display text-sm font-bold text-slate-900">
-                Lark Mail SMTP SSL &amp; Gmail Outreach
+                Lark Mail SMTP SSL Outreach
               </h2>
               <span className="text-xs text-slate-400">·</span>
               {larkStatus?.connected ? (
@@ -871,7 +790,7 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
             </div>
             <p className="mt-1 text-xs text-slate-600">
               Every proposal and follow-up pauses at an Approve &amp; Send modal before dispatching
-              via encrypted Lark SMTP SSL (port 465) or Gmail OAuth.
+              exclusively via encrypted Lark Mail SMTP SSL (port 465).
             </p>
           </div>
 
@@ -903,16 +822,6 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
                 </span>
               </button>
             )}
-
-            <button
-              type="button"
-              disabled={gmailBusy}
-              onClick={handleConnectGmail}
-              className="min-h-[42px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Mail className="h-3.5 w-3.5" />
-              <span>{gmailEmail ? `Gmail: ${gmailEmail}` : gmailBusy ? 'Connecting...' : 'Connect Gmail'}</span>
-            </button>
           </div>
         </div>
       </div>
@@ -1198,6 +1107,7 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
                 <option value="website">Company Website</option>
                 <option value="gemini_search">Gemini Search</option>
                 <option value="csv_import">CSV Import</option>
+                <option value="demo_signup">Live Demo Signups</option>
                 <option value="manual">Manual Entry</option>
               </select>
 
@@ -1975,7 +1885,7 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
                 Dispatched Proposals &amp; Follow-Up Audit Trail
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                Verified provider message IDs recorded from Lark Mail and Gmail OAuth deliveries.
+                Verified provider message IDs recorded from Lark Mail SMTP SSL deliveries.
               </p>
             </div>
             <span className="font-mono text-xs text-slate-500 tabular-nums">
@@ -2014,7 +1924,7 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
                         </div>
                       </td>
                       <td className="px-4 py-3 font-medium text-slate-700">
-                        {log.channel === 'lark_mail' ? 'Lark Mail' : 'Gmail API'}
+                        {log.channel === 'lark_mail' ? 'Lark Mail SMTP' : log.channel}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -2594,25 +2504,12 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
                 <label className="block text-xs font-semibold text-slate-700">
                   Outbound Mail Channel
                 </label>
-                <select
-                  value={sendModal.channel}
-                  onChange={(e) =>
-                    setSendModal((m) =>
-                      m ? { ...m, channel: e.target.value as 'lark_mail' | 'gmail_api' } : m
-                    )
-                  }
-                  className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
-                >
-                  <option value="lark_mail">
-                    Lark Mail SMTP SSL{' '}
-                    {larkStatus?.connected
-                      ? `(${larkStatus.lark_email || 'Connected'})`
-                      : '(Configure in Settings)'}
-                  </option>
-                  <option value="gmail_api">
-                    Gmail OAuth ({gmailEmail || 'Sign in on Send'})
-                  </option>
-                </select>
+                <div className="mt-1 min-h-[42px] flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900">
+                  Lark Mail SMTP SSL{' '}
+                  {larkStatus?.connected
+                    ? `(${larkStatus.lark_email || 'Connected'})`
+                    : '(Not Configured)'}
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700">
@@ -2631,11 +2528,11 @@ export function CrmProspectingPanel({ onDealWon, onOpenSettings }: CrmProspectin
               </div>
             </div>
 
-            {sendModal.channel === 'lark_mail' && !larkStatus?.connected && (
+            {!larkStatus?.connected && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
                 <span>
                   Lark Mail SMTP SSL is not configured yet. Set your Lark email &amp; Authorization
-                  Code in Settings &amp; Integrations, or switch channel to Gmail OAuth above.
+                  Code in Settings &amp; Integrations before sending.
                 </span>
                 {onOpenSettings && (
                   <button

@@ -6,17 +6,25 @@ import type { ClientInquiry, ServiceCategory } from '../shared/types.ts';
 interface InquiryFormProps {
   defaultService?: ServiceCategory | 'Full-Stack Transformation';
   defaultBrief?: string;
+  defaultFullName?: string;
+  defaultCompany?: string;
+  defaultWorkEmail?: string;
   compact?: boolean;
+  onSubmitted?: (inquiry: ClientInquiry) => void;
 }
 
 export function InquiryForm({
   defaultService = 'AI Integration',
   defaultBrief = '',
-  compact = false
+  defaultFullName = '',
+  defaultCompany = '',
+  defaultWorkEmail = '',
+  compact = false,
+  onSubmitted
 }: InquiryFormProps) {
-  const [fullName, setFullName] = useState('');
-  const [company, setCompany] = useState('');
-  const [workEmail, setWorkEmail] = useState('');
+  const [fullName, setFullName] = useState(defaultFullName);
+  const [company, setCompany] = useState(defaultCompany);
+  const [workEmail, setWorkEmail] = useState(defaultWorkEmail);
   const [serviceInterest, setServiceInterest] = useState<string>(defaultService);
   const [budgetRange, setBudgetRange] = useState('$50k – $120k');
   const [timeline, setTimeline] = useState('Within 30 days');
@@ -34,6 +42,12 @@ export function InquiryForm({
       setProjectBrief((prev) => (prev ? prev : defaultBrief));
     }
   }, [defaultBrief]);
+
+  useEffect(() => {
+    if (defaultFullName) setFullName((prev) => (prev ? prev : defaultFullName));
+    if (defaultCompany) setCompany((prev) => (prev ? prev : defaultCompany));
+    if (defaultWorkEmail) setWorkEmail((prev) => (prev ? prev : defaultWorkEmail));
+  }, [defaultFullName, defaultCompany, defaultWorkEmail]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +78,7 @@ export function InquiryForm({
         project_brief: projectBrief.trim()
       });
       setSubmitted(res.inquiry);
+      onSubmitted?.(res.inquiry);
       setFullName('');
       setCompany('');
       setWorkEmail('');

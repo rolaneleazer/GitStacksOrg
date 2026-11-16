@@ -164,7 +164,7 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
       detail:
         newInquiries.length === 0
           ? 'Zero untouched new inquiries—all incoming project briefs have been reviewed.'
-          : `${newInquiries.length} new project inquiry brief(s) need review and Gmail discovery scheduling.`,
+          : `${newInquiries.length} new project inquiry brief(s) need review and Lark Mail discovery scheduling.`,
       targetTab: 'inbox',
       actionLabel: 'Review Leads'
     },
@@ -178,9 +178,9 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
             ? 'pass'
             : 'warning',
       metric: `${scheduledInquiries.length}/${ctx.inquiries.length} Scheduled`,
-      detail: `${reviewedInquiries.length} reviewed lead(s) can be invited to book via the connected Gmail Inbox.`,
+      detail: `${reviewedInquiries.length} reviewed lead(s) can be invited to book via the connected Lark Mail Inbox.`,
       targetTab: 'inbox',
-      actionLabel: 'Send Invite via Gmail'
+      actionLabel: 'Send Invite via Lark Mail'
     },
     {
       id: 'bk-intake-integrity',
@@ -226,10 +226,10 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
     },
     {
       id: 'sec-token-hygiene',
-      label: 'In-Memory Gmail OAuth Token Isolation',
+      label: 'Lark SMTP Vault Secret Encryption & Confirmation Gate',
       status: 'pass',
-      metric: 'Memory-Only Token',
-      detail: 'Gmail OAuth tokens stay strictly in browser memory with an explicit confirmation modal before any outbound email.'
+      metric: 'AES-256-GCM Vault',
+      detail: 'Lark Mail app passwords stay encrypted on the server with an explicit confirmation modal before any outbound dispatch.'
     }
   ];
   const secSummary = summarizeStatus(secChecks);

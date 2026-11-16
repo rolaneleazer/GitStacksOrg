@@ -391,11 +391,6 @@ export function AgentsWorkspace({
             const res = await api.saveDailyReportSettings(payload);
             setReportSettings(res.settings);
           }}
-          onLogGmailReport={async (payload) => {
-            const res = await api.logGmailAgentReport(payload);
-            setEmailReports((prev) => [res.report, ...prev]);
-            return res.report;
-          }}
           onDispatchServerReport={async () => {
             const res = await api.dispatchServerAgentReport();
             setEmailReports((prev) => [res.report, ...prev]);

@@ -48,7 +48,12 @@ import type {
   OpenSourceSyncTrack,
   PageContentConfig,
   PageKey,
+  ProductQaDashboardResponse,
+  ProductQaLog,
+  ProductQaReport,
+  ProductQaSettings,
   PublicDemoUser,
+  QaLogStatus,
   RoutingRule,
   SiteAuditReport,
   TaskPriority,
@@ -1261,5 +1266,99 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload || {})
     });
+  },
+
+  // --- Product QA Monitor, Live Diagnostic Agent & EOD PDF Reports ---
+  reportClientQaError(payload: {
+    level?: 'error' | 'warn' | 'info';
+    source?: 'frontend' | 'backend' | 'api' | 'database' | 'integration';
+    module_name?: string;
+    page_path?: string;
+    code_location?: string;
+    error_name?: string;
+    message: string;
+    stack_trace?: string;
+    http_status?: number | null;
+    request_method?: string;
+    request_path?: string;
+  }) {
+    const pagePath =
+      payload.page_path || (typeof window !== 'undefined' ? window.location.pathname || '/' : '/');
+    fetch('/api/public/qa/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...payload,
+        page_path: pagePath,
+        session_id: getVisitorSessionId()
+      })
+    }).catch(() => {});
+  },
+
+  async getQaDashboard() {
+    return request<ProductQaDashboardResponse>('/api/admin/qa/dashboard');
+  },
+
+  async runQaScan() {
+    return request<{ analyzedCount: number; dashboard: ProductQaDashboardResponse }>(
+      '/api/admin/qa/scan',
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async simulateQaEvent(preset: 'demo_sandbox' | 'cloudflare_edge' | 'live_chat') {
+    return request<{ log: ProductQaLog; dashboard: ProductQaDashboardResponse }>(
+      '/api/admin/qa/simulate',
+      {
+        method: 'POST',
+        body: JSON.stringify({ preset })
+      }
+    );
+  },
+
+  async analyzeQaLog(logId: string) {
+    return request<{ log: ProductQaLog }>(
+      `/api/admin/qa/logs/${encodeURIComponent(logId)}/analyze`,
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async updateQaLogStatus(logId: string, status: QaLogStatus) {
+    return request<{ log: ProductQaLog }>(
+      `/api/admin/qa/logs/${encodeURIComponent(logId)}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      }
+    );
+  },
+
+  async saveQaSettings(payload: Partial<ProductQaSettings>) {
+    return request<{ settings: ProductQaSettings }>('/api/admin/qa/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async sendQaEodReport(payload?: { recipient_email?: string }) {
+    return request<{
+      report: ProductQaReport;
+      delivered: boolean;
+      message: string;
+    }>('/api/admin/qa/report/send', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  },
+
+  getQaReportPdfUrl(reportId: string): string {
+    const token = getStoredToken() || '';
+    return `/api/admin/qa/report/${encodeURIComponent(reportId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   }
 };

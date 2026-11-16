@@ -61,6 +61,9 @@ import type {
   NewsletterSubscriber,
   PageContentConfig,
   PageKey,
+  ProductQaLog,
+  ProductQaReport,
+  ProductQaSettings,
   PublicDemoUser,
   RoutingRule,
   SourceBreakdownMetric,
@@ -102,6 +105,9 @@ interface LocalDatabase {
   website_chat_sessions?: WebsiteChatSession[];
   website_chat_messages?: WebsiteChatMessage[];
   admin_notification_settings?: AdminNotificationSettings;
+  product_qa_logs?: ProductQaLog[];
+  product_qa_reports?: ProductQaReport[];
+  product_qa_settings?: ProductQaSettings;
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -3263,6 +3269,235 @@ export async function saveAdminNotificationSettings(
 
   return saved || normalized;
 }
+
+// --- Product QA Real-Time Logs, EOD PDF Reports & Settings ---
+
+export const DEFAULT_PRODUCT_QA_SETTINGS: ProductQaSettings = {
+  id: 'default',
+  agent_enabled: true,
+  realtime_alert_on_critical: false,
+  eod_enabled: true,
+  eod_hour_utc: 15,
+  recipient_email: '',
+  last_eod_sent_date: '',
+  last_scan_at: null,
+  updated_at: '2026-11-15T00:00:00Z'
+};
+
+export async function addProductQaLog(
+  log: ProductQaLog,
+  userToken?: string
+): Promise<ProductQaLog> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_logs')
+      .insert(log)
+      .select()
+      .single();
+    if (!error && data) {
+      return data as ProductQaLog;
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  const list = db.product_qa_logs || [];
+  list.unshift(log);
+  db.product_qa_logs = list.slice(0, 600);
+  await writeLocalDb(db);
+  return log;
+}
+
+export async function listProductQaLogs(
+  limit = 250,
+  userToken?: string
+): Promise<ProductQaLog[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (!error && Array.isArray(data)) {
+      return data as ProductQaLog[];
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  return [...(db.product_qa_logs || [])]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
+
+export async function findProductQaLogById(
+  id: string,
+  userToken?: string
+): Promise<ProductQaLog | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_logs')
+      .select('*')
+      .eq('id', id)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as ProductQaLog;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.product_qa_logs || []).find((l) => l.id === id) || null;
+}
+
+export async function updateProductQaLog(
+  id: string,
+  patch: Partial<Pick<ProductQaLog, 'status' | 'ai_root_cause' | 'ai_fix_suggestion'>>,
+  userToken?: string
+): Promise<ProductQaLog | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_logs')
+      .update(patch)
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error && data) return data as ProductQaLog;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.product_qa_logs || [];
+  const idx = list.findIndex((l) => l.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], ...patch };
+  db.product_qa_logs = list;
+  await writeLocalDb(db);
+  return list[idx];
+}
+
+export async function addProductQaReport(
+  report: ProductQaReport,
+  userToken?: string
+): Promise<ProductQaReport> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_reports')
+      .insert(report)
+      .select()
+      .single();
+    if (!error && data) return data as ProductQaReport;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.product_qa_reports || [];
+  list.unshift(report);
+  db.product_qa_reports = list.slice(0, 90);
+  await writeLocalDb(db);
+  return report;
+}
+
+export async function listProductQaReports(
+  limit = 40,
+  userToken?: string
+): Promise<ProductQaReport[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (!error && Array.isArray(data)) return data as ProductQaReport[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.product_qa_reports || [])]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
+
+export async function findProductQaReportById(
+  id: string,
+  userToken?: string
+): Promise<ProductQaReport | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_reports')
+      .select('*')
+      .eq('id', id)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as ProductQaReport;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.product_qa_reports || []).find((r) => r.id === id) || null;
+}
+
+export async function getProductQaSettings(userToken?: string): Promise<ProductQaSettings> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_settings')
+      .select('*')
+      .eq('id', 'default')
+      .limit(1);
+    if (!error && data && data[0]) {
+      const row = data[0] as ProductQaSettings;
+      return {
+        ...DEFAULT_PRODUCT_QA_SETTINGS,
+        ...row,
+        eod_hour_utc: Number(row.eod_hour_utc ?? 15)
+      };
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return {
+    ...DEFAULT_PRODUCT_QA_SETTINGS,
+    ...(db.product_qa_settings || {})
+  };
+}
+
+export async function saveProductQaSettings(
+  settings: Partial<ProductQaSettings>,
+  userToken?: string
+): Promise<ProductQaSettings> {
+  const current = await getProductQaSettings(userToken).catch(() => DEFAULT_PRODUCT_QA_SETTINGS);
+  const nextHour = Number(settings.eod_hour_utc ?? current.eod_hour_utc);
+  const normalized: ProductQaSettings = {
+    ...current,
+    ...settings,
+    id: 'default',
+    eod_hour_utc:
+      Number.isInteger(nextHour) && nextHour >= 0 && nextHour <= 23 ? nextHour : current.eod_hour_utc,
+    updated_at: new Date().toISOString()
+  };
+
+  let saved: ProductQaSettings | null = null;
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('product_qa_settings')
+      .upsert(normalized, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) {
+      saved = data as ProductQaSettings;
+    } else if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  db.product_qa_settings = saved || normalized;
+  await writeLocalDb(db);
+  return saved || normalized;
+}
+
 
 
 

@@ -106,6 +106,14 @@ import {
   resolveLarkAlertTarget
 } from './notifications.ts';
 import {
+  generateAndSendQaEodReport,
+  getQaDashboardData,
+  reanalyzeSingleQaLog,
+  recordAndAnalyzeQaLog,
+  renderExistingReportPdfBuffer,
+  runLiveQaAgentScan
+} from './qaMonitor.ts';
+import {
   buildLarkAuthorizeUrl,
   exchangeLarkCodeForTokens,
   fetchLarkUserInfo,
@@ -149,6 +157,7 @@ import {
   deleteWorkflowItem,
   findDemoUserByEmail,
   findDemoUserById,
+  findProductQaReportById,
   findWebsiteChatSessionById,
   findWebsiteChatSessionByToken,
   getAdSenseSettings,
@@ -192,6 +201,7 @@ import {
   saveAdSenseSettings,
   saveAdminNotificationSettings,
   saveAgentReportSettings,
+  saveProductQaSettings,
   saveRoutingRules,
   seedStarterDataToSupabase,
   signInEditor,
@@ -200,6 +210,7 @@ import {
   updateCommentStatus,
   updateInquiryStatus,
   updateMyUserProfile,
+  updateProductQaLog,
   updateTeamUser,
   updateWorkflowItem,
   upsertAgentOfficeProfile,
@@ -392,6 +403,39 @@ async function ensureDatabaseReadyOnBoot(): Promise<void> {
 export async function createApp(): Promise<Express> {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
+
+  // Automatic Backend API 5xx Telemetry Capture for Live QA Agent
+  app.use((req, res, next) => {
+    res.on('finish', () => {
+      if (
+        res.statusCode >= 500 &&
+        req.path.startsWith('/api/') &&
+        !req.path.startsWith('/api/public/qa/') &&
+        !req.path.startsWith('/api/admin/qa/')
+      ) {
+        const refHeader = typeof req.headers.referer === 'string' ? req.headers.referer : '';
+        let pagePath = '/';
+        try {
+          if (refHeader) pagePath = new URL(refHeader).pathname || '/';
+        } catch {
+          pagePath = '/';
+        }
+        void recordAndAnalyzeQaLog({
+          level: 'error',
+          source: 'backend',
+          page_path: pagePath,
+          code_location: `src/server/app.ts (${req.method} ${req.path})`,
+          error_name: `HTTP_${res.statusCode}`,
+          message: `Backend route ${req.method} ${req.path} returned HTTP ${res.statusCode}`,
+          http_status: res.statusCode,
+          request_method: req.method,
+          request_path: req.path,
+          user_agent: String(req.headers['user-agent'] || '')
+        }).catch(() => null);
+      }
+    });
+    next();
+  });
 
   await ensureDatabaseReadyOnBoot();
 
@@ -4368,6 +4412,253 @@ export async function createApp(): Promise<Express> {
       }
     }
   );
+
+  // --- Product QA Monitor, Live Diagnostic Agent & EOD PDF Reports ---
+  app.post('/api/public/qa/log', async (req, res) => {
+    try {
+      const body = (req.body || {}) as {
+        level?: 'error' | 'warn' | 'info';
+        source?: 'frontend' | 'backend' | 'api' | 'database' | 'integration';
+        module_name?: string;
+        page_path?: string;
+        code_location?: string;
+        error_name?: string;
+        message?: string;
+        stack_trace?: string;
+        http_status?: number | null;
+        request_method?: string;
+        request_path?: string;
+        session_id?: string;
+      };
+      if (!body.message || !String(body.message).trim()) {
+        return res.status(400).json({ error: 'message is required' });
+      }
+      const saved = await recordAndAnalyzeQaLog({
+        level: body.level,
+        source: body.source || 'frontend',
+        module_name: body.module_name,
+        page_path: body.page_path || '/',
+        code_location: body.code_location,
+        error_name: body.error_name,
+        message: String(body.message),
+        stack_trace: body.stack_trace,
+        http_status: body.http_status ?? null,
+        request_method: body.request_method,
+        request_path: body.request_path,
+        session_id: body.session_id,
+        user_agent: String(req.headers['user-agent'] || '')
+      });
+      res.status(201).json({ log: saved });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to record QA log' });
+    }
+  });
+
+  app.get(
+    '/api/admin/qa/dashboard',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const dashboard = await getQaDashboardData(token);
+        res.json(dashboard);
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load QA dashboard' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/qa/scan',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const result = await runLiveQaAgentScan(req.editor!.email, token);
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Live QA scan failed' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/qa/simulate',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req: AuthReq, res) => {
+      try {
+        const { preset } = (req.body || {}) as { preset?: string };
+        const samples: Record<
+          string,
+          {
+            level: 'error' | 'warn';
+            source: 'frontend' | 'backend' | 'api' | 'integration';
+            module_name: string;
+            page_path: string;
+            code_location: string;
+            error_name: string;
+            message: string;
+            stack_trace: string;
+            http_status: number | null;
+            request_method: string;
+            request_path: string;
+          }
+        > = {
+          demo_sandbox: {
+            level: 'error',
+            source: 'frontend',
+            module_name: 'Live Demo Sandbox',
+            page_path: '/demo',
+            code_location: 'src/pages/DemoPage.tsx:214:18 (handleRunPipelineSimulation)',
+            error_name: 'TypeError',
+            message: "Cannot read properties of undefined (reading 'latencyMs') in sandbox telemetry runner",
+            stack_trace:
+              "TypeError: Cannot read properties of undefined (reading 'latencyMs')\n    at handleRunPipelineSimulation (/src/pages/DemoPage.tsx:214:18)\n    at onClick (/src/pages/DemoPage.tsx:412:9)",
+            http_status: null,
+            request_method: 'POST',
+            request_path: '/api/demo/activity'
+          },
+          cloudflare_edge: {
+            level: 'warn',
+            source: 'integration',
+            module_name: 'Cloudflare Edge & Analytics',
+            page_path: '/obama',
+            code_location: 'src/server/cloudflareHistory.ts:138:11 (syncCloudflareHistoricalSnapshots)',
+            error_name: 'GraphQLEdgeWarning',
+            message: 'Cloudflare HTTP 503 origin spike detected on /wp-content/plugins/hellopress/wp_filemanager.php scanner probe',
+            stack_trace:
+              'GraphQLEdgeWarning: Origin 503 spike above 5% threshold\n    at syncCloudflareHistoricalSnapshots (/src/server/cloudflareHistory.ts:138:11)\n    at generateCloudflareAiForecast (/src/server/cloudflareHistory.ts:610:9)',
+            http_status: 503,
+            request_method: 'POST',
+            request_path: '/api/admin/cloudflare/history/sync'
+          },
+          live_chat: {
+            level: 'error',
+            source: 'api',
+            module_name: 'Floating Live Chat & Inbox',
+            page_path: '/',
+            code_location: 'src/components/FloatingLiveChat.tsx:168:15 (handleSendMessage)',
+            error_name: 'NetworkTimeoutError',
+            message: 'WebSocket frame ack timed out after 8000ms on /ws; fell back to REST POST /api/public/chat/message',
+            stack_trace:
+              'NetworkTimeoutError: WebSocket frame ack timed out\n    at handleSendMessage (/src/components/FloatingLiveChat.tsx:168:15)',
+            http_status: 408,
+            request_method: 'POST',
+            request_path: '/api/public/chat/message'
+          }
+        };
+
+        const chosen = samples[preset || 'demo_sandbox'] || samples.demo_sandbox;
+        const log = await recordAndAnalyzeQaLog({
+          ...chosen,
+          session_id: `qa-sim-${req.editor!.userId.slice(0, 6)}`,
+          user_agent: 'GitStack-QA-Agent-Simulator/1.0'
+        });
+        const dashboard = await getQaDashboardData(getBearerToken(req));
+        res.status(201).json({ log, dashboard });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to simulate QA event' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/qa/logs/:id/analyze',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const updated = await reanalyzeSingleQaLog(req.params.id, token);
+        if (!updated) {
+          return res.status(404).json({ error: 'QA log entry not found.' });
+        }
+        res.json({ log: updated });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to analyze QA log' });
+      }
+    }
+  );
+
+  app.patch(
+    '/api/admin/qa/logs/:id/status',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const status = req.body?.status as 'open' | 'investigating' | 'resolved' | 'ignored';
+        if (!['open', 'investigating', 'resolved', 'ignored'].includes(status)) {
+          return res.status(400).json({ error: 'Invalid QA log status.' });
+        }
+        const updated = await updateProductQaLog(req.params.id, { status }, token);
+        if (!updated) {
+          return res.status(404).json({ error: 'QA log entry not found.' });
+        }
+        res.json({ log: updated });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update QA log status' });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/qa/settings',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const settings = await saveProductQaSettings(req.body || {}, token);
+        res.json({ settings });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save QA settings' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/qa/report/send',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const { recipient_email } = (req.body || {}) as { recipient_email?: string };
+        const result = await generateAndSendQaEodReport({
+          triggerType: 'manual',
+          overrideRecipientEmail: recipient_email,
+          triggeredBy: req.editor!.email,
+          userToken: token
+        });
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to generate and send QA PDF report'
+        });
+      }
+    }
+  );
+
+  app.get('/api/admin/qa/report/:id/pdf', async (req, res) => {
+    try {
+      const queryToken = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+      const token = getBearerToken(req) || queryToken || undefined;
+      const session = await verifyEditorToken(token);
+      if (!session) {
+        return res.status(401).json({ error: 'Authentication required to download QA PDF report.' });
+      }
+      const report = await findProductQaReportById(req.params.id, token);
+      if (!report) {
+        return res.status(404).json({ error: 'QA report not found.' });
+      }
+      const pdfBuffer = await renderExistingReportPdfBuffer(report, token);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="${report.pdf_filename || `GitStack-QA-Report-${report.report_date}.pdf`}"`
+      );
+      res.send(pdfBuffer);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to render PDF report' });
+    }
+  });
 
   app.get('/api/supabase-schema', async (_req, res) => {
     try {

@@ -45,6 +45,52 @@ export default function App() {
     return () => window.removeEventListener('gmp-quota-exceeded', onQuota);
   }, []);
 
+  // Real-time Product QA Telemetry: capture uncaught client runtime errors & unhandled rejections
+  useEffect(() => {
+    const onWindowError = (event: ErrorEvent) => {
+      const msg = event.message || 'Uncaught window error';
+      if (msg.includes('ResizeObserver') || msg.includes('WebSocket')) return;
+      const loc = event.filename
+        ? `${event.filename.replace(window.location.origin, '')}:${event.lineno || 0}:${event.colno || 0}`
+        : '';
+      api.reportClientQaError({
+        level: 'error',
+        source: 'frontend',
+        page_path: window.location.pathname || '/',
+        code_location: loc,
+        error_name: event.error?.name || 'RuntimeError',
+        message: msg,
+        stack_trace: event.error?.stack || ''
+      });
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const msg =
+        reason instanceof Error
+          ? reason.message
+          : typeof reason === 'string'
+            ? reason
+            : 'Unhandled Promise Rejection';
+      if (!msg || msg.includes('WebSocket') || msg.includes('DEMO_EXPIRED')) return;
+      api.reportClientQaError({
+        level: 'error',
+        source: 'frontend',
+        page_path: window.location.pathname || '/',
+        error_name: reason instanceof Error ? reason.name || 'UnhandledRejection' : 'UnhandledRejection',
+        message: msg,
+        stack_trace: reason instanceof Error ? reason.stack || '' : ''
+      });
+    };
+
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, []);
+
   const {
     consent,
     modalOpen,

@@ -839,6 +839,12 @@ export async function sendLarkSmtpMail(
     toName?: string;
     subject: string;
     bodyText: string;
+    bodyHtml?: string;
+    attachments?: Array<{
+      filename: string;
+      content: Buffer;
+      contentType?: string;
+    }>;
   },
   userToken?: string
 ): Promise<{ messageId: string; fromEmail: string }> {
@@ -871,7 +877,17 @@ export async function sendLarkSmtpMail(
     from: `"${senderName.replace(/"/g, '')}" <${senderEmail}>`,
     to: payload.toName ? `"${payload.toName.replace(/"/g, '')}" <${payload.toEmail}>` : payload.toEmail,
     subject: payload.subject,
-    text: payload.bodyText
+    text: payload.bodyText,
+    ...(payload.bodyHtml ? { html: payload.bodyHtml } : {}),
+    ...(payload.attachments && payload.attachments.length > 0
+      ? {
+          attachments: payload.attachments.map((att) => ({
+            filename: att.filename,
+            content: att.content,
+            contentType: att.contentType || 'application/pdf'
+          }))
+        }
+      : {})
   });
 
   return {

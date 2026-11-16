@@ -5,6 +5,7 @@ import {
   Bell,
   Bot,
   Briefcase,
+  Bug,
   CheckCircle2,
   Cloud,
   Copy,
@@ -42,6 +43,7 @@ import { IntegrationsVaultPanel } from '../components/backoffice/IntegrationsVau
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
 import { NotificationModulePanel } from '../components/backoffice/NotificationModulePanel.tsx';
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
+import { ProductQaPanel } from '../components/backoffice/ProductQaPanel.tsx';
 import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
 import { UserAccessPanel } from '../components/backoffice/UserAccessPanel.tsx';
 import { UserWorkflowsPanel } from '../components/backoffice/UserWorkflowsPanel.tsx';
@@ -102,6 +104,7 @@ type StudioTab =
   | 'analytics'
   | 'cloudflare'
   | 'resources'
+  | 'qa'
   | 'articles'
   | 'users'
   | 'demo_users'
@@ -121,6 +124,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'analytics',
     'cloudflare',
     'resources',
+    'qa',
     'articles',
     'users',
     'demo_users',
@@ -138,9 +142,10 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'analytics',
     'cloudflare',
     'resources',
+    'qa',
     'profile'
   ],
-  support_agent: ['inbox', 'notifications', 'chat', 'workflows', 'resources', 'profile']
+  support_agent: ['inbox', 'notifications', 'chat', 'workflows', 'resources', 'qa', 'profile']
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -1008,6 +1013,7 @@ export function StudioPage({
     { id: 'analytics', label: 'Google Analytics', icon: BarChart3 },
     { id: 'cloudflare', label: 'Cloudflare Analytics', icon: Cloud },
     { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
+    { id: 'qa', label: 'Product QA & Logs', icon: Bug },
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
     { id: 'demo_users', label: 'Demo Users & Leads', icon: UserCheck },
@@ -1322,6 +1328,16 @@ export function StudioPage({
           {/* PANEL 5B: VERCEL & SUPABASE LIVE RESOURCE MONITOR */}
           {currentTab === 'resources' && (
             <InfrastructureMonitor currentUserRole={currentUserRole} />
+          )}
+
+          {/* PANEL 5C: PRODUCT QA LOGS, LIVE AGENT & EOD PDF REPORT */}
+          {currentTab === 'qa' && (
+            <ProductQaPanel
+              currentUserRole={currentUserRole}
+              onOpenSettings={
+                currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
+              }
+            />
           )}
 
           {/* PANEL 8: USER ACCESS MANAGEMENT (SUPER ADMIN) */}

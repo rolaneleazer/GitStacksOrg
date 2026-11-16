@@ -843,7 +843,9 @@ export interface InboxEmailLog {
     | 'chat_offline_alert'
     | 'chat_instant_alert'
     | 'chat_reply'
-    | 'test_notification';
+    | 'test_notification'
+    | 'qa_eod_report'
+    | 'qa_critical_alert';
   related_id?: string | null;
   provider_message_id: string;
   status: 'sent' | 'failed';
@@ -1113,5 +1115,115 @@ export interface AdminNotificationSettings {
   updated_by: string;
   updated_at: string;
 }
+
+// --- Product QA Monitor, Telemetry Logs & EOD PDF Report Agent ---
+
+export type QaLogLevel = 'error' | 'warn' | 'info';
+export type QaLogSource = 'frontend' | 'backend' | 'api' | 'database' | 'integration';
+export type QaLogStatus = 'open' | 'investigating' | 'resolved' | 'ignored';
+
+export interface ProductQaLog {
+  id: string;
+  level: QaLogLevel;
+  source: QaLogSource;
+  module_name: string;
+  page_path: string;
+  code_location: string;
+  error_name: string;
+  message: string;
+  stack_trace: string;
+  http_status: number | null;
+  request_method: string;
+  request_path: string;
+  session_id: string;
+  user_agent: string;
+  fingerprint: string;
+  ai_root_cause: string;
+  ai_fix_suggestion: string;
+  status: QaLogStatus;
+  created_at: string;
+}
+
+export interface QaModuleBreakdownItem {
+  module_name: string;
+  total_count: number;
+  error_count: number;
+  warn_count: number;
+  top_error: string;
+  top_code_location: string;
+}
+
+export interface QaPageBreakdownItem {
+  page_path: string;
+  total_count: number;
+  error_count: number;
+  top_module: string;
+  top_error: string;
+}
+
+export interface QaCodeHotspotItem {
+  code_location: string;
+  module_name: string;
+  count: number;
+  latest_message: string;
+  latest_at: string;
+}
+
+export interface ProductQaReport {
+  id: string;
+  report_date: string;
+  trigger_type: 'manual' | 'eod_cron';
+  recipient_email: string;
+  subject: string;
+  health_score: number;
+  total_logs: number;
+  error_count: number;
+  warn_count: number;
+  top_module: string;
+  top_page: string;
+  executive_summary: string;
+  module_breakdown: QaModuleBreakdownItem[];
+  page_breakdown: QaPageBreakdownItem[];
+  recommended_actions: string[];
+  pdf_filename: string;
+  status: 'sent' | 'failed' | 'generated';
+  provider_message_id: string;
+  error_detail: string;
+  created_at: string;
+}
+
+export interface ProductQaSettings {
+  id: string;
+  agent_enabled: boolean;
+  realtime_alert_on_critical: boolean;
+  eod_enabled: boolean;
+  eod_hour_utc: number;
+  recipient_email: string;
+  last_eod_sent_date: string;
+  last_scan_at: string | null;
+  updated_at: string;
+}
+
+export interface ProductQaDashboardResponse {
+  settings: ProductQaSettings;
+  resolvedRecipientEmail: string;
+  larkConnected: boolean;
+  summary: {
+    healthScore: number;
+    totalLogs24h: number;
+    openErrorsCount: number;
+    openWarnsCount: number;
+    resolvedCount: number;
+    topFailingModule: string;
+    topFailingPage: string;
+    topCodeHotspot: string;
+  };
+  moduleBreakdown: QaModuleBreakdownItem[];
+  pageBreakdown: QaPageBreakdownItem[];
+  codeHotspots: QaCodeHotspotItem[];
+  logs: ProductQaLog[];
+  reports: ProductQaReport[];
+}
+
 
 

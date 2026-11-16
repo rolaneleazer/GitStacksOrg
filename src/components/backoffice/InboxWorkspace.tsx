@@ -51,7 +51,9 @@ const CATEGORY_LABELS: Record<InboxEmailLog['category'], string> = {
   chat_offline_alert: 'Offline Chat Alert',
   chat_instant_alert: 'Instant Live Chat Alert',
   chat_reply: 'Live Chat Lark Reply',
-  test_notification: 'Test Notification'
+  test_notification: 'Test Notification',
+  qa_eod_report: 'QA End-of-Day PDF Report',
+  qa_critical_alert: 'QA Critical Error Alert'
 };
 
 export function InboxWorkspace({

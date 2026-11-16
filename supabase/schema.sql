@@ -762,7 +762,7 @@ CREATE POLICY "Public or team log inbox lark emails"
 ALTER TABLE public.inbox_email_logs DROP CONSTRAINT IF EXISTS inbox_email_logs_category_check;
 ALTER TABLE public.inbox_email_logs
   ADD CONSTRAINT inbox_email_logs_category_check
-  CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert', 'chat_offline_alert', 'chat_instant_alert', 'chat_reply', 'test_notification'));
+  CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert', 'chat_offline_alert', 'chat_instant_alert', 'chat_reply', 'test_notification', 'qa_eod_report', 'qa_critical_alert'));
 
 -- 24. Cloudflare Historical Hourly Snapshots
 CREATE TABLE IF NOT EXISTS public.cloudflare_hourly_snapshots (
@@ -915,4 +915,113 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- 29. Product QA Real-Time Error & Telemetry Logs
+CREATE TABLE IF NOT EXISTS public.product_qa_logs (
+  id TEXT PRIMARY KEY,
+  level TEXT NOT NULL CHECK (level IN ('error', 'warn', 'info')) DEFAULT 'error',
+  source TEXT NOT NULL CHECK (source IN ('frontend', 'backend', 'api', 'database', 'integration')) DEFAULT 'frontend',
+  module_name TEXT NOT NULL DEFAULT 'General Application',
+  page_path TEXT NOT NULL DEFAULT '/',
+  code_location TEXT NOT NULL DEFAULT '',
+  error_name TEXT NOT NULL DEFAULT 'Error',
+  message TEXT NOT NULL,
+  stack_trace TEXT NOT NULL DEFAULT '',
+  http_status INTEGER,
+  request_method TEXT NOT NULL DEFAULT '',
+  request_path TEXT NOT NULL DEFAULT '',
+  session_id TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  fingerprint TEXT NOT NULL DEFAULT '',
+  ai_root_cause TEXT NOT NULL DEFAULT '',
+  ai_fix_suggestion TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('open', 'investigating', 'resolved', 'ignored')) DEFAULT 'open',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
+CREATE INDEX IF NOT EXISTS idx_product_qa_logs_created ON public.product_qa_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_qa_logs_module ON public.product_qa_logs (module_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_qa_logs_status ON public.product_qa_logs (status, level);
+
+GRANT ALL ON public.product_qa_logs TO anon, authenticated, service_role;
+ALTER TABLE public.product_qa_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public ingest and team manage qa logs" ON public.product_qa_logs;
+CREATE POLICY "Public ingest and team manage qa logs"
+  ON public.product_qa_logs FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 30. Product QA End-of-Day PDF Summary Reports
+CREATE TABLE IF NOT EXISTS public.product_qa_reports (
+  id TEXT PRIMARY KEY,
+  report_date TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('manual', 'eod_cron')) DEFAULT 'manual',
+  recipient_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  health_score INTEGER NOT NULL DEFAULT 100,
+  total_logs INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  warn_count INTEGER NOT NULL DEFAULT 0,
+  top_module TEXT NOT NULL DEFAULT 'None',
+  top_page TEXT NOT NULL DEFAULT '/',
+  executive_summary TEXT NOT NULL DEFAULT '',
+  module_breakdown JSONB NOT NULL DEFAULT '[]'::jsonb,
+  page_breakdown JSONB NOT NULL DEFAULT '[]'::jsonb,
+  recommended_actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+  pdf_filename TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'generated')) DEFAULT 'generated',
+  provider_message_id TEXT NOT NULL DEFAULT '',
+  error_detail TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_qa_reports_created ON public.product_qa_reports (created_at DESC);
+
+GRANT ALL ON public.product_qa_reports TO anon, authenticated, service_role;
+ALTER TABLE public.product_qa_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Team manage product qa reports" ON public.product_qa_reports;
+CREATE POLICY "Team manage product qa reports"
+  ON public.product_qa_reports FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 31. Product QA Live Agent & EOD Schedule Settings
+CREATE TABLE IF NOT EXISTS public.product_qa_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  agent_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  realtime_alert_on_critical BOOLEAN NOT NULL DEFAULT FALSE,
+  eod_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  eod_hour_utc INTEGER NOT NULL DEFAULT 15,
+  recipient_email TEXT NOT NULL DEFAULT '',
+  last_eod_sent_date TEXT NOT NULL DEFAULT '',
+  last_scan_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.product_qa_settings TO anon, authenticated, service_role;
+ALTER TABLE public.product_qa_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Team manage product qa settings" ON public.product_qa_settings;
+CREATE POLICY "Team manage product qa settings"
+  ON public.product_qa_settings FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+INSERT INTO public.product_qa_settings (
+  id,
+  agent_enabled,
+  realtime_alert_on_critical,
+  eod_enabled,
+  eod_hour_utc,
+  recipient_email
+)
+VALUES (
+  'default',
+  TRUE,
+  FALSE,
+  TRUE,
+  15,
+  ''
+)
+ON CONFLICT (id) DO NOTHING;

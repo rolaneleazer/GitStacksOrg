@@ -119,6 +119,14 @@ export function ContactPage({
 }) {
   const cms = pageContent || DEFAULT_PAGE_CONTENTS.contact;
 
+  const requestedService =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('service')
+      : null;
+  const initialBrief = requestedService
+    ? `Inquiring about engineering deployment and commercial setup for "${requestedService}". Please share rollout schedule, architectural requirements, and pricing.`
+    : '';
+
   useEffect(() => {
     applySeoMetadata({
       title: 'Contact GitStack — Schedule a Technical Consultation',
@@ -249,7 +257,7 @@ export function ContactPage({
           </div>
 
           <div className="lg:col-span-7">
-            <InquiryForm compact />
+            <InquiryForm compact defaultBrief={initialBrief} />
           </div>
         </div>
       </div>

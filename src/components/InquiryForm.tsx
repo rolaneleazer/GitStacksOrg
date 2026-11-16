@@ -5,11 +5,13 @@ import type { ClientInquiry, ServiceCategory } from '../shared/types.ts';
 
 interface InquiryFormProps {
   defaultService?: ServiceCategory | 'Full-Stack Transformation';
+  defaultBrief?: string;
   compact?: boolean;
 }
 
 export function InquiryForm({
   defaultService = 'AI Integration',
+  defaultBrief = '',
   compact = false
 }: InquiryFormProps) {
   const [fullName, setFullName] = useState('');
@@ -18,7 +20,7 @@ export function InquiryForm({
   const [serviceInterest, setServiceInterest] = useState<string>(defaultService);
   const [budgetRange, setBudgetRange] = useState('$50k – $120k');
   const [timeline, setTimeline] = useState('Within 30 days');
-  const [projectBrief, setProjectBrief] = useState('');
+  const [projectBrief, setProjectBrief] = useState(defaultBrief);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState<ClientInquiry | null>(null);
@@ -26,6 +28,12 @@ export function InquiryForm({
   useEffect(() => {
     setServiceInterest(defaultService);
   }, [defaultService]);
+
+  useEffect(() => {
+    if (defaultBrief) {
+      setProjectBrief((prev) => (prev ? prev : defaultBrief));
+    }
+  }, [defaultBrief]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -21,7 +21,7 @@ export function Header({ currentPath, settings, onNavigate }: HeaderProps) {
 
   const navItems = [
     { label: 'Services', href: '/services' },
-    { label: 'AI & ML', href: '/#ai-ml' },
+    { label: 'Live Demo', href: '/demo' },
     { label: 'Insights', href: '/insights' },
     { label: 'About', href: '/about' },
     { label: 'Contact', href: '/contact' }
@@ -246,6 +246,11 @@ export function Footer({
               Company &amp; Discovery
             </h3>
             <ul className="mt-4 space-y-2.5 text-sm">
+              <li>
+                <a href="/demo" onClick={(e) => go(e, '/demo')} className="hover:text-[var(--gs-primary)] font-medium text-slate-900">
+                  Interactive Customer Demo
+                </a>
+              </li>
               <li>
                 <a href="/insights" onClick={(e) => go(e, '/insights')} className="hover:text-[var(--gs-primary)]">
                   Technical Insights Journal

@@ -8,6 +8,7 @@ import {
 import { Footer, Header } from './components/LayoutChrome.tsx';
 import { api } from './lib/api.ts';
 import { ArticlePage } from './pages/ArticlePage.tsx';
+import { DemoPage } from './pages/DemoPage.tsx';
 import { HomePage } from './pages/HomePage.tsx';
 import { InsightsPage } from './pages/InsightsPage.tsx';
 import {
@@ -134,6 +135,9 @@ export default function App() {
           onNavigate={navigate}
         />
       );
+    }
+    if (route === '/demo') {
+      return <DemoPage onNavigate={navigate} />;
     }
     if (route === '/insights') {
       return (

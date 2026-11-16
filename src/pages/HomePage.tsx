@@ -182,7 +182,7 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                 </p>
               </div>
 
-              <div className="mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4 sm:gap-5">
+              <div className="mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3.5 sm:gap-4">
                 <button
                   type="button"
                   onClick={() => jumpToConsultation('AI Integration')}
@@ -193,10 +193,17 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
                 </button>
                 <button
                   type="button"
+                  onClick={() => onNavigate('/demo')}
+                  className="inline-flex min-h-[44px] w-full sm:w-auto items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                >
+                  <span>Launch Live Demo</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => onNavigate('/insights')}
                   className="inline-flex min-h-[44px] sm:min-h-0 items-center justify-center sm:justify-start text-sm font-semibold text-slate-700 underline decoration-slate-300 underline-offset-4 hover:text-[var(--gs-primary)] hover:decoration-[var(--gs-primary)] transition-colors whitespace-nowrap shrink-0"
                 >
-                  Read Engineering Insights
+                  Read Insights
                 </button>
               </div>
             </div>

@@ -8,6 +8,7 @@ import {
   Bug,
   CheckCircle2,
   Cloud,
+  Compass,
   Copy,
   Download,
   ExternalLink,
@@ -34,8 +35,10 @@ import {
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AdSenseVisualAuditor } from '../components/backoffice/AdSenseVisualAuditor.tsx';
 import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
 import { AiSearchVisibilityPanel } from '../components/backoffice/AiSearchVisibilityPanel.tsx';
+import { AiTrendContentStudio } from '../components/backoffice/AiTrendContentStudio.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
@@ -252,6 +255,8 @@ export function StudioPage({
 
   // Back Office Navigation & Data State
   const [activeTab, setActiveTab] = useState<StudioTab>('agents');
+  const [adsenseSubView, setAdsenseSubView] = useState<'auditor' | 'settings'>('auditor');
+  const [articlesSubView, setArticlesSubView] = useState<'trend_studio' | 'managed'>('trend_studio');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [workspaceNotice, setWorkspaceNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -1411,7 +1416,44 @@ export function StudioPage({
 
           {/* PANEL 6: ARTICLES & PRE-PUBLISH QUALITY GATEKEEPER */}
           {currentTab === 'articles' && (
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setArticlesSubView('trend_studio')}
+                  className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
+                    articlesSubView === 'trend_studio'
+                      ? 'bg-[var(--gs-primary)] text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <Compass className="h-4 w-4" />
+                  <span>AI Trend Scout &amp; Content Studio</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setArticlesSubView('managed')}
+                  className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
+                    articlesSubView === 'managed'
+                      ? 'bg-[var(--gs-primary)] text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <FileText className="h-4 w-4" />
+                  <span>Managed Articles ({posts.length})</span>
+                </button>
+              </div>
+
+              {articlesSubView === 'trend_studio' ? (
+                <AiTrendContentStudio
+                  onPostPublished={() => {
+                    loadWorkspaceData(analyticsDays);
+                    onArticlesChanged();
+                  }}
+                  onNavigateToInsights={() => onNavigate('/insights')}
+                />
+              ) : (
+                <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
               <div className="space-y-6 lg:col-span-8 min-w-0">
                 <div className="rounded-xl border border-slate-200 bg-white p-5">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2018,14 +2060,47 @@ export function StudioPage({
                 </div>
               </aside>
             </div>
+              )}
+            </div>
           )}
 
           {/* PANEL 7: SETTINGS, INTEGRATIONS VAULT, ADSENSE AUDIT & SUPABASE SCHEMA */}
           {currentTab === 'adsense' && (
-            <div className="space-y-8">
-              <IntegrationsVaultPanel />
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setAdsenseSubView('auditor')}
+                  className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
+                    adsenseSubView === 'auditor'
+                      ? 'bg-[var(--gs-primary)] text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <Eye className="h-4 w-4" />
+                  <span>AdSense Compliance &amp; Visual Auditor (Gemini Vision)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdsenseSubView('settings')}
+                  className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition-colors ${
+                    adsenseSubView === 'settings'
+                      ? 'bg-[var(--gs-primary)] text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  <span>API Integrations Vault &amp; Site Settings</span>
+                </button>
+              </div>
 
-              <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+              {adsenseSubView === 'auditor' ? (
+                <AdSenseVisualAuditor />
+              ) : (
+                <div className="space-y-8">
+                  <IntegrationsVaultPanel />
+
+                  <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
               <div className="space-y-6 lg:col-span-7 min-w-0">
                 <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
                   <div className="flex items-center justify-between">
@@ -2347,9 +2422,11 @@ export function StudioPage({
                   )}
                 </div>
               </div>
-              </div>
             </div>
-          )}
+          </div>
+        )}
+      </div>
+    )}
         </div>
       </div>
     </div>

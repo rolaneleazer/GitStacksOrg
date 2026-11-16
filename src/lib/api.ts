@@ -684,6 +684,64 @@ export const api = {
     return res;
   },
 
+  async auditPageAdSense(payload: {
+    url?: string;
+    imageBase64?: string;
+    mimeType?: string;
+  }) {
+    return request<any>('/api/audit-page', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async discoverTrends(payload: {
+    niche: string;
+    country?: string;
+    keywords?: string;
+  }) {
+    return request<{
+      topics: Array<{
+        id: string;
+        title: string;
+        searchIntent: 'Informational' | 'Commercial' | 'News';
+        opportunity: 'High' | 'Surging' | 'Breakout';
+        summary: string;
+        sources: { title: string; url: string }[];
+        keyAngles: string[];
+      }>;
+      niche: string;
+      country: string;
+    }>('/api/discover-trends', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async generateAdSenseArticle(payload: {
+    topic: string;
+    niche: string;
+    country?: string;
+    sources?: { title: string; url: string }[];
+  }) {
+    return request<{
+      title: string;
+      slug: string;
+      summary: string;
+      category: string;
+      authorName: string;
+      tags: string[];
+      content: string;
+      wordCount: number;
+      policyBadge: 'AdSense Policy Safe' | 'Needs Human Attribution';
+      policyNotes: string[];
+      sources: { title: string; url: string }[];
+    }>('/api/generate-article', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
   // --- Virtual Office HQ & Daily Agent Email Proof Reports ---
   async getAgentsOffice() {
     return request<{

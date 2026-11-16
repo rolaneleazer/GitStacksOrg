@@ -18,9 +18,11 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { AiConciergeDemo } from '../components/demo/AiConciergeDemo.tsx';
+import { DemoVipBar } from '../components/demo/DemoVipBar.tsx';
 import { EInvoicePortalDemo } from '../components/demo/EInvoicePortalDemo.tsx';
 import { FlowCrmChaserDemo } from '../components/demo/FlowCrmChaserDemo.tsx';
 import { InventorySyncDemo } from '../components/demo/InventorySyncDemo.tsx';
+import { api } from '../lib/api.ts';
 import { applySeoMetadata } from '../lib/seo.ts';
 
 interface DemoPageProps {
@@ -97,6 +99,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
   };
 
   const [activeProduct, setActiveProduct] = useState<DemoProductKey>(getInitialTab);
+  const [demoResetKey, setDemoResetKey] = useState(0);
 
   useEffect(() => {
     applySeoMetadata({
@@ -109,21 +112,47 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
 
   const handleSelectProduct = (key: DemoProductKey) => {
     setActiveProduct(key);
+    api.trackDemoActivity({
+      module: key,
+      actionLabel: `Viewed ${key} Interactive Sandbox`
+    }).catch(() => {});
     if (typeof window !== 'undefined' && window.history?.replaceState) {
       window.history.replaceState(null, '', `/demo#${key}`);
     }
   };
 
   const handleCtaClick = (serviceTitle: string) => {
+    api.trackDemoActivity({
+      module: activeProduct,
+      actionLabel: `Clicked CTA for ${serviceTitle}`,
+      convertedInquiry: true
+    }).catch(() => {});
     onNavigate(`/contact?service=${encodeURIComponent(serviceTitle)}`);
+  };
+
+  const handleResetSandbox = () => {
+    setDemoResetKey((k) => k + 1);
+    api.trackDemoActivity({
+      module: activeProduct,
+      actionLabel: `Reset sandbox data`
+    }).catch(() => {});
   };
 
   const activeProductMeta = DEMO_PRODUCTS.find((p) => p.key === activeProduct) || DEMO_PRODUCTS[0];
 
   return (
-    <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-6 sm:py-10 space-y-8">
-      {/* 1. HERO HEADER */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 lg:p-10 shadow-xs space-y-4">
+    <div className="space-y-6">
+      <DemoVipBar
+        onResetDemo={handleResetSandbox}
+        onNavigateToContact={() => handleCtaClick(activeProductMeta.title)}
+        onActivityTracked={(action) => {
+          api.trackDemoActivity({ module: activeProduct, actionLabel: action }).catch(() => {});
+        }}
+      />
+
+      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-2 sm:py-4 space-y-8">
+        {/* 1. HERO HEADER */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-8 lg:p-10 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50/70 px-3 py-1 text-xs font-semibold text-[var(--gs-primary)]">
             <Sparkles className="h-3.5 w-3.5" />
@@ -193,7 +222,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
       </div>
 
       {/* 3. ACTIVE PRODUCT SANDBOX CONTAINER */}
-      <div>
+      <div key={demoResetKey}>
         {activeProduct === 'inventory_sync' && (
           <InventorySyncDemo onCtaClick={handleCtaClick} />
         )}
@@ -265,5 +294,6 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }

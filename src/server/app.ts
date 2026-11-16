@@ -90,6 +90,8 @@ import {
   searchGoogleMapsEstablishments
 } from './connectors.ts';
 import { collectInfrastructureMetrics, restartInfrastructureServices } from './infrastructure.ts';
+import { auditPageAdSense } from './adsenseAuditor.ts';
+import { discoverTrendingTopics, generateAdSenseSafeArticle } from './trendScout.ts';
 import {
   broadcastToAdmins,
   broadcastToVisitor,
@@ -742,6 +744,46 @@ export async function createApp(): Promise<Express> {
       }
     }
   );
+
+  // --- AdSense Compliance & Visual Auditor API ---
+
+  app.post('/api/audit-page', async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const result = await auditPageAdSense(req.body || {}, token);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to complete AdSense visual policy audit.'
+      });
+    }
+  });
+
+  // --- AI Trend Scout & AdSense-Safe Content Studio APIs ---
+
+  app.post('/api/discover-trends', async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const result = await discoverTrendingTopics(req.body || {}, token);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to discover trending topics.'
+      });
+    }
+  });
+
+  app.post('/api/generate-article', async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const result = await generateAdSenseSafeArticle(req.body || {}, token);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to generate AdSense-safe article.'
+      });
+    }
+  });
 
   // --- Articles / Content Module APIs ---
 

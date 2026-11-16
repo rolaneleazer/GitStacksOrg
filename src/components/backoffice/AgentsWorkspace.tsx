@@ -5,8 +5,11 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Cloud,
   Coffee,
   ExternalLink,
+  Eye,
+  Mail,
   MailCheck,
   MessageSquare,
   Palette,
@@ -21,7 +24,7 @@ import {
   Users
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../../lib/api.ts';
+import { api, getRealtimeWsUrl, getStoredToken } from '../../lib/api.ts';
 import {
   AGENT_COLLABORATION_MAP,
   DEFAULT_AGENT_OFFICE_PROFILES,
@@ -38,6 +41,7 @@ import type {
   AgentReportSettings,
   AgentSnapshotItem,
   AgentTask,
+  OfficeLiveHudSummary,
   TaskPriority
 } from '../../shared/types.ts';
 import { AgentReportsPanel } from './AgentReportsPanel.tsx';
@@ -108,8 +112,16 @@ export function AgentsWorkspace({
     SEED_AGENT_CONVERSATIONS
   );
   const [shiftIntervalSec, setShiftIntervalSec] = useState<12 | 25 | 0>(12);
+  const [continuousWalk, setContinuousWalk] = useState(true);
+  const [walkTick, setWalkTick] = useState(0);
   const [speechTick, setSpeechTick] = useState(0);
   const [shiftBusy, setShiftBusy] = useState(false);
+
+  // Live Site Operations HUD & Website Visitors
+  const [hud, setHud] = useState<OfficeLiveHudSummary | null>(null);
+  const [selectedVisitorId, setSelectedVisitorId] = useState<string | null>(null);
+  const [scanningInquiries, setScanningInquiries] = useState(false);
+  const [watcherNotice, setWatcherNotice] = useState<string | null>(null);
 
   // Customize form state
   const [customizeOpen, setCustomizeOpen] = useState(false);
@@ -141,9 +153,13 @@ export function AgentsWorkspace({
 
   const loadOfficeData = useCallback(async () => {
     try {
-      const res = await api.getAgentsOffice();
-      if (res.profiles.length > 0) setProfiles(res.profiles);
-      setConversations(res.conversations);
+      const [officeRes, hudRes] = await Promise.all([
+        api.getAgentsOffice(),
+        api.getOfficeHud().catch(() => null)
+      ]);
+      if (officeRes.profiles.length > 0) setProfiles(officeRes.profiles);
+      setConversations(officeRes.conversations);
+      if (hudRes?.hud) setHud(hudRes.hud);
     } catch {
       // keep default fallbacks if offline
     }
@@ -167,6 +183,72 @@ export function AgentsWorkspace({
     loadOfficeData();
     loadReportsData();
   }, [loadOfficeData, loadReportsData]);
+
+  // Continuous 1-second walking patrol across all 7 agents & live visitors
+  useEffect(() => {
+    if (!continuousWalk) return;
+    const walkTimer = window.setInterval(() => {
+      setWalkTick((t) => t + 1);
+    }, 1000);
+    return () => window.clearInterval(walkTimer);
+  }, [continuousWalk]);
+
+  // Real-time WebSocket stream + 12s fallback HUD polling for live website visitors & chat alerts
+  useEffect(() => {
+    const refreshHud = () => {
+      api
+        .getOfficeHud()
+        .then((res) => setHud(res.hud))
+        .catch(() => {});
+    };
+
+    const pollId = window.setInterval(refreshHud, 12_000);
+    let ws: WebSocket | null = null;
+    try {
+      const wsUrl = getRealtimeWsUrl();
+      const token = getStoredToken();
+      if (wsUrl && token) {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          ws?.send(JSON.stringify({ type: 'admin:join', token }));
+        };
+        ws.onmessage = (evt) => {
+          try {
+            const msg = JSON.parse(String(evt.data || '{}')) as {
+              type?: string;
+              payload?: { visitors?: OfficeLiveHudSummary['visitors'] };
+            };
+            if (msg.type === 'presence:update' && msg.payload?.visitors) {
+              setHud((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      activeVisitorsCount: msg.payload!.visitors!.length,
+                      visitors: msg.payload!.visitors!
+                    }
+                  : prev
+              );
+            } else if (
+              msg.type === 'chat:message' ||
+              msg.type === 'chat:session_updated' ||
+              msg.type === 'chat:escalated'
+            ) {
+              refreshHud();
+            }
+          } catch {
+            // ignore malformed WS frames
+          }
+        };
+      }
+    } catch {
+      // polling covers fallback
+    }
+
+    return () => {
+      window.clearInterval(pollId);
+      if (ws && ws.readyState < 2) ws.close();
+    };
+  }, []);
 
   // Animated Auto-Shift Cycle
   useEffect(() => {
@@ -302,6 +384,33 @@ export function AgentsWorkspace({
     }
   };
 
+  const handleScanUnansweredInquiries = async () => {
+    setScanningInquiries(true);
+    setWatcherNotice(null);
+    try {
+      const res = await api.checkUnansweredChatInquiries();
+      if (res.escalatedCount > 0) {
+        setWatcherNotice(
+          `Mira (Inquiry Watcher) escalated ${res.escalatedCount} unanswered inquiry(ies) to Lark Mail.`
+        );
+      } else if (res.skippedReason) {
+        setWatcherNotice(res.skippedReason);
+      } else {
+        setWatcherNotice(
+          `Checked ${res.checkedCount} open chat thread(s): all inquiries already answered or escalated.`
+        );
+      }
+      const hudRes = await api.getOfficeHud().catch(() => null);
+      if (hudRes?.hud) setHud(hudRes.hud);
+    } catch (err) {
+      setWatcherNotice(
+        err instanceof Error ? err.message : 'Unable to run inquiry watcher check.'
+      );
+    } finally {
+      setScanningInquiries(false);
+    }
+  };
+
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim() || !activeAgent) return;
@@ -399,34 +508,40 @@ export function AgentsWorkspace({
         />
       ) : (
         <div className="space-y-6">
-          {/* Dark Command Header (Inspired by HQ Screenshot) */}
-          <div className="rounded-xl border border-slate-800 bg-[#0B1120] p-4 sm:p-5 text-white shadow-xs">
+          {/* Dark Command Header + Live Site Operations HUD */}
+          <div className="rounded-xl border border-slate-800 bg-[#0B1120] p-4 sm:p-5 text-white shadow-xs space-y-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   <h2 className="font-display text-base sm:text-lg font-bold text-white">
                     GitStack Agent Virtual Office HQ (Live Operations)
                   </h2>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 font-mono text-[10px] font-bold text-emerald-300">
-                    {shiftIntervalSec > 0 ? (
-                      <>
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        AUTO-SHIFT EVERY {shiftIntervalSec}s
-                      </>
-                    ) : (
-                      'SHIFT PAUSED'
-                    )}
+                  <span className="font-mono text-[11px] font-bold text-emerald-400">
+                    · {continuousWalk ? '1s LIVE PATROL' : 'PATROL PAUSED'}
                   </span>
-                  <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
-                    {activeWorkersCount} / {profiles.length} AGENTS ACTIVE
+                  <span className="font-mono text-[11px] font-bold text-amber-300">
+                    · {activeWorkersCount}/{profiles.length} AGENTS ACTIVE
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-400">
-                  Watch your 7 customizable operational agents walk between the Lounge and HQ stations to audit marketing, CEO KPIs, bookings, cybersecurity, QA, AdSense, and traffic.
+                  Watch your 7 customizable operational agents walk continuously every second alongside live website visitors entering from git-stack.org.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setContinuousWalk((v) => !v)}
+                  className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                    continuousWalk
+                      ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-200'
+                      : 'border-slate-700 bg-slate-900 text-slate-300'
+                  }`}
+                >
+                  {continuousWalk ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                  <span>{continuousWalk ? '1s Walk On' : '1s Walk Paused'}</span>
+                </button>
+
                 {/* Shift Cadence Controls */}
                 <div className="inline-flex rounded-lg border border-slate-700 bg-slate-900 p-0.5">
                   <button
@@ -438,7 +553,7 @@ export function AgentsWorkspace({
                         : 'text-slate-300 hover:text-white'
                     }`}
                   >
-                    12s Auto
+                    12s Shift
                   </button>
                   <button
                     type="button"
@@ -460,7 +575,7 @@ export function AgentsWorkspace({
                         : 'text-slate-300 hover:text-white'
                     }`}
                   >
-                    <Pause className="h-3 w-3" /> Pause
+                    Hold
                   </button>
                 </div>
 
@@ -468,23 +583,138 @@ export function AgentsWorkspace({
                   type="button"
                   disabled={shiftBusy}
                   onClick={() => handleBulkShift('all_hands')}
-                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50"
+                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-50 whitespace-nowrap shrink-0"
                 >
                   <Sparkles className="h-3.5 w-3.5" />
-                  <span>All-Hands Shift</span>
+                  <span>All-Hands</span>
                 </button>
 
                 <button
                   type="button"
                   disabled={shiftBusy}
                   onClick={() => handleBulkShift('lounge')}
-                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                  className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50 whitespace-nowrap shrink-0"
                 >
                   <Coffee className="h-3.5 w-3.5" />
-                  <span>Lounge Break</span>
+                  <span>Lounge</span>
                 </button>
               </div>
             </div>
+
+            {/* Live Site Operations HUD Strip */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 border-t border-slate-800 pt-3.5">
+              <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-sky-300">
+                    <Eye className="h-3.5 w-3.5 shrink-0" />
+                    <span>Live Website Visitors</span>
+                  </div>
+                  <div className="mt-1 font-mono text-lg font-bold text-white tabular-nums">
+                    {hud?.activeVisitorsCount ?? 0} online
+                  </div>
+                  <div className="text-[11px] text-slate-400 truncate">
+                    {hud?.visitors && hud.visitors.length > 0
+                      ? hud.visitors.slice(0, 2).map((v) => v.current_path).join(' · ')
+                      : 'Awaiting public route visit'}
+                  </div>
+                </div>
+                {hud?.visitors && hud.visitors.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedVisitorId(hud.visitors[0].session_id)}
+                    className="rounded border border-sky-500/40 px-2 py-1 text-[10px] font-semibold text-sky-300 hover:bg-sky-900/50 whitespace-nowrap shrink-0"
+                  >
+                    Inspect
+                  </button>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-amber-300">
+                    <Cloud className="h-3.5 w-3.5 shrink-0" />
+                    <span>Cloudflare Edge (24h)</span>
+                  </div>
+                  <div className="mt-1 font-mono text-lg font-bold text-white tabular-nums">
+                    {hud?.cloudflare24hRequests !== null && hud?.cloudflare24hRequests !== undefined
+                      ? `${hud.cloudflare24hRequests.toLocaleString()} reqs`
+                      : 'Vault Standby'}
+                  </div>
+                  <div className="font-mono text-[11px] text-slate-400 tabular-nums">
+                    {hud?.cloudflareCacheRate !== null && hud?.cloudflareCacheRate !== undefined
+                      ? `Cache ${hud.cloudflareCacheRate}% · 5xx ${hud.cloudflare5xxRate ?? 0}%`
+                      : 'Connect Cloudflare Vault'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onJumpToSection('cloudflare')}
+                  className="rounded border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:bg-slate-800 whitespace-nowrap shrink-0"
+                >
+                  Open
+                </button>
+              </div>
+
+              <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-300">
+                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                    <span>Home Chat &amp; Lark Watcher</span>
+                  </div>
+                  <div className="mt-1 font-mono text-lg font-bold text-white tabular-nums">
+                    {hud?.unansweredChatsCount ?? 0} unanswered
+                  </div>
+                  <div className="font-mono text-[11px] text-slate-400 tabular-nums">
+                    {hud?.openChatsCount ?? 0} open · {hud?.larkSmtpConnected ? 'Lark SMTP Ready' : 'SMTP Unconfigured'}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button
+                    type="button"
+                    disabled={scanningInquiries}
+                    onClick={handleScanUnansweredInquiries}
+                    className="rounded border border-emerald-500/40 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-950/60 disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {scanningInquiries ? 'Scanning...' : 'Scan Chats'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onJumpToSection('inbox')}
+                    className="rounded border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:bg-slate-800 whitespace-nowrap"
+                  >
+                    Inbox
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-800 bg-slate-900/80 p-3 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-violet-300">
+                    <Users className="h-3.5 w-3.5 shrink-0" />
+                    <span>Active 24h Demo Passes</span>
+                  </div>
+                  <div className="mt-1 font-mono text-lg font-bold text-white tabular-nums">
+                    {hud?.activeDemoUsersCount ?? 0} active
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    {hud?.adminOnline ? 'Back Office Operator Online' : 'Offline Fallback Armed'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onJumpToSection('demo_users')}
+                  className="rounded border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-200 hover:bg-slate-800 whitespace-nowrap shrink-0"
+                >
+                  Leads
+                </button>
+              </div>
+            </div>
+
+            {watcherNotice && (
+              <div className="rounded-lg border border-emerald-500/40 bg-emerald-950/50 px-3 py-2 text-xs text-emerald-200">
+                {watcherNotice}
+              </div>
+            )}
           </div>
 
           {/* Main 2-Col Map + Selected Agent Inspector */}
@@ -500,6 +730,11 @@ export function AgentsWorkspace({
                   setCustomizeOpen(false);
                 }}
                 speechTick={speechTick}
+                walkTick={walkTick}
+                continuousWalk={continuousWalk}
+                visitors={hud?.visitors || []}
+                selectedVisitorId={selectedVisitorId}
+                onSelectVisitor={setSelectedVisitorId}
               />
 
               {/* 7-Agent Interactive Roster Grid */}

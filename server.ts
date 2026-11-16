@@ -1,6 +1,11 @@
 import express from 'express';
+import http from 'node:http';
 import path from 'node:path';
 import { getExpressApp } from './src/server/app.ts';
+import { startChatWatcherLoop } from './src/server/chatWatcher.ts';
+import { startCloudflareAutoSnapshotLoop } from './src/server/cloudflareHistory.ts';
+import { attachRealtimeHub } from './src/server/realtime.ts';
+import { verifyEditorToken } from './src/server/repository.ts';
 
 async function startServer() {
   const app = await getExpressApp();
@@ -24,7 +29,12 @@ async function startServer() {
   }
 
   const PORT = Number(process.env.PORT || 3000);
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = http.createServer(app);
+  attachRealtimeHub(server, verifyEditorToken);
+  startChatWatcherLoop();
+  startCloudflareAutoSnapshotLoop();
+
+  server.listen(PORT, '0.0.0.0', () => {
     console.log(`GitStack server running on http://0.0.0.0:${PORT}`);
   });
 }

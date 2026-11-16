@@ -835,7 +835,13 @@ export interface InboxEmailLog {
   subject: string;
   body: string;
   channel: 'lark_smtp';
-  category: 'inquiry_reply' | 'direct_compose' | 'demo_signup_alert' | 'contact_alert';
+  category:
+    | 'inquiry_reply'
+    | 'direct_compose'
+    | 'demo_signup_alert'
+    | 'contact_alert'
+    | 'chat_offline_alert'
+    | 'chat_reply';
   related_id?: string | null;
   provider_message_id: string;
   status: 'sent' | 'failed';
@@ -919,3 +925,173 @@ export interface CloudflareAnalyticsResponse {
     topDataCenters: CloudflareTopItem[];
   };
 }
+
+// --- Cloudflare Historical Snapshots & Gemini AI Forecasting ---
+
+export type CloudflareHistoryRange = '7d' | '14d' | '30d' | 'all';
+
+export interface CloudflareHourlySnapshot {
+  id: string;
+  zone_id: string;
+  zone_name: string;
+  bucket_hour: string;
+  requests: number;
+  bytes: number;
+  cached_requests: number;
+  status_1xx: number;
+  status_2xx: number;
+  status_3xx: number;
+  status_4xx: number;
+  status_5xx: number;
+  top_paths: CloudflareTopItem[];
+  top_countries: CloudflareTopItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CloudflareDailyHistoryPoint {
+  date: string;
+  label: string;
+  requests: number;
+  bytes: number;
+  cachedRequests: number;
+  cacheHitRate: number;
+  status2xx: number;
+  status4xx: number;
+  status5xx: number;
+  error5xxRate: number;
+}
+
+export interface CloudflareDailyForecastPoint {
+  date: string;
+  label: string;
+  predictedRequests: number;
+  lowRequests: number;
+  highRequests: number;
+  predictedBytes: number;
+  rationale: string;
+}
+
+export interface CloudflareTrafficAnomaly {
+  bucketLabel: string;
+  severity: 'info' | 'warning' | 'critical';
+  title: string;
+  detail: string;
+}
+
+export interface CloudflareAiForecast {
+  zoneId: string;
+  zoneName: string;
+  modelUsed: string;
+  usedGemini: boolean;
+  generatedAt: string;
+  horizonDays: number;
+  rangeAnalyzed: CloudflareHistoryRange;
+  trendDirection: 'up' | 'steady' | 'down';
+  growthRatePct: number;
+  confidencePct: number;
+  expectedRequests7d: number;
+  expectedBandwidth7dBytes: number;
+  executiveSummary: string;
+  trafficDrivers: string[];
+  recommendations: string[];
+  anomalies: CloudflareTrafficAnomaly[];
+  dailyForecast: CloudflareDailyForecastPoint[];
+  fallbackNotice?: string;
+}
+
+export interface CloudflareHistoryAnalysisResponse {
+  connected: boolean;
+  zoneId: string;
+  zoneName: string;
+  range: CloudflareHistoryRange;
+  snapshotCount: number;
+  coverageStart: string | null;
+  coverageEnd: string | null;
+  summary: {
+    totalRequests: number;
+    totalBytes: number;
+    avgDailyRequests: number;
+    peakDayLabel: string;
+    peakDayRequests: number;
+    peakHourUtc: number;
+    avgCacheHitRate: number;
+    avgError5xxRate: number;
+    requestTrendPct: number | null;
+  };
+  dailyHistory: CloudflareDailyHistoryPoint[];
+  hourlyDistribution: { hourUtc: number; label: string; avgRequests: number }[];
+  weekdayDistribution: { weekday: string; avgRequests: number }[];
+  statisticalBaselineForecast: CloudflareDailyForecastPoint[];
+  anomalies: CloudflareTrafficAnomaly[];
+  aiForecast: CloudflareAiForecast | null;
+}
+
+// --- Virtual Office Live Website Visitors & Site Operations HUD ---
+
+export interface LiveWebsiteVisitor {
+  session_id: string;
+  current_path: string;
+  zone_id: string;
+  zone_label: string;
+  device_type: 'desktop' | 'tablet' | 'mobile';
+  referrer: string;
+  started_at: string;
+  last_seen_at: string;
+  target_x: number;
+  target_y: number;
+}
+
+export interface OfficeLiveHudSummary {
+  activeVisitorsCount: number;
+  visitors: LiveWebsiteVisitor[];
+  adminOnline: boolean;
+  lastAdminSeenAt: string | null;
+  unansweredChatsCount: number;
+  openChatsCount: number;
+  escalatedChatsCount: number;
+  activeDemoUsersCount: number;
+  cloudflare24hRequests: number | null;
+  cloudflare5xxRate: number | null;
+  cloudflareCacheRate: number | null;
+  larkSmtpConnected: boolean;
+  watcherLastRunAt: string | null;
+}
+
+// --- Floating Home Page Live Chat & Offline Lark Escalation ---
+
+export type WebsiteChatStatus = 'open' | 'replied' | 'resolved';
+export type WebsiteChatSenderRole = 'visitor' | 'admin' | 'agent';
+
+export interface WebsiteChatSession {
+  id: string;
+  visitor_token: string;
+  visitor_name: string;
+  visitor_email: string;
+  page_path: string;
+  status: WebsiteChatStatus;
+  last_visitor_msg_at: string | null;
+  last_admin_reply_at: string | null;
+  escalated_at: string | null;
+  converted_lead_id: string | null;
+  created_at: string;
+  updated_at: string;
+  unread_for_admin?: boolean;
+  last_message_preview?: string;
+}
+
+export interface WebsiteChatMessage {
+  id: string;
+  session_id: string;
+  sender_role: WebsiteChatSenderRole;
+  sender_name: string;
+  body: string;
+  created_at: string;
+}
+
+export interface WebsiteChatThreadResponse {
+  session: WebsiteChatSession;
+  messages: WebsiteChatMessage[];
+  adminOnline: boolean;
+}
+

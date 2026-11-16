@@ -19,7 +19,10 @@ import type {
   ChatThread,
   ChatThreadStatus,
   ClientInquiry,
+  CloudflareAiForecast,
   CloudflareAnalyticsResponse,
+  CloudflareHistoryAnalysisResponse,
+  CloudflareHistoryRange,
   CloudflareWindowPreset,
   CommentStatus,
   CrmLead,
@@ -39,6 +42,7 @@ import type {
   IntegrationStatusItem,
   LarkConnectionStatus,
   NewsletterSubscriber,
+  OfficeLiveHudSummary,
   OpenSourceSyncResult,
   OpenSourceSyncTrack,
   PageContentConfig,
@@ -50,12 +54,17 @@ import type {
   UserProfile,
   UserRole,
   UserStatus,
-  UserWorkflowItem
+  UserWorkflowItem,
+  WebsiteChatMessage,
+  WebsiteChatSession,
+  WebsiteChatStatus,
+  WebsiteChatThreadResponse
 } from '../shared/types.ts';
 
 const TOKEN_KEY = 'gitstack_studio_token';
 const DEMO_TOKEN_KEY = 'gitstack_demo_token';
 const SESSION_ID_KEY = 'gitstack_visitor_sid';
+const FLOATING_CHAT_TOKEN_KEY = 'gitstack_floating_chat_token';
 
 export class DemoExpiredError extends Error {
   code = 'DEMO_EXPIRED';
@@ -120,6 +129,33 @@ function getVisitorSessionId(): string {
     return sid;
   } catch {
     return 'vis-anon';
+  }
+}
+
+export function getRealtimeWsUrl(): string {
+  if (typeof window === 'undefined') return '';
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws`;
+}
+
+export function getOrCreateFloatingChatToken(): string {
+  try {
+    let token = window.localStorage.getItem(FLOATING_CHAT_TOKEN_KEY);
+    if (!token) {
+      token = `vchat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      window.localStorage.setItem(FLOATING_CHAT_TOKEN_KEY, token);
+    }
+    return token;
+  } catch {
+    return `vchat-anon-${Math.random().toString(36).slice(2, 8)}`;
+  }
+}
+
+export function getExistingFloatingChatToken(): string | null {
+  try {
+    return window.localStorage.getItem(FLOATING_CHAT_TOKEN_KEY);
+  } catch {
+    return null;
   }
 }
 
@@ -1017,5 +1053,174 @@ export const api = {
     return request<CloudflareAnalyticsResponse>(
       `/api/admin/cloudflare/analytics?window=${encodeURIComponent(windowPreset)}`
     );
+  },
+
+  async getCloudflareHistory(range: CloudflareHistoryRange = '14d') {
+    return request<CloudflareHistoryAnalysisResponse>(
+      `/api/admin/cloudflare/history?range=${encodeURIComponent(range)}`
+    );
+  },
+
+  async syncCloudflareHistory(range: CloudflareHistoryRange = '14d') {
+    return request<{
+      syncResult: {
+        syncedHours: number;
+        totalSnapshots: number;
+        zoneId: string;
+        zoneName: string;
+        error?: string;
+      };
+      analysis: CloudflareHistoryAnalysisResponse;
+    }>('/api/admin/cloudflare/history/sync', {
+      method: 'POST',
+      body: JSON.stringify({ range })
+    });
+  },
+
+  async generateCloudflareForecast(range: CloudflareHistoryRange = '14d') {
+    return request<{
+      forecast: CloudflareAiForecast;
+      analysis: CloudflareHistoryAnalysisResponse;
+    }>('/api/admin/cloudflare/forecast', {
+      method: 'POST',
+      body: JSON.stringify({ range })
+    });
+  },
+
+  // --- Live Website Presence & Virtual Office HUD ---
+  async sendPublicPresence(pagePath: string) {
+    const sid = getVisitorSessionId();
+    const width = typeof window !== 'undefined' ? window.innerWidth : 1280;
+    const device_type = width < 640 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop';
+    const referrer = typeof document !== 'undefined' ? document.referrer || '' : '';
+    const res = await fetch('/api/public/presence', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sid, path: pagePath || '/', device_type, referrer })
+    });
+    if (!res.ok) return null;
+    return (await res.json().catch(() => null)) as { ok: boolean; activeVisitorsCount: number } | null;
+  },
+
+  async sendAdminHeartbeat() {
+    return request<{ hud: OfficeLiveHudSummary }>('/api/admin/presence/heartbeat', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async getOfficeHud() {
+    return request<{ hud: OfficeLiveHudSummary }>('/api/admin/office/hud');
+  },
+
+  // --- Floating Home Page Live Chat & Admin Inbox Replies ---
+  async getPublicChatSession(visitorToken: string, pagePath = '/') {
+    const res = await fetch(
+      `/api/public/chat/session?visitor_token=${encodeURIComponent(visitorToken)}&page_path=${encodeURIComponent(pagePath)}`
+    );
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || `Failed to load live chat (HTTP ${res.status})`);
+    }
+    return (await res.json()) as WebsiteChatThreadResponse;
+  },
+
+  async updatePublicChatProfile(payload: {
+    visitor_token: string;
+    visitor_name?: string;
+    visitor_email?: string;
+    page_path?: string;
+  }) {
+    const res = await fetch('/api/public/chat/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || `Failed to update visitor profile (HTTP ${res.status})`);
+    }
+    return (await res.json()) as { session: WebsiteChatSession };
+  },
+
+  async sendPublicChatMessage(payload: {
+    visitor_token: string;
+    visitor_name?: string;
+    visitor_email?: string;
+    page_path?: string;
+    body: string;
+  }) {
+    const res = await fetch('/api/public/chat/message', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || `Failed to send message (HTTP ${res.status})`);
+    }
+    return (await res.json()) as {
+      session: WebsiteChatSession;
+      message: WebsiteChatMessage;
+      adminOnline: boolean;
+    };
+  },
+
+  async listAdminChatSessions() {
+    return request<{
+      sessions: WebsiteChatSession[];
+      unansweredCount: number;
+      adminOnline: boolean;
+    }>('/api/admin/chat/sessions');
+  },
+
+  async getAdminChatThread(sessionId: string) {
+    return request<WebsiteChatThreadResponse>(
+      `/api/admin/chat/sessions/${encodeURIComponent(sessionId)}`
+    );
+  },
+
+  async replyAdminChatSession(sessionId: string, body: string, alsoSendEmail = false) {
+    return request<{
+      session: WebsiteChatSession;
+      message: WebsiteChatMessage;
+      emailNotice?: string;
+    }>(`/api/admin/chat/sessions/${encodeURIComponent(sessionId)}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ body, alsoSendEmail })
+    });
+  },
+
+  async updateAdminChatStatus(sessionId: string, status: WebsiteChatStatus) {
+    return request<{ session: WebsiteChatSession }>(
+      `/api/admin/chat/sessions/${encodeURIComponent(sessionId)}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      }
+    );
+  },
+
+  async convertAdminChatToLead(sessionId: string) {
+    return request<{ lead: CrmLead; session: WebsiteChatSession }>(
+      `/api/admin/chat/sessions/${encodeURIComponent(sessionId)}/convert-lead`,
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async checkUnansweredChatInquiries() {
+    return request<{
+      checkedCount: number;
+      escalatedCount: number;
+      adminOnline: boolean;
+      skippedReason?: string;
+      escalatedSessionIds: string[];
+    }>('/api/admin/chat/check-unanswered', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
   }
 };

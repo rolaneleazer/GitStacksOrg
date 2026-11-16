@@ -4,7 +4,8 @@ import type {
   AgentAvatarIcon,
   AgentId,
   AgentOfficeProfile,
-  AgentReport
+  AgentReport,
+  LiveWebsiteVisitor
 } from '../../shared/types.ts';
 
 interface VirtualOfficeMapProps {
@@ -13,6 +14,11 @@ interface VirtualOfficeMapProps {
   selectedAgentId: AgentId;
   onSelectAgent: (agentId: AgentId) => void;
   speechTick: number;
+  walkTick: number;
+  continuousWalk: boolean;
+  visitors: LiveWebsiteVisitor[];
+  selectedVisitorId: string | null;
+  onSelectVisitor: (sessionId: string | null) => void;
 }
 
 const ORIGIN_X = 315;
@@ -134,17 +140,99 @@ const LOUNGE_SLOTS: { dx: number; dy: number }[] = [
   { dx: -0.2, dy: -1.1 }
 ];
 
+// Continuous multi-waypoint patrol paths for 1-second live walking across the HQ floor
+const AGENT_PATROL_CIRCUITS: Record<AgentId, { x: number; y: number }[]> = {
+  ceo: [
+    { x: 5.8, y: 1.9 },
+    { x: 6.5, y: 2.2 },
+    { x: 7.4, y: 2.2 },
+    { x: 7.8, y: 2.8 },
+    { x: 7.8, y: 3.6 },
+    { x: 7.8, y: 2.2 },
+    { x: 6.8, y: 1.5 },
+    { x: 5.2, y: 1.5 }
+  ],
+  marketing: [
+    { x: 5.2, y: 5.1 },
+    { x: 4.7, y: 4.7 },
+    { x: 4.3, y: 5.0 },
+    { x: 5.4, y: 5.9 },
+    { x: 6.3, y: 5.4 },
+    { x: 6.9, y: 4.9 },
+    { x: 6.1, y: 4.4 },
+    { x: 5.0, y: 4.6 }
+  ],
+  traffic: [
+    { x: 6.7, y: 5.8 },
+    { x: 7.5, y: 5.4 },
+    { x: 7.8, y: 4.7 },
+    { x: 7.8, y: 3.7 },
+    { x: 7.2, y: 4.3 },
+    { x: 6.0, y: 4.9 },
+    { x: 5.6, y: 6.0 },
+    { x: 6.4, y: 6.3 }
+  ],
+  cybersecurity: [
+    { x: 9.2, y: 1.8 },
+    { x: 8.4, y: 2.2 },
+    { x: 7.8, y: 2.2 },
+    { x: 7.8, y: 1.6 },
+    { x: 8.8, y: 1.2 },
+    { x: 10.1, y: 1.4 },
+    { x: 10.5, y: 2.1 },
+    { x: 9.7, y: 2.5 }
+  ],
+  qa: [
+    { x: 10.4, y: 2.7 },
+    { x: 9.7, y: 3.0 },
+    { x: 8.6, y: 2.8 },
+    { x: 8.3, y: 2.1 },
+    { x: 9.1, y: 1.4 },
+    { x: 10.2, y: 1.6 },
+    { x: 10.8, y: 2.3 },
+    { x: 10.0, y: 2.9 }
+  ],
+  adsense: [
+    { x: 9.1, y: 5.1 },
+    { x: 8.3, y: 5.2 },
+    { x: 7.8, y: 4.9 },
+    { x: 8.4, y: 4.5 },
+    { x: 9.6, y: 4.6 },
+    { x: 10.6, y: 5.0 },
+    { x: 9.9, y: 5.8 },
+    { x: 8.8, y: 6.1 }
+  ],
+  booking: [
+    { x: 10.3, y: 6.1 },
+    { x: 9.4, y: 6.2 },
+    { x: 8.3, y: 5.6 },
+    { x: 7.8, y: 5.0 },
+    { x: 6.7, y: 5.0 },
+    { x: 7.8, y: 5.0 },
+    { x: 8.9, y: 4.9 },
+    { x: 10.4, y: 5.3 }
+  ]
+};
+
+const ENTRANCE_POS = { x: 0.45, y: 1.65 };
+
 export function VirtualOfficeMap({
   profiles,
   reports,
   selectedAgentId,
   onSelectAgent,
-  speechTick
+  speechTick,
+  walkTick,
+  continuousWalk,
+  visitors,
+  selectedVisitorId,
+  onSelectVisitor
 }: VirtualOfficeMapProps) {
   const idleProfiles = profiles.filter((p) => p.work_status === 'idle');
+  const selectedVisitor = visitors.find((v) => v.session_id === selectedVisitorId) || null;
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-[#0B1120] p-3 sm:p-4 text-slate-100 shadow-xs">
+    <div className="rounded-xl border border-slate-800 bg-[#0B1120] p-3 sm:p-4 text-slate-100 shadow-xs space-y-3">
       <div className="relative overflow-hidden rounded-lg border border-slate-800/80 bg-[radial-gradient(circle_at_top,_rgba(30,64,175,0.16),_transparent_65%)]">
         <svg
           viewBox="0 0 760 450"
@@ -176,8 +264,10 @@ export function VirtualOfficeMap({
             strokeWidth="1.2"
           />
 
-          {/* Hallway path connecting Pantry & Lounge to Work Rooms */}
+          {/* Hallway path connecting Entrance, Lounge & Work Rooms */}
           {(() => {
+            const ent = iso(ENTRANCE_POS.x, ENTRANCE_POS.y);
+            const entJoin = iso(4.3, 2.2);
             const pA = iso(3.8, 5.0);
             const pB = iso(4.3, 5.0);
             const pC = iso(7.8, 5.0);
@@ -187,9 +277,46 @@ export function VirtualOfficeMap({
             const pG = iso(8.1, 5.3);
             return (
               <g stroke="rgba(148,163,184,0.22)" strokeWidth="1.5" strokeDasharray="4 4" fill="none">
+                <line x1={ent.x} y1={ent.y} x2={entJoin.x} y2={entJoin.y} stroke="rgba(56,189,248,0.35)" />
                 <polyline points={`${pA.x},${pA.y} ${pB.x},${pB.y} ${pC.x},${pC.y} ${pD.x},${pD.y} ${pE.x},${pE.y}`} />
                 <line x1={pD.x} y1={pD.y} x2={pF.x} y2={pF.y} />
                 <line x1={pC.x} y1={pC.y} x2={pG.x} y2={pG.y} />
+              </g>
+            );
+          })()}
+
+          {/* Website Visitor Entrance Gate */}
+          {(() => {
+            const entPos = iso(ENTRANCE_POS.x, ENTRANCE_POS.y);
+            return (
+              <g transform={`translate(${entPos.x}, ${entPos.y})`}>
+                <polygon
+                  points="0,-10 18,0 0,10 -18,0"
+                  fill="#0C4A6E"
+                  stroke="#38BDF8"
+                  strokeWidth="1.4"
+                />
+                <rect
+                  x="-38"
+                  y="-24"
+                  width="76"
+                  height="14"
+                  rx="3"
+                  fill="#0F172A"
+                  stroke="#38BDF8"
+                  strokeWidth="0.9"
+                />
+                <text
+                  x="0"
+                  y="-14.5"
+                  textAnchor="middle"
+                  fill="#BAE6FD"
+                  fontSize="7.8"
+                  fontWeight="700"
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                >
+                  SITE ENTRANCE
+                </text>
               </g>
             );
           })()}
@@ -271,13 +398,118 @@ export function VirtualOfficeMap({
             );
           })}
 
-          {/* 7 Animated Customizable Agents */}
+          {/* Live Website Visitors Walking Inside Office Zones */}
+          {visitors.map((visitor, idx) => {
+            const strideX = continuousWalk ? Math.sin((walkTick + idx * 2) * 0.85) * 0.28 : 0;
+            const strideY = continuousWalk ? Math.cos((walkTick + idx * 3) * 0.85) * 0.22 : 0;
+            const gx = Math.max(0.5, Math.min(11.3, visitor.target_x + strideX));
+            const gy = Math.max(0.6, Math.min(7.0, visitor.target_y + strideY));
+            const vPos = iso(gx, gy);
+            const isSelected = selectedVisitorId === visitor.session_id;
+            const shortRoute = visitor.current_path === '/' ? 'Home' : visitor.current_path.slice(0, 12);
+
+            return (
+              <g
+                key={visitor.session_id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectVisitor(isSelected ? null : visitor.session_id);
+                }}
+                className="cursor-pointer"
+                style={{
+                  transform: `translate(${vPos.x}px, ${vPos.y}px)`,
+                  transition: 'transform 0.96s linear'
+                }}
+              >
+                {isSelected && (
+                  <ellipse
+                    cx="0"
+                    cy="2"
+                    rx="18"
+                    ry="11"
+                    fill="none"
+                    stroke="#38BDF8"
+                    strokeWidth="1.5"
+                    strokeDasharray="3 2"
+                  />
+                )}
+                <g transform="translate(0, -25)">
+                  <rect
+                    x="-30"
+                    y="-11"
+                    width="60"
+                    height="13"
+                    rx="4"
+                    fill="#082F49"
+                    stroke="#38BDF8"
+                    strokeWidth="0.9"
+                  />
+                  <text
+                    x="0"
+                    y="-2"
+                    textAnchor="middle"
+                    fill="#E0F2FE"
+                    fontSize="7.4"
+                    fontWeight="700"
+                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                  >
+                    {shortRoute}
+                  </text>
+                </g>
+                <circle
+                  cx="0"
+                  cy="-7"
+                  r="9.5"
+                  fill="#0284C7"
+                  stroke={isSelected ? '#FFFFFF' : '#7DD3FC'}
+                  strokeWidth={isSelected ? '2' : '1.5'}
+                />
+                {/* Visitor silhouette icon */}
+                <circle cx="0" cy="-9.5" r="2.5" fill="white" />
+                <path
+                  d="M-4 -3.2 C-3.6 -5.5 3.6 -5.5 4 -3.2"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+                <circle
+                  cx="7.5"
+                  cy="-13"
+                  r="3"
+                  fill="#22D3EE"
+                  stroke="#0F172A"
+                  strokeWidth="1.2"
+                />
+              </g>
+            );
+          })}
+
+          {/* 7 Animated Continuously Walking Agents */}
           {profiles.map((prof, idx) => {
             const report = reports.find((r) => r.id === prof.agent_id);
             const isSelected = prof.agent_id === selectedAgentId;
 
             let targetGrid = { x: prof.desk_x, y: prof.desk_y };
-            if (prof.work_status === 'idle') {
+
+            if (continuousWalk) {
+              if (prof.work_status === 'idle') {
+                // Gentle pacing inside the Lounge
+                const baseSlot = LOUNGE_SLOTS[idx % LOUNGE_SLOTS.length];
+                const stepOffsetX = Math.sin((walkTick + idx) * 0.9) * 0.35;
+                const stepOffsetY = Math.cos((walkTick + idx * 2) * 0.9) * 0.3;
+                targetGrid = {
+                  x: OFFICE_LOUNGE_POSITION.x + baseSlot.dx + stepOffsetX,
+                  y: OFFICE_LOUNGE_POSITION.y + baseSlot.dy + stepOffsetY
+                };
+              } else {
+                const circuit = AGENT_PATROL_CIRCUITS[prof.agent_id] || [
+                  { x: prof.desk_x, y: prof.desk_y }
+                ];
+                const waypoint = circuit[(walkTick + idx * 2) % circuit.length];
+                targetGrid = { x: waypoint.x, y: waypoint.y };
+              }
+            } else if (prof.work_status === 'idle') {
               const slotIdx = Math.max(
                 0,
                 idleProfiles.findIndex((p) => p.agent_id === prof.agent_id)
@@ -298,16 +530,20 @@ export function VirtualOfficeMap({
             const showBubble =
               isSelected ||
               prof.work_status === 'walking' ||
-              (prof.work_status === 'working' && (speechTick + idx) % 3 === 0);
+              (continuousWalk && (speechTick + idx) % 3 === 0);
 
             const bubbleText =
-              prof.work_status === 'walking'
-                ? 'On my way!'
-                : prof.work_status === 'idle'
-                  ? 'Lounge Break'
-                  : report && report.status !== 'healthy'
-                    ? `${report.score}% · Review`
-                    : `${report ? report.score : 100}% Nominal`;
+              prof.work_status === 'idle'
+                ? 'Lounge Break'
+                : continuousWalk && prof.work_status === 'working'
+                  ? report && report.status !== 'healthy'
+                    ? `Patrol · ${report.score}%`
+                    : `${report ? report.score : 100}% Active`
+                  : prof.work_status === 'walking'
+                    ? 'On my way!'
+                    : report && report.status !== 'healthy'
+                      ? `${report.score}% · Review`
+                      : `${report ? report.score : 100}% Nominal`;
 
             const statusDotColor =
               prof.work_status === 'working'
@@ -323,7 +559,9 @@ export function VirtualOfficeMap({
                 className="cursor-pointer"
                 style={{
                   transform: `translate(${pos.x}px, ${pos.y}px)`,
-                  transition: 'transform 1.15s cubic-bezier(0.22, 1, 0.36, 1)'
+                  transition: continuousWalk
+                    ? 'transform 0.96s linear'
+                    : 'transform 1.15s cubic-bezier(0.22, 1, 0.36, 1)'
                 }}
               >
                 {/* Selection ring */}
@@ -338,33 +576,6 @@ export function VirtualOfficeMap({
                     strokeWidth="1.6"
                     strokeDasharray="3 2"
                   />
-                )}
-
-                {/* Ground pulse ring for active walking or selected working */}
-                {(prof.work_status === 'walking' || isSelected) && (
-                  <ellipse
-                    cx="0"
-                    cy="2"
-                    rx="18"
-                    ry="11"
-                    fill="none"
-                    stroke={prof.accent_color}
-                    strokeWidth="1.5"
-                    opacity="0.7"
-                  >
-                    <animate
-                      attributeName="rx"
-                      values="15;24;15"
-                      dur="2.2s"
-                      repeatCount="indefinite"
-                    />
-                    <animate
-                      attributeName="opacity"
-                      values="0.8;0.1;0.8"
-                      dur="2.2s"
-                      repeatCount="indefinite"
-                    />
-                  </ellipse>
                 )}
 
                 {/* Floating Speech / Telemetry Bubble */}
@@ -451,21 +662,47 @@ export function VirtualOfficeMap({
         </svg>
       </div>
 
+      {/* Selected Website Visitor Quick Inspector */}
+      {selectedVisitor && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-500/40 bg-sky-950/50 px-3.5 py-2.5 text-xs text-sky-100">
+          <div className="space-y-0.5 min-w-0">
+            <div className="font-mono font-bold text-sky-300">
+              Live Visitor · {selectedVisitor.zone_label} ({selectedVisitor.current_path})
+            </div>
+            <div className="font-mono text-[11px] text-slate-300 tabular-nums">
+              Device: {selectedVisitor.device_type} · Entered{' '}
+              {new Date(selectedVisitor.started_at).toLocaleTimeString()} · Active{' '}
+              {new Date(selectedVisitor.last_seen_at).toLocaleTimeString()}
+              {selectedVisitor.referrer ? ` · Ref: ${selectedVisitor.referrer}` : ''}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSelectVisitor(null)}
+            className="rounded border border-sky-400/40 px-2.5 py-1 text-[11px] font-semibold text-sky-200 hover:bg-sky-900/50"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Footer Legend */}
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-400">
-        <span>Click any agent on the floor map to inspect their live mission, conversation, and customization.</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-400">
+        <span>
+          Click any agent or cyan website visitor token on the floor map to inspect live activity.
+        </span>
         <div className="flex flex-wrap items-center gap-3">
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-            Working at Desk
+            Patrolling / Active
           </span>
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-            Walking Hallway
+            Hallway Shift
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
-            Resting in Lounge
+            <span className="h-2.5 w-2.5 rounded-full bg-[#38BDF8]" />
+            Live Website Visitor ({visitors.length})
           </span>
         </div>
       </div>

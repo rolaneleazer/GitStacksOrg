@@ -34,6 +34,7 @@ import type {
   ChatThread,
   ChatThreadStatus,
   ClientInquiry,
+  CloudflareHistoryRange,
   CloudflareWindowPreset,
   CommentStatus,
   CrmFollowUpStep,
@@ -51,6 +52,7 @@ import type {
   IntegrationProviderId,
   LarkConnectionStatus,
   NewsletterSubscriber,
+  OfficeLiveHudSummary,
   OpenSourceSyncResult,
   OpenSourceSyncTrack,
   PageContentConfig,
@@ -63,9 +65,18 @@ import type {
   ThemePresetId,
   UserRole,
   UserStatus,
-  UserWorkflowItem
+  UserWorkflowItem,
+  WebsiteChatMessage,
+  WebsiteChatSession,
+  WebsiteChatStatus
 } from '../shared/types.ts';
+import { getChatWatcherLastRunAt, isSessionUnanswered, runOfflineChatInquiryCheck } from './chatWatcher.ts';
 import { fetchCloudflareZoneAnalytics } from './cloudflare.ts';
+import {
+  generateCloudflareAiForecast,
+  getCloudflareHistoryAnalysis,
+  syncCloudflareHistoricalSnapshots
+} from './cloudflareHistory.ts';
 import {
   buildLeadsFromCsvInputs,
   enrichAndBuildApolloLeads,
@@ -79,6 +90,15 @@ import {
   searchGoogleMapsEstablishments
 } from './connectors.ts';
 import { collectInfrastructureMetrics } from './infrastructure.ts';
+import {
+  broadcastToAdmins,
+  broadcastToVisitor,
+  getLastAdminSeenAt,
+  isAdminOnline,
+  listLiveVisitors,
+  markAdminPresence,
+  recordVisitorPresence
+} from './realtime.ts';
 import {
   buildLarkAuthorizeUrl,
   exchangeLarkCodeForTokens,
@@ -105,6 +125,7 @@ import {
   addSubscriber,
   assignChatThread,
   assignInquiry,
+  appendWebsiteChatMessage,
   autoMigrateSupabaseSchema,
   autoSeedSupabaseIfEmpty,
   bulkUpdateAgentWorkStatus,
@@ -122,6 +143,8 @@ import {
   deleteWorkflowItem,
   findDemoUserByEmail,
   findDemoUserById,
+  findWebsiteChatSessionById,
+  findWebsiteChatSessionByToken,
   getAdSenseSettings,
   getAgentReportSettings,
   getAnalyticsSummary,
@@ -139,6 +162,7 @@ import {
   listAgentEmailReports,
   listAgentOfficeProfiles,
   listAgentTasks,
+  listAllWebsiteChatMessages,
   listChatMessages,
   listChatThreads,
   listComments,
@@ -153,6 +177,8 @@ import {
   listSubscribers,
   listUserDirectory,
   listUserProfiles,
+  listWebsiteChatMessages,
+  listWebsiteChatSessions,
   listWorkflowItems,
   recordAgentEmailReport,
   recordAnalyticsEvent,
@@ -176,6 +202,7 @@ import {
   upsertMergeCrmLeads,
   upsertPageContent,
   upsertPost,
+  upsertWebsiteChatSession,
   verifyDemoPassword,
   verifyDemoSessionToken,
   verifyEditorToken,
@@ -3712,6 +3739,545 @@ export async function createApp(): Promise<Express> {
       });
     }
   });
+
+  app.get('/api/admin/cloudflare/history', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const rawRange = typeof req.query.range === 'string' ? req.query.range : '14d';
+      const validRanges: CloudflareHistoryRange[] = ['7d', '14d', '30d', 'all'];
+      const range: CloudflareHistoryRange = validRanges.includes(rawRange as CloudflareHistoryRange)
+        ? (rawRange as CloudflareHistoryRange)
+        : '14d';
+      const data = await getCloudflareHistoryAnalysis(range, getBearerToken(req));
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to load Cloudflare historical analysis'
+      });
+    }
+  });
+
+  app.post('/api/admin/cloudflare/history/sync', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const rawRange = typeof req.body?.range === 'string' ? req.body.range : '14d';
+      const validRanges: CloudflareHistoryRange[] = ['7d', '14d', '30d', 'all'];
+      const range: CloudflareHistoryRange = validRanges.includes(rawRange as CloudflareHistoryRange)
+        ? (rawRange as CloudflareHistoryRange)
+        : '14d';
+      const token = getBearerToken(req);
+      const syncResult = await syncCloudflareHistoricalSnapshots(token);
+      const analysis = await getCloudflareHistoryAnalysis(range, token);
+      res.json({ syncResult, analysis });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to sync Cloudflare history'
+      });
+    }
+  });
+
+  app.post('/api/admin/cloudflare/forecast', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const rawRange = typeof req.body?.range === 'string' ? req.body.range : '14d';
+      const validRanges: CloudflareHistoryRange[] = ['7d', '14d', '30d', 'all'];
+      const range: CloudflareHistoryRange = validRanges.includes(rawRange as CloudflareHistoryRange)
+        ? (rawRange as CloudflareHistoryRange)
+        : '14d';
+      const token = getBearerToken(req);
+      const forecast = await generateCloudflareAiForecast(range, token);
+      const analysis = await getCloudflareHistoryAnalysis(range, token);
+      res.json({ forecast, analysis });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to generate Cloudflare AI forecast'
+      });
+    }
+  });
+
+  // --- Live Website Visitor Presence & Virtual Office Site Operations HUD ---
+
+  let cachedCfHud: { fetchedAtMs: number; reqs: number | null; errRate: number | null; cacheRate: number | null } = {
+    fetchedAtMs: 0,
+    reqs: null,
+    errRate: null,
+    cacheRate: null
+  };
+
+  async function buildOfficeHudSummary(userToken?: string): Promise<OfficeLiveHudSummary> {
+    const [chatSessions, demoStats, larkConfig] = await Promise.all([
+      listWebsiteChatSessions(userToken).catch(() => []),
+      listDemoUsersWithStats(userToken).catch(() => ({ users: [], summary: null })),
+      resolveIntegrationConfig('lark_smtp', userToken).catch(() => null)
+    ]);
+
+    if (Date.now() - cachedCfHud.fetchedAtMs > 60_000) {
+      const cf = await fetchCloudflareZoneAnalytics('24h', userToken).catch(() => null);
+      if (cf?.connected) {
+        cachedCfHud = {
+          fetchedAtMs: Date.now(),
+          reqs: cf.summary.totalRequests,
+          errRate: cf.summary.error5xxRate,
+          cacheRate: cf.summary.cacheHitRate
+        };
+      } else {
+        cachedCfHud = { fetchedAtMs: Date.now(), reqs: null, errRate: null, cacheRate: null };
+      }
+    }
+
+    const visitors = listLiveVisitors();
+    const unansweredChatsCount = chatSessions.filter(isSessionUnanswered).length;
+    const openChatsCount = chatSessions.filter((s) => s.status !== 'resolved').length;
+    const escalatedChatsCount = chatSessions.filter((s) => Boolean(s.escalated_at)).length;
+    const activeDemoUsersCount = demoStats.users.filter((u) => !u.is_expired).length;
+
+    return {
+      activeVisitorsCount: visitors.length,
+      visitors,
+      adminOnline: isAdminOnline(),
+      lastAdminSeenAt: getLastAdminSeenAt(),
+      unansweredChatsCount,
+      openChatsCount,
+      escalatedChatsCount,
+      activeDemoUsersCount,
+      cloudflare24hRequests: cachedCfHud.reqs,
+      cloudflare5xxRate: cachedCfHud.errRate,
+      cloudflareCacheRate: cachedCfHud.cacheRate,
+      larkSmtpConnected: Boolean(larkConfig?.secret && larkConfig?.configMeta?.email),
+      watcherLastRunAt: getChatWatcherLastRunAt()
+    };
+  }
+
+  app.post('/api/public/presence', (req, res) => {
+    try {
+      const { session_id, path: pagePath, device_type, referrer } = (req.body || {}) as {
+        session_id?: string;
+        path?: string;
+        device_type?: string;
+        referrer?: string;
+      };
+      if (!session_id || !session_id.trim()) {
+        return res.status(400).json({ error: 'session_id required' });
+      }
+      const visitors = recordVisitorPresence({
+        session_id: session_id.trim(),
+        path: pagePath || '/',
+        device_type,
+        referrer
+      });
+      res.json({ ok: true, activeVisitorsCount: visitors.length });
+    } catch {
+      res.status(500).json({ error: 'Presence update failed' });
+    }
+  });
+
+  app.post(
+    '/api/admin/presence/heartbeat',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        markAdminPresence();
+        const hud = await buildOfficeHudSummary(getBearerToken(req));
+        res.json({ hud });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Heartbeat failed' });
+      }
+    }
+  );
+
+  app.get(
+    '/api/admin/office/hud',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const hud = await buildOfficeHudSummary(getBearerToken(req));
+        res.json({ hud });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load office HUD' });
+      }
+    }
+  );
+
+  // --- Public Floating Home Page Live Chat & Admin Inbox Real-Time Replies ---
+
+  app.get('/api/public/chat/session', async (req, res) => {
+    try {
+      const rawToken =
+        typeof req.query.visitor_token === 'string' ? req.query.visitor_token.trim() : '';
+      const pagePath = typeof req.query.page_path === 'string' ? req.query.page_path.trim() : '/';
+      const visitorToken = rawToken.slice(0, 120) || `vchat-${crypto.randomUUID()}`;
+      let session = await findWebsiteChatSessionByToken(visitorToken);
+      const now = new Date().toISOString();
+
+      if (!session) {
+        session = await upsertWebsiteChatSession({
+          id: `wcs-${crypto.randomUUID().slice(0, 10)}`,
+          visitor_token: visitorToken,
+          visitor_name: 'Website Visitor',
+          visitor_email: '',
+          page_path: pagePath || '/',
+          status: 'open',
+          last_visitor_msg_at: null,
+          last_admin_reply_at: null,
+          escalated_at: null,
+          converted_lead_id: null,
+          created_at: now,
+          updated_at: now
+        });
+      }
+      const messages = await listWebsiteChatMessages(session.id);
+      res.json({ session, messages, adminOnline: isAdminOnline() });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open chat session' });
+    }
+  });
+
+  app.post('/api/public/chat/profile', async (req, res) => {
+    try {
+      const { visitor_token, visitor_name, visitor_email, page_path } = (req.body || {}) as {
+        visitor_token?: string;
+        visitor_name?: string;
+        visitor_email?: string;
+        page_path?: string;
+      };
+      if (!visitor_token?.trim()) {
+        return res.status(400).json({ error: 'visitor_token is required.' });
+      }
+      const existing = await findWebsiteChatSessionByToken(visitor_token.trim());
+      if (!existing) {
+        return res.status(404).json({ error: 'Chat session not found.' });
+      }
+      const updated = await upsertWebsiteChatSession({
+        ...existing,
+        visitor_name: visitor_name?.trim().slice(0, 80) || existing.visitor_name,
+        visitor_email: visitor_email?.trim().toLowerCase().slice(0, 140) ?? existing.visitor_email,
+        page_path: page_path?.trim().slice(0, 140) || existing.page_path,
+        updated_at: new Date().toISOString()
+      });
+      broadcastToAdmins('chat:session_updated', { session: updated });
+      res.json({ session: updated });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update chat profile' });
+    }
+  });
+
+  app.post('/api/public/chat/message', async (req, res) => {
+    try {
+      const { visitor_token, visitor_name, visitor_email, page_path, body } = (req.body || {}) as {
+        visitor_token?: string;
+        visitor_name?: string;
+        visitor_email?: string;
+        page_path?: string;
+        body?: string;
+      };
+      const cleanBody = (body || '').trim();
+      if (!cleanBody) {
+        return res.status(400).json({ error: 'Message text cannot be empty.' });
+      }
+      const token = (visitor_token || '').trim().slice(0, 120) || `vchat-${crypto.randomUUID()}`;
+      const now = new Date().toISOString();
+
+      let session = await findWebsiteChatSessionByToken(token);
+      if (!session) {
+        session = {
+          id: `wcs-${crypto.randomUUID().slice(0, 10)}`,
+          visitor_token: token,
+          visitor_name: visitor_name?.trim().slice(0, 80) || 'Website Visitor',
+          visitor_email: visitor_email?.trim().toLowerCase().slice(0, 140) || '',
+          page_path: page_path?.trim().slice(0, 140) || '/',
+          status: 'open',
+          last_visitor_msg_at: now,
+          last_admin_reply_at: null,
+          escalated_at: null,
+          converted_lead_id: null,
+          created_at: now,
+          updated_at: now
+        };
+      } else {
+        session = {
+          ...session,
+          visitor_name: visitor_name?.trim().slice(0, 80) || session.visitor_name,
+          visitor_email: visitor_email?.trim().toLowerCase().slice(0, 140) || session.visitor_email,
+          page_path: page_path?.trim().slice(0, 140) || session.page_path,
+          status: 'open',
+          last_visitor_msg_at: now,
+          // Reset escalated_at on a fresh visitor follow-up after a previous reply/escalation cycle if resolved
+          escalated_at:
+            session.status === 'resolved' || session.last_admin_reply_at ? null : session.escalated_at,
+          updated_at: now
+        };
+      }
+
+      session = await upsertWebsiteChatSession(session);
+      const message = await appendWebsiteChatMessage({
+        id: `wcm-${crypto.randomUUID().slice(0, 10)}`,
+        session_id: session.id,
+        sender_role: 'visitor',
+        sender_name: session.visitor_name,
+        body: cleanBody.slice(0, 2000),
+        created_at: now
+      });
+
+      broadcastToAdmins('chat:message', { session, message });
+      broadcastToAdmins('chat:session_updated', { session, message });
+
+      res.status(201).json({ session, message, adminOnline: isAdminOnline() });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to send chat message' });
+    }
+  });
+
+  app.get(
+    '/api/admin/chat/sessions',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const [sessions, allMessages] = await Promise.all([
+          listWebsiteChatSessions(token),
+          listAllWebsiteChatMessages(token)
+        ]);
+        const latestBySession = new Map<string, WebsiteChatMessage>();
+        for (const msg of allMessages) {
+          if (!latestBySession.has(msg.session_id)) {
+            latestBySession.set(msg.session_id, msg);
+          }
+        }
+        const enriched = sessions.map((s) => ({
+          ...s,
+          unread_for_admin: isSessionUnanswered(s),
+          last_message_preview: latestBySession.get(s.id)?.body || ''
+        }));
+        res.json({
+          sessions: enriched,
+          unansweredCount: enriched.filter((s) => s.unread_for_admin).length,
+          adminOnline: isAdminOnline()
+        });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load chat sessions' });
+      }
+    }
+  );
+
+  app.get(
+    '/api/admin/chat/sessions/:id',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const session = await findWebsiteChatSessionById(req.params.id, token);
+        if (!session) {
+          return res.status(404).json({ error: 'Chat session not found.' });
+        }
+        const messages = await listWebsiteChatMessages(session.id, token);
+        res.json({ session, messages, adminOnline: isAdminOnline() });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load chat thread' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/chat/sessions/:id/reply',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req: AuthReq, res) => {
+      try {
+        markAdminPresence();
+        const token = getBearerToken(req);
+        const session = await findWebsiteChatSessionById(req.params.id, token);
+        if (!session) {
+          return res.status(404).json({ error: 'Chat session not found.' });
+        }
+        const { body, alsoSendEmail } = (req.body || {}) as {
+          body?: string;
+          alsoSendEmail?: boolean;
+        };
+        const cleanBody = (body || '').trim();
+        if (!cleanBody) {
+          return res.status(400).json({ error: 'Reply text cannot be empty.' });
+        }
+
+        const now = new Date().toISOString();
+        const senderDisplay = req.editor!.profile?.full_name || req.editor!.email;
+        const message = await appendWebsiteChatMessage(
+          {
+            id: `wcm-${crypto.randomUUID().slice(0, 10)}`,
+            session_id: session.id,
+            sender_role: 'admin',
+            sender_name: senderDisplay,
+            body: cleanBody.slice(0, 3000),
+            created_at: now
+          },
+          token
+        );
+
+        const updatedSession = await upsertWebsiteChatSession(
+          {
+            ...session,
+            status: 'replied',
+            last_admin_reply_at: now,
+            updated_at: now
+          },
+          token
+        );
+
+        let emailNotice: string | undefined;
+        if (alsoSendEmail && session.visitor_email && session.visitor_email.includes('@')) {
+          const subject = `Reply from GitStack Team regarding your inquiry`;
+          try {
+            const sent = await sendLarkSmtpMail(
+              {
+                toEmail: session.visitor_email,
+                toName: session.visitor_name,
+                subject,
+                bodyText: `Hi ${session.visitor_name},\n\n${cleanBody}\n\nBest regards,\n${req.editor!.profile?.full_name || 'GitStack Team'}`
+              },
+              token
+            );
+            await addInboxEmailLog(
+              {
+                id: `eml-${crypto.randomUUID().slice(0, 10)}`,
+                recipient_email: session.visitor_email,
+                subject,
+                body: cleanBody,
+                channel: 'lark_smtp',
+                category: 'chat_reply',
+                related_id: session.id,
+                provider_message_id: sent.messageId,
+                status: 'sent',
+                error_detail: '',
+                sent_by: req.editor!.email,
+                sent_at: now
+              },
+              token
+            );
+            emailNotice = `Also emailed ${session.visitor_email} via Lark Mail.`;
+          } catch (mailErr) {
+            emailNotice = `Chat reply saved, but Lark email failed: ${
+              mailErr instanceof Error ? mailErr.message : 'SMTP error'
+            }`;
+          }
+        }
+
+        broadcastToVisitor(updatedSession.visitor_token, 'chat:message', {
+          session: updatedSession,
+          message
+        });
+        broadcastToAdmins('chat:session_updated', {
+          session: updatedSession,
+          message
+        });
+
+        res.status(201).json({ session: updatedSession, message, emailNotice });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to send reply' });
+      }
+    }
+  );
+
+  app.patch(
+    '/api/admin/chat/sessions/:id/status',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const session = await findWebsiteChatSessionById(req.params.id, token);
+        if (!session) {
+          return res.status(404).json({ error: 'Chat session not found.' });
+        }
+        const status = req.body?.status as WebsiteChatStatus;
+        if (!['open', 'replied', 'resolved'].includes(status)) {
+          return res.status(400).json({ error: 'Invalid chat status.' });
+        }
+        const updated = await upsertWebsiteChatSession(
+          { ...session, status, updated_at: new Date().toISOString() },
+          token
+        );
+        broadcastToAdmins('chat:session_updated', { session: updated });
+        res.json({ session: updated });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update chat status' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/chat/sessions/:id/convert-lead',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const session = await findWebsiteChatSessionById(req.params.id, token);
+        if (!session) {
+          return res.status(404).json({ error: 'Chat session not found.' });
+        }
+        const messages = await listWebsiteChatMessages(session.id, token);
+        const transcript = messages
+          .slice(-6)
+          .map((m) => `${m.sender_name}: ${m.body}`)
+          .join(' | ');
+        const now = new Date().toISOString();
+        const leadId = session.converted_lead_id || `lead-chat-${crypto.randomUUID().slice(0, 8)}`;
+        const emailDomain = session.visitor_email.includes('@')
+          ? session.visitor_email.split('@')[1]
+          : 'website-visitor.local';
+
+        const lead: CrmLead = {
+          id: leadId,
+          contact_name: session.visitor_name || 'Website Visitor',
+          role_title: 'Home Page Live Chat Lead',
+          email: session.visitor_email || '',
+          email_status: session.visitor_email.includes('@') ? 'public_found' : 'inferred',
+          company_name: emailDomain !== 'website-visitor.local' ? emailDomain : session.visitor_name,
+          company_domain: emailDomain !== 'website-visitor.local' ? emailDomain : '',
+          website_url: '',
+          github_url: '',
+          phone: '',
+          location: '',
+          rating: null,
+          source_detail: `Floating Home Page Chat (${session.page_path})`,
+          source_type: 'website',
+          source_urls: [session.page_path],
+          tech_stack: [],
+          research_brief: transcript.slice(0, 500) || 'Inbound Home Page live chat conversation.',
+          recommended_service: 'AI Integration',
+          fit_score: session.visitor_email ? 82 : 64,
+          deal_value: 20000,
+          stage: 'discovered',
+          proposal_subject: '',
+          proposal_body: '',
+          follow_up_sequence: [],
+          assigned_to: null,
+          last_contacted_at: null,
+          next_followup_at: null,
+          converted_inquiry_id: null,
+          created_at: now,
+          updated_at: now
+        };
+        const savedLead = await upsertCrmLead(lead, token);
+        const updatedSession = await upsertWebsiteChatSession(
+          { ...session, converted_lead_id: savedLead.id, updated_at: now },
+          token
+        );
+        res.json({ lead: savedLead, session: updatedSession });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to convert chat to CRM lead' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/chat/check-unanswered',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req: AuthReq, res) => {
+      try {
+        const result = await runOfflineChatInquiryCheck({
+          forceManual: true,
+          triggeredBy: req.editor!.email
+        });
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Inquiry check failed' });
+      }
+    }
+  );
 
   app.get('/api/supabase-schema', async (_req, res) => {
     try {

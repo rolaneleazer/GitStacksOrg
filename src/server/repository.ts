@@ -41,6 +41,8 @@ import type {
   ChatThread,
   ChatThreadStatus,
   ClientInquiry,
+  CloudflareAiForecast,
+  CloudflareHourlySnapshot,
   CommentStatus,
   CrmLead,
   CrmOAuthTokenRecord,
@@ -64,7 +66,9 @@ import type {
   UserProfile,
   UserRole,
   UserStatus,
-  UserWorkflowItem
+  UserWorkflowItem,
+  WebsiteChatMessage,
+  WebsiteChatSession
 } from '../shared/types.ts';
 
 interface LocalDatabase {
@@ -92,6 +96,10 @@ interface LocalDatabase {
   crm_integration_secrets?: IntegrationSecretRecord[];
   demo_users?: DemoUser[];
   inbox_email_logs?: InboxEmailLog[];
+  cloudflare_hourly_snapshots?: CloudflareHourlySnapshot[];
+  cloudflare_ai_forecasts?: CloudflareAiForecast[];
+  website_chat_sessions?: WebsiteChatSession[];
+  website_chat_messages?: WebsiteChatMessage[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -2885,6 +2893,294 @@ export async function addInboxEmailLog(
   await writeLocalDb(db);
   return log;
 }
+
+// --- Cloudflare Historical Hourly Snapshots & Gemini AI Forecasts ---
+
+export async function upsertCloudflareHourlySnapshots(
+  snapshots: CloudflareHourlySnapshot[],
+  userToken?: string
+): Promise<number> {
+  if (snapshots.length === 0) return 0;
+
+  if (isSupabaseConfigured()) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('cloudflare_hourly_snapshots')
+      .upsert(snapshots, { onConflict: 'zone_id,bucket_hour' });
+    if (!error) {
+      return snapshots.length;
+    }
+    if (!isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  const existing = db.cloudflare_hourly_snapshots || [];
+  const byKey = new Map<string, CloudflareHourlySnapshot>();
+  for (const row of existing) {
+    byKey.set(`${row.zone_id}:${row.bucket_hour}`, row);
+  }
+  for (const snap of snapshots) {
+    byKey.set(`${snap.zone_id}:${snap.bucket_hour}`, snap);
+  }
+  db.cloudflare_hourly_snapshots = Array.from(byKey.values())
+    .sort((a, b) => new Date(b.bucket_hour).getTime() - new Date(a.bucket_hour).getTime())
+    .slice(0, 2400);
+  await writeLocalDb(db);
+  return snapshots.length;
+}
+
+export async function listCloudflareHourlySnapshots(
+  zoneId: string,
+  sinceIso?: string,
+  userToken?: string
+): Promise<CloudflareHourlySnapshot[]> {
+  if (isSupabaseConfigured()) {
+    let query = getSupabaseClient(userToken)
+      .from('cloudflare_hourly_snapshots')
+      .select('*')
+      .eq('zone_id', zoneId)
+      .order('bucket_hour', { ascending: true })
+      .limit(2400);
+    if (sinceIso) {
+      query = query.gte('bucket_hour', sinceIso);
+    }
+    const { data, error } = await query;
+    if (!error && Array.isArray(data)) {
+      return data.map((row) => ({
+        ...row,
+        requests: Number(row.requests) || 0,
+        bytes: Number(row.bytes) || 0,
+        cached_requests: Number(row.cached_requests) || 0,
+        status_1xx: Number(row.status_1xx) || 0,
+        status_2xx: Number(row.status_2xx) || 0,
+        status_3xx: Number(row.status_3xx) || 0,
+        status_4xx: Number(row.status_4xx) || 0,
+        status_5xx: Number(row.status_5xx) || 0,
+        top_paths: Array.isArray(row.top_paths) ? row.top_paths : [],
+        top_countries: Array.isArray(row.top_countries) ? row.top_countries : []
+      })) as CloudflareHourlySnapshot[];
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  const sinceMs = sinceIso ? new Date(sinceIso).getTime() : 0;
+  return (db.cloudflare_hourly_snapshots || [])
+    .filter((s) => s.zone_id === zoneId && (!sinceIso || new Date(s.bucket_hour).getTime() >= sinceMs))
+    .sort((a, b) => new Date(a.bucket_hour).getTime() - new Date(b.bucket_hour).getTime());
+}
+
+export async function getCloudflareAiForecast(
+  zoneId: string,
+  userToken?: string
+): Promise<CloudflareAiForecast | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cloudflare_ai_forecasts')
+      .select('*')
+      .eq('zone_id', zoneId)
+      .limit(1);
+    if (!error && data && data[0] && data[0].forecast_payload) {
+      return data[0].forecast_payload as CloudflareAiForecast;
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  return (db.cloudflare_ai_forecasts || []).find((f) => f.zoneId === zoneId) || null;
+}
+
+export async function upsertCloudflareAiForecast(
+  forecast: CloudflareAiForecast,
+  userToken?: string
+): Promise<CloudflareAiForecast> {
+  if (isSupabaseConfigured()) {
+    const row = {
+      zone_id: forecast.zoneId,
+      zone_name: forecast.zoneName,
+      model_used: forecast.modelUsed,
+      horizon_days: forecast.horizonDays,
+      range_analyzed: forecast.rangeAnalyzed,
+      forecast_payload: forecast,
+      generated_at: forecast.generatedAt
+    };
+    const { error } = await getSupabaseClient(userToken)
+      .from('cloudflare_ai_forecasts')
+      .upsert(row, { onConflict: 'zone_id' });
+    if (!error) return forecast;
+    if (!isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  const list = db.cloudflare_ai_forecasts || [];
+  const idx = list.findIndex((f) => f.zoneId === forecast.zoneId);
+  if (idx >= 0) list[idx] = forecast;
+  else list.unshift(forecast);
+  db.cloudflare_ai_forecasts = list;
+  await writeLocalDb(db);
+  return forecast;
+}
+
+// --- Floating Home Page Website Live Chat ---
+
+export async function findWebsiteChatSessionByToken(
+  visitorToken: string
+): Promise<WebsiteChatSession | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient()
+      .from('website_chat_sessions')
+      .select('*')
+      .eq('visitor_token', visitorToken)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as WebsiteChatSession;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.website_chat_sessions || []).find((s) => s.visitor_token === visitorToken) || null;
+}
+
+export async function findWebsiteChatSessionById(
+  sessionId: string,
+  userToken?: string
+): Promise<WebsiteChatSession | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('website_chat_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as WebsiteChatSession;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.website_chat_sessions || []).find((s) => s.id === sessionId) || null;
+}
+
+export async function upsertWebsiteChatSession(
+  session: WebsiteChatSession,
+  userToken?: string
+): Promise<WebsiteChatSession> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('website_chat_sessions')
+      .upsert(session, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) return data as WebsiteChatSession;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.website_chat_sessions || [];
+  const idx = list.findIndex((s) => s.id === session.id || s.visitor_token === session.visitor_token);
+  if (idx >= 0) list[idx] = session;
+  else list.unshift(session);
+  db.website_chat_sessions = list.slice(0, 300);
+  await writeLocalDb(db);
+  return session;
+}
+
+export async function listWebsiteChatSessions(userToken?: string): Promise<WebsiteChatSession[]> {
+  let sessions: WebsiteChatSession[] = [];
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('website_chat_sessions')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(200);
+    if (!error && Array.isArray(data)) {
+      sessions = data as WebsiteChatSession[];
+    } else if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    } else {
+      const db = await readLocalDb();
+      sessions = [...(db.website_chat_sessions || [])];
+    }
+  } else {
+    const db = await readLocalDb();
+    sessions = [...(db.website_chat_sessions || [])];
+  }
+
+  return sessions.sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  );
+}
+
+export async function listWebsiteChatMessages(
+  sessionId: string,
+  userToken?: string
+): Promise<WebsiteChatMessage[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('website_chat_messages')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true })
+      .limit(300);
+    if (!error && Array.isArray(data)) {
+      return data as WebsiteChatMessage[];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.website_chat_messages || [])
+    .filter((m) => m.session_id === sessionId)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+}
+
+export async function listAllWebsiteChatMessages(
+  userToken?: string
+): Promise<WebsiteChatMessage[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('website_chat_messages')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(800);
+    if (!error && Array.isArray(data)) {
+      return data as WebsiteChatMessage[];
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.website_chat_messages || [])].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+}
+
+export async function appendWebsiteChatMessage(
+  msg: WebsiteChatMessage,
+  userToken?: string
+): Promise<WebsiteChatMessage> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('website_chat_messages')
+      .insert(msg)
+      .select()
+      .single();
+    if (!error && data) return data as WebsiteChatMessage;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.website_chat_messages || [];
+  list.push(msg);
+  db.website_chat_messages = list.slice(-1500);
+  await writeLocalDb(db);
+  return msg;
+}
+
 
 
 

@@ -15,6 +15,7 @@ import type {
   CloudflareTopItem,
   CloudflareWindowPreset
 } from '../../shared/types.ts';
+import { CloudflareHistoryForecastView } from './CloudflareHistoryForecastView.tsx';
 
 interface CloudflareAnalyticsPanelProps {
   onOpenSettings?: () => void;
@@ -469,6 +470,7 @@ function TopBreakdownCard({ title, items }: { title: string; items: CloudflareTo
 }
 
 export function CloudflareAnalyticsPanel({ onOpenSettings }: CloudflareAnalyticsPanelProps) {
+  const [cfSubTab, setCfSubTab] = useState<'live' | 'analysis'>('live');
   const [windowPreset, setWindowPreset] = useState<CloudflareWindowPreset>('24h');
   const [data, setData] = useState<CloudflareAnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -526,20 +528,52 @@ export function CloudflareAnalyticsPanel({ onOpenSettings }: CloudflareAnalytics
 
   return (
     <div className="space-y-5">
-      {/* Top Toolbar */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Cloud className="h-4 w-4 text-[#F38020] shrink-0" />
-            <h2 className="font-display text-base font-bold text-slate-900">
-              {data?.zoneName || 'git-stack.org'} — Real-Time Edge &amp; Traffic Analytics
-            </h2>
-            {data?.planName && (
-              <span className="font-mono text-[11px] font-semibold text-slate-500">
-                · {data.planName}
-              </span>
-            )}
-          </div>
+      {/* Sub-view Switcher: Live Traffic vs Analysis & Predictions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => setCfSubTab('live')}
+            className={`min-h-[40px] whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${
+              cfSubTab === 'live'
+                ? 'bg-[var(--gs-primary)] text-white'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Live Traffic
+          </button>
+          <button
+            type="button"
+            onClick={() => setCfSubTab('analysis')}
+            className={`min-h-[40px] whitespace-nowrap rounded-lg px-4 py-2 text-xs font-semibold transition-colors ${
+              cfSubTab === 'analysis'
+                ? 'bg-[var(--gs-primary)] text-white'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Analysis &amp; Predictions
+          </button>
+        </div>
+      </div>
+
+      {cfSubTab === 'analysis' ? (
+        <CloudflareHistoryForecastView onOpenSettings={onOpenSettings} />
+      ) : (
+        <>
+          {/* Top Toolbar */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Cloud className="h-4 w-4 text-[#F38020] shrink-0" />
+                <h2 className="font-display text-base font-bold text-slate-900">
+                  {data?.zoneName || 'git-stack.org'} — Real-Time Edge &amp; Traffic Analytics
+                </h2>
+                {data?.planName && (
+                  <span className="font-mono text-[11px] font-semibold text-slate-500">
+                    · {data.planName}
+                  </span>
+                )}
+              </div>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             <span className="font-mono">
               Zone ID: {data?.zoneId || 'Unconfigured'}
@@ -831,6 +865,8 @@ export function CloudflareAnalyticsPanel({ onOpenSettings }: CloudflareAnalytics
             </div>
           </>
         )
+      )}
+        </>
       )}
     </div>
   );

@@ -758,3 +758,109 @@ CREATE POLICY "Public or team log inbox lark emails"
   ON public.inbox_email_logs FOR ALL
   USING (true)
   WITH CHECK (true);
+
+ALTER TABLE public.inbox_email_logs DROP CONSTRAINT IF EXISTS inbox_email_logs_category_check;
+ALTER TABLE public.inbox_email_logs
+  ADD CONSTRAINT inbox_email_logs_category_check
+  CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert', 'chat_offline_alert', 'chat_reply'));
+
+-- 24. Cloudflare Historical Hourly Snapshots
+CREATE TABLE IF NOT EXISTS public.cloudflare_hourly_snapshots (
+  id TEXT PRIMARY KEY,
+  zone_id TEXT NOT NULL,
+  zone_name TEXT NOT NULL DEFAULT 'git-stack.org',
+  bucket_hour TIMESTAMPTZ NOT NULL,
+  requests BIGINT NOT NULL DEFAULT 0,
+  bytes BIGINT NOT NULL DEFAULT 0,
+  cached_requests BIGINT NOT NULL DEFAULT 0,
+  status_1xx BIGINT NOT NULL DEFAULT 0,
+  status_2xx BIGINT NOT NULL DEFAULT 0,
+  status_3xx BIGINT NOT NULL DEFAULT 0,
+  status_4xx BIGINT NOT NULL DEFAULT 0,
+  status_5xx BIGINT NOT NULL DEFAULT 0,
+  top_paths JSONB NOT NULL DEFAULT '[]'::jsonb,
+  top_countries JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (zone_id, bucket_hour)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cf_snapshots_zone_hour ON public.cloudflare_hourly_snapshots (zone_id, bucket_hour DESC);
+
+GRANT ALL ON public.cloudflare_hourly_snapshots TO authenticated, service_role;
+ALTER TABLE public.cloudflare_hourly_snapshots ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated team manage cloudflare snapshots" ON public.cloudflare_hourly_snapshots;
+CREATE POLICY "Authenticated team manage cloudflare snapshots"
+  ON public.cloudflare_hourly_snapshots FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+-- 25. Cloudflare Gemini AI Forecast Cache
+CREATE TABLE IF NOT EXISTS public.cloudflare_ai_forecasts (
+  zone_id TEXT PRIMARY KEY,
+  zone_name TEXT NOT NULL DEFAULT 'git-stack.org',
+  model_used TEXT NOT NULL DEFAULT 'gemini-4-hydrogen',
+  horizon_days INTEGER NOT NULL DEFAULT 7,
+  range_analyzed TEXT NOT NULL DEFAULT '14d',
+  forecast_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.cloudflare_ai_forecasts TO authenticated, service_role;
+ALTER TABLE public.cloudflare_ai_forecasts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated team manage cloudflare forecasts" ON public.cloudflare_ai_forecasts;
+CREATE POLICY "Authenticated team manage cloudflare forecasts"
+  ON public.cloudflare_ai_forecasts FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+-- 26. Floating Home Page Live Chat Sessions
+CREATE TABLE IF NOT EXISTS public.website_chat_sessions (
+  id TEXT PRIMARY KEY,
+  visitor_token TEXT NOT NULL UNIQUE,
+  visitor_name TEXT NOT NULL DEFAULT 'Website Visitor',
+  visitor_email TEXT NOT NULL DEFAULT '',
+  page_path TEXT NOT NULL DEFAULT '/',
+  status TEXT NOT NULL CHECK (status IN ('open', 'replied', 'resolved')) DEFAULT 'open',
+  last_visitor_msg_at TIMESTAMPTZ,
+  last_admin_reply_at TIMESTAMPTZ,
+  escalated_at TIMESTAMPTZ,
+  converted_lead_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON public.website_chat_sessions (updated_at DESC);
+
+GRANT ALL ON public.website_chat_sessions TO anon, authenticated, service_role;
+ALTER TABLE public.website_chat_sessions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public and team manage website chat sessions" ON public.website_chat_sessions;
+CREATE POLICY "Public and team manage website chat sessions"
+  ON public.website_chat_sessions FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 27. Floating Home Page Live Chat Messages
+CREATE TABLE IF NOT EXISTS public.website_chat_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES public.website_chat_sessions(id) ON DELETE CASCADE,
+  sender_role TEXT NOT NULL CHECK (sender_role IN ('visitor', 'admin', 'agent')) DEFAULT 'visitor',
+  sender_name TEXT NOT NULL DEFAULT 'Website Visitor',
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON public.website_chat_messages (session_id, created_at ASC);
+
+GRANT ALL ON public.website_chat_messages TO anon, authenticated, service_role;
+ALTER TABLE public.website_chat_messages ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public and team manage website chat messages" ON public.website_chat_messages;
+CREATE POLICY "Public and team manage website chat messages"
+  ON public.website_chat_messages FOR ALL
+  USING (true)
+  WITH CHECK (true);
+

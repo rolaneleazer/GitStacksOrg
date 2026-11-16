@@ -44,7 +44,11 @@ import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
 import { UserAccessPanel } from '../components/backoffice/UserAccessPanel.tsx';
 import { UserWorkflowsPanel } from '../components/backoffice/UserWorkflowsPanel.tsx';
 import { MarkdownRenderer } from '../components/MarkdownRenderer.tsx';
-import { api } from '../lib/api.ts';
+import {
+  api,
+  getRealtimeWsUrl,
+  getStoredToken
+} from '../lib/api.ts';
 import { applySeoMetadata } from '../lib/seo.ts';
 import { buildArticleJsonLd, evaluateArticleQuality, slugify } from '../shared/qualityGate.ts';
 import { DEFAULT_ADSENSE_SETTINGS } from '../shared/seedData.ts';
@@ -354,6 +358,34 @@ export function StudioPage({
       .catch(() => setAuthenticated(false))
       .finally(() => setCheckingAuth(false));
   }, [loadWorkspaceData]);
+
+  // Continuous Back Office operator presence heartbeat + WS join while logged in
+  useEffect(() => {
+    if (!authenticated) return;
+    api.sendAdminHeartbeat().catch(() => {});
+    const hbInterval = window.setInterval(() => {
+      api.sendAdminHeartbeat().catch(() => {});
+    }, 25_000);
+
+    let ws: WebSocket | null = null;
+    try {
+      const wsUrl = getRealtimeWsUrl();
+      const token = getStoredToken();
+      if (wsUrl && token) {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          ws?.send(JSON.stringify({ type: 'admin:join', token }));
+        };
+      }
+    } catch {
+      // HTTP heartbeat covers fallback
+    }
+
+    return () => {
+      window.clearInterval(hbInterval);
+      if (ws && ws.readyState < 2) ws.close();
+    };
+  }, [authenticated]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

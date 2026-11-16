@@ -5,8 +5,9 @@ import {
   GoogleAnalyticsLoader,
   useCookieConsent
 } from './components/AdSenseCompliance.tsx';
+import { FloatingLiveChat } from './components/FloatingLiveChat.tsx';
 import { Footer, Header } from './components/LayoutChrome.tsx';
-import { api } from './lib/api.ts';
+import { api, getExistingFloatingChatToken } from './lib/api.ts';
 import { ArticlePage } from './pages/ArticlePage.tsx';
 import { DemoPage } from './pages/DemoPage.tsx';
 import { HomePage } from './pages/HomePage.tsx';
@@ -81,9 +82,14 @@ export default function App() {
   }, [adSenseSettings]);
 
   useEffect(() => {
-    if (!route.startsWith('/obama') && !route.startsWith('/studio')) {
-      api.trackAnalyticsEvent('pageview', route || '/');
-    }
+    const isAdminRoute = route.startsWith('/obama') || route.startsWith('/studio');
+    if (isAdminRoute) return;
+    api.trackAnalyticsEvent('pageview', route || '/');
+    api.sendPublicPresence(route || '/');
+    const id = window.setInterval(() => {
+      api.sendPublicPresence(route || '/');
+    }, 15_000);
+    return () => window.clearInterval(id);
   }, [route]);
 
   useEffect(() => {
@@ -242,6 +248,11 @@ export default function App() {
         onCloseModal={closePreferences}
         onNavigate={navigate}
       />
+      {!route.startsWith('/obama') &&
+        !route.startsWith('/studio') &&
+        (route === '/' || route === '' || Boolean(getExistingFloatingChatToken())) && (
+          <FloatingLiveChat currentRoute={route || '/'} />
+        )}
     </div>
   );
 }

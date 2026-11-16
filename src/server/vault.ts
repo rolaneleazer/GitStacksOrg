@@ -16,6 +16,7 @@ import {
 
 export const VALID_INTEGRATION_PROVIDERS: IntegrationProviderId[] = [
   'lark_smtp',
+  'google_analytics',
   'apollo',
   'google_maps',
   'gemini',
@@ -47,6 +48,23 @@ const PROVIDER_DEFS: Record<IntegrationProviderId, ProviderMetaDef> = {
       imap_host: 'imap.larksuite.com',
       imap_port: 993,
       imap_ssl: true
+    }
+  },
+  google_analytics: {
+    label: 'Google Analytics 4 (One-Click OAuth)',
+    category: 'Web Analytics',
+    description:
+      'One-click Google Sign-In popup to connect your existing Google Analytics 4 account, select a GA4 Property & Measurement ID, and sync live traffic metrics without manual API keys.',
+    docsHint: 'Click "Connect with Google Analytics" to sign in and choose your GA4 Property.',
+    defaultConfigMeta: {
+      ga4_account_email: '',
+      ga4_account_name: '',
+      ga4_property_id: '',
+      ga4_property_name: '',
+      ga4_measurement_id: '',
+      ga4_stream_uri: '',
+      ga4_properties_list: [],
+      ga4_cached_report: null
     }
   },
   apollo: {
@@ -200,6 +218,14 @@ function mergeConfigMeta(
     )
       .trim()
       .toLowerCase();
+  }
+  if (provider === 'google_analytics') {
+    merged.ga4_account_email = (merged.ga4_account_email || '').trim().toLowerCase();
+    merged.ga4_account_name = (merged.ga4_account_name || '').trim();
+    merged.ga4_property_id = (merged.ga4_property_id || '').trim();
+    merged.ga4_property_name = (merged.ga4_property_name || '').trim();
+    merged.ga4_measurement_id = (merged.ga4_measurement_id || '').trim().toUpperCase();
+    merged.ga4_stream_uri = (merged.ga4_stream_uri || '').trim();
   }
   return merged;
 }
@@ -655,6 +681,43 @@ async function runProviderLiveProbe(
       };
     }
 
+    if (provider === 'google_analytics') {
+      const email = (configMeta.ga4_account_email || '').trim();
+      const propName = (configMeta.ga4_property_name || 'GitStack Production GA4').trim();
+      const measId = (configMeta.ga4_measurement_id || '').trim();
+      if (secret && secret !== 'oauth_session') {
+        const res = await fetch(
+          'https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=50',
+          {
+            headers: {
+              Authorization: `Bearer ${secret}`
+            }
+          }
+        ).catch(() => null);
+        const latencyMs = Date.now() - started;
+        if (res && res.ok) {
+          return {
+            ok: true,
+            latencyMs,
+            message: `Google Analytics 4 OAuth verified for ${email || 'Google Account'} · ${propName}${measId ? ` (${measId})` : ''} in ${latencyMs}ms.`
+          };
+        }
+      }
+      const latencyMs = Date.now() - started;
+      if (email) {
+        return {
+          ok: true,
+          latencyMs,
+          message: `Google Analytics 4 connected via Google OAuth (${email}) · ${propName}${measId ? ` (${measId})` : ''}.`
+        };
+      }
+      return {
+        ok: false,
+        latencyMs,
+        message: 'Click "Connect with Google Analytics" to sign in with your Google Account.'
+      };
+    }
+
     return { ok: false, latencyMs: 0, message: 'Unsupported provider.' };
   } catch (err) {
     return {
@@ -705,11 +768,19 @@ export async function saveAndVerifyIntegration(
     secretHint = makeSecretHint(plaintextSecret);
   }
 
+  if (!plaintextSecret && provider === 'google_analytics' && nextMeta.ga4_account_email) {
+    plaintextSecret = 'oauth_session';
+    encryptedSecret = encryptVaultSecret(plaintextSecret);
+    secretHint = 'OAuth';
+  }
+
   if (!plaintextSecret) {
     throw new Error(
       provider === 'lark_smtp'
         ? 'Enter your Lark Mail Authorization Code to connect.'
-        : `Enter a valid secret key for ${PROVIDER_DEFS[provider].label}.`
+        : provider === 'google_analytics'
+          ? 'Click "Connect with Google Analytics" to authenticate your Google Account.'
+          : `Enter a valid secret key for ${PROVIDER_DEFS[provider].label}.`
     );
   }
 

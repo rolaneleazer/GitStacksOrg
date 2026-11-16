@@ -1250,6 +1250,14 @@ export async function createApp(): Promise<Express> {
         secondary_image_alt: (payload.secondary_image_alt || '').trim(),
         intro_heading: (payload.intro_heading || '').trim(),
         intro_body: (payload.intro_body || '').trim(),
+        contact_phone_label: (payload.contact_phone_label ?? '').trim(),
+        contact_phone: (payload.contact_phone ?? '').trim(),
+        contact_sales_label: (payload.contact_sales_label ?? '').trim(),
+        contact_sales_email: (payload.contact_sales_email ?? '').trim(),
+        contact_editorial_label: (payload.contact_editorial_label ?? '').trim(),
+        contact_editorial_email: (payload.contact_editorial_email ?? '').trim(),
+        contact_privacy_label: (payload.contact_privacy_label ?? '').trim(),
+        contact_privacy_email: (payload.contact_privacy_email ?? '').trim(),
         custom_blocks: Array.isArray(payload.custom_blocks) ? payload.custom_blocks : [],
         updated_at: new Date().toISOString()
       };

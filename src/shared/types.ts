@@ -175,6 +175,14 @@ export interface PageContentConfig {
   secondary_image_alt: string;
   intro_heading: string;
   intro_body: string;
+  contact_phone_label?: string;
+  contact_phone?: string;
+  contact_sales_label?: string;
+  contact_sales_email?: string;
+  contact_editorial_label?: string;
+  contact_editorial_email?: string;
+  contact_privacy_label?: string;
+  contact_privacy_email?: string;
   custom_blocks: CustomContentBlock[];
   updated_at: string;
 }
@@ -740,11 +748,35 @@ export interface CsvImportLeadInput {
 
 export type IntegrationProviderId =
   | 'lark_smtp'
+  | 'google_analytics'
   | 'apollo'
   | 'google_maps'
   | 'gemini'
   | 'github'
   | 'cloudflare';
+
+export interface Ga4PropertyOption {
+  property_id: string;
+  property_name: string;
+  account_name: string;
+  measurement_id: string;
+  stream_uri: string;
+}
+
+export interface Ga4LiveReportSummary {
+  property_id: string;
+  property_name: string;
+  measurement_id: string;
+  days: number;
+  synced_at: string;
+  activeUsers: number;
+  totalSessions: number;
+  screenPageViews: number;
+  conversions: number;
+  dailySeries: { date: string; pageviews: number; conversions: number; activeUsers?: number }[];
+  topPages: { path: string; views: number }[];
+  topReferrers: { referrer: string; visits: number }[];
+}
 
 export interface IntegrationConfigMeta {
   email?: string;
@@ -758,6 +790,14 @@ export interface IntegrationConfigMeta {
   apollo_capability?: ApolloCapabilityMode;
   zone_id?: string;
   zone_name?: string;
+  ga4_account_email?: string;
+  ga4_account_name?: string;
+  ga4_property_id?: string;
+  ga4_property_name?: string;
+  ga4_measurement_id?: string;
+  ga4_stream_uri?: string;
+  ga4_properties_list?: Ga4PropertyOption[];
+  ga4_cached_report?: Ga4LiveReportSummary | null;
 }
 
 export interface IntegrationSecretRecord {
@@ -778,6 +818,7 @@ export interface IntegrationStatusItem {
   label: string;
   category:
     | 'Email Outreach'
+    | 'Web Analytics'
     | 'Lead Prospecting'
     | 'AI & Grounding'
     | 'Open-Source Scraping'

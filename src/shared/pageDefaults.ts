@@ -93,6 +93,14 @@ export const DEFAULT_PAGE_CONTENTS: Record<PageKey, PageContentConfig> = {
     intro_heading: 'New Project Inquiries & Consultation Hours',
     intro_body:
       '548 Market Street, Suite 42010, San Francisco, CA 94104 · Mon–Fri 08:00–18:00 PT · Direct response within one business day.',
+    contact_phone_label: 'Direct Phone & Consultation Line',
+    contact_phone: '+1 (415) 890-4210',
+    contact_sales_label: 'New Project Inquiries',
+    contact_sales_email: 'contact@gitstack.io',
+    contact_editorial_label: 'Editorial & Press',
+    contact_editorial_email: 'editorial@gitstack.io',
+    contact_privacy_label: 'Privacy & Compliance',
+    contact_privacy_email: 'privacy@gitstack.io',
     custom_blocks: [],
     updated_at: '2026-11-14T00:00:00Z'
   }
@@ -143,6 +151,14 @@ export function validatePageContentForAdSense(config: PageContentConfig): PageIn
     config.hero_subtitle,
     config.intro_heading,
     config.intro_body,
+    config.contact_phone_label || '',
+    config.contact_phone || '',
+    config.contact_sales_label || '',
+    config.contact_sales_email || '',
+    config.contact_editorial_label || '',
+    config.contact_editorial_email || '',
+    config.contact_privacy_label || '',
+    config.contact_privacy_email || '',
     ...config.custom_blocks.filter((b) => b.visible).map((b) => `${b.heading} ${b.body}`)
   ]
     .join(' ')

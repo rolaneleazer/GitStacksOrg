@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BarChart3,
   CheckCircle2,
   Cloud,
   Eye,
@@ -17,7 +18,15 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api.ts';
+import {
+  DEFAULT_GITSTACK_GA4_PROPERTIES,
+  disconnectGoogleAnalyticsOAuth,
+  fetchGa4LiveReport,
+  getCachedGa4AccessToken,
+  signInWithGoogleAnalyticsPopup
+} from '../../lib/googleAnalyticsOAuth.ts';
 import type {
+  Ga4PropertyOption,
   IntegrationConfigMeta,
   IntegrationProviderId,
   IntegrationStatusItem
@@ -29,6 +38,7 @@ interface IntegrationsVaultPanelProps {
 
 const PROVIDER_ICON: Record<IntegrationProviderId, React.ComponentType<{ className?: string }>> = {
   lark_smtp: Mail,
+  google_analytics: BarChart3,
   apollo: Search,
   google_maps: MapPin,
   gemini: Sparkles,
@@ -58,6 +68,7 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
     zone_id: '',
     zone_name: 'git-stack.org'
   });
+  const [confirmDisconnectGa4, setConfirmDisconnectGa4] = useState(false);
 
   const [busyProvider, setBusyProvider] = useState<string | null>(null);
   const [testingAll, setTestingAll] = useState(false);
@@ -212,9 +223,201 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
     });
   };
 
+  const handleConnectGoogleAnalyticsOAuth = async () => {
+    setBusyProvider('oauth:google_analytics');
+    setNotice(null);
+    setConfirmDisconnectGa4(false);
+    try {
+      const oauthRes = await signInWithGoogleAnalyticsPopup();
+      const firstProp = oauthRes.properties[0] || DEFAULT_GITSTACK_GA4_PROPERTIES[0];
+      const summaryRes = await api.getAnalyticsSummary(30).catch(() => null);
+      const liveReport = await fetchGa4LiveReport({
+        accessToken: oauthRes.accessToken,
+        propertyOption: firstProp,
+        days: 30,
+        firstPartySummary: summaryRes?.summary || null
+      });
+      const configMeta: IntegrationConfigMeta = {
+        ga4_account_email: oauthRes.email,
+        ga4_account_name: oauthRes.displayName,
+        ga4_property_id: firstProp.property_id,
+        ga4_property_name: firstProp.property_name,
+        ga4_measurement_id: firstProp.measurement_id,
+        ga4_stream_uri: firstProp.stream_uri,
+        ga4_properties_list: oauthRes.properties,
+        ga4_cached_report: liveReport
+      };
+      const saved = await api.saveIntegration('google_analytics', {
+        secret: oauthRes.accessToken,
+        configMeta
+      });
+      // Automatically bind the selected GA4 Measurement ID to public consent-gated analytics
+      try {
+        const currentSettings = await api.getAdSenseSettings();
+        await api.saveAdSenseSettings({
+          ...currentSettings.settings,
+          ga4_measurement_id: firstProp.measurement_id,
+          ga4_enabled: true,
+          ga4_track_events: true
+        });
+      } catch {
+        // Non-fatal
+      }
+      replaceItem(saved.integration);
+      setNotice({
+        type: 'ok',
+        text: `Connected Google Analytics as ${oauthRes.email} · Selected ${firstProp.property_name} (${firstProp.measurement_id}).`
+      });
+    } catch (err) {
+      setNotice({
+        type: 'err',
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Google Analytics sign-in popup was cancelled or blocked.'
+      });
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
+  const handleSelectGa4Property = async (
+    propertyId: string,
+    gaItem: IntegrationStatusItem
+  ) => {
+    const propsList: Ga4PropertyOption[] =
+      gaItem.configMeta.ga4_properties_list && gaItem.configMeta.ga4_properties_list.length > 0
+        ? gaItem.configMeta.ga4_properties_list
+        : DEFAULT_GITSTACK_GA4_PROPERTIES;
+    const chosen = propsList.find((p) => p.property_id === propertyId);
+    if (!chosen) return;
+
+    setBusyProvider('prop:google_analytics');
+    setNotice(null);
+    try {
+      const summaryRes = await api.getAnalyticsSummary(30).catch(() => null);
+      const liveReport = await fetchGa4LiveReport({
+        accessToken: getCachedGa4AccessToken(),
+        propertyOption: chosen,
+        days: 30,
+        firstPartySummary: summaryRes?.summary || null
+      });
+      const nextMeta: IntegrationConfigMeta = {
+        ...gaItem.configMeta,
+        ga4_property_id: chosen.property_id,
+        ga4_property_name: chosen.property_name,
+        ga4_measurement_id: chosen.measurement_id,
+        ga4_stream_uri: chosen.stream_uri,
+        ga4_properties_list: propsList,
+        ga4_cached_report: liveReport
+      };
+      const saved = await api.saveIntegration('google_analytics', {
+        secret: getCachedGa4AccessToken() || 'oauth_session',
+        configMeta: nextMeta
+      });
+      try {
+        const currentSettings = await api.getAdSenseSettings();
+        await api.saveAdSenseSettings({
+          ...currentSettings.settings,
+          ga4_measurement_id: chosen.measurement_id,
+          ga4_enabled: true
+        });
+      } catch {
+        // Non-fatal
+      }
+      replaceItem(saved.integration);
+      setNotice({
+        type: 'ok',
+        text: `Switched active Google Analytics property to ${chosen.property_name} (${chosen.measurement_id}).`
+      });
+    } catch (err) {
+      setNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Failed to switch GA4 property.'
+      });
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
+  const handleSyncGa4Data = async (gaItem: IntegrationStatusItem) => {
+    setBusyProvider('sync:google_analytics');
+    setNotice(null);
+    try {
+      const propsList: Ga4PropertyOption[] =
+        gaItem.configMeta.ga4_properties_list && gaItem.configMeta.ga4_properties_list.length > 0
+          ? gaItem.configMeta.ga4_properties_list
+          : DEFAULT_GITSTACK_GA4_PROPERTIES;
+      const chosen =
+        propsList.find((p) => p.property_id === gaItem.configMeta.ga4_property_id) ||
+        propsList[0];
+      const summaryRes = await api.getAnalyticsSummary(30).catch(() => null);
+      const liveReport = await fetchGa4LiveReport({
+        accessToken: getCachedGa4AccessToken(),
+        propertyOption: chosen,
+        days: 30,
+        firstPartySummary: summaryRes?.summary || null
+      });
+      const nextMeta: IntegrationConfigMeta = {
+        ...gaItem.configMeta,
+        ga4_cached_report: liveReport
+      };
+      const saved = await api.saveIntegration('google_analytics', {
+        secret: getCachedGa4AccessToken() || 'oauth_session',
+        configMeta: nextMeta
+      });
+      replaceItem(saved.integration);
+      setNotice({
+        type: 'ok',
+        text: `Synced Google Analytics data for ${chosen.property_name}: ${liveReport.screenPageViews} pageviews, ${liveReport.activeUsers} active users.`
+      });
+    } catch (err) {
+      setNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Failed to sync Google Analytics data.'
+      });
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
+  const handleDisconnectGa4Confirmed = async () => {
+    setBusyProvider('disc:google_analytics');
+    setNotice(null);
+    setConfirmDisconnectGa4(false);
+    try {
+      await disconnectGoogleAnalyticsOAuth();
+      const res = await api.disconnectIntegration('google_analytics');
+      try {
+        const currentSettings = await api.getAdSenseSettings();
+        await api.saveAdSenseSettings({
+          ...currentSettings.settings,
+          ga4_enabled: false
+        });
+      } catch {
+        // Non-fatal
+      }
+      replaceItem(res.integration);
+      setNotice({
+        type: 'ok',
+        text: 'Google Analytics account disconnected and OAuth session cleared.'
+      });
+    } catch (err) {
+      setNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Failed to disconnect Google Analytics.'
+      });
+    } finally {
+      setBusyProvider(null);
+    }
+  };
+
   const activeCount = items.filter((i) => i.connected).length;
   const larkItem = items.find((i) => i.provider === 'lark_smtp');
-  const apiProviders = items.filter((i) => i.provider !== 'lark_smtp');
+  const ga4Item = items.find((i) => i.provider === 'google_analytics');
+  const apiProviders = items.filter(
+    (i) => i.provider !== 'lark_smtp' && i.provider !== 'google_analytics'
+  );
 
   const renderStatusLabel = (item: IntegrationStatusItem) => {
     const isApolloTrial =
@@ -538,6 +741,216 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Featured Full-Width Card: Google Analytics 4 (One-Click OAuth Connect & Property Selector) */}
+        {ga4Item && (
+          <div className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-slate-200 pb-4">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-[var(--gs-primary)] shrink-0">
+                    <BarChart3 className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h3 className="font-display text-base font-bold text-slate-900">
+                        {ga4Item.label}
+                      </h3>
+                      {renderStatusLabel(ga4Item)}
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-600">{ga4Item.description}</p>
+                  </div>
+                </div>
+              </div>
+
+              {ga4Item.connected && ga4Item.configMeta.ga4_account_email && (
+                <div className="font-mono text-xs text-slate-600 tabular-nums shrink-0">
+                  Google Account:{' '}
+                  <span className="font-semibold text-slate-900">
+                    {ga4Item.configMeta.ga4_account_email}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {ga4Item.connected ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Connected GA4 Property &amp; Web Data Stream
+                  </label>
+                  <select
+                    disabled={busyProvider !== null}
+                    value={
+                      ga4Item.configMeta.ga4_property_id ||
+                      DEFAULT_GITSTACK_GA4_PROPERTIES[0].property_id
+                    }
+                    onChange={(e) => handleSelectGa4Property(e.target.value, ga4Item)}
+                    className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs font-medium text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                  >
+                    {(ga4Item.configMeta.ga4_properties_list &&
+                    ga4Item.configMeta.ga4_properties_list.length > 0
+                      ? ga4Item.configMeta.ga4_properties_list
+                      : DEFAULT_GITSTACK_GA4_PROPERTIES
+                    ).map((prop) => (
+                      <option key={prop.property_id} value={prop.property_id}>
+                        {prop.property_name} — {prop.measurement_id} ({prop.property_id})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Active Measurement Tag
+                  </label>
+                  <div className="mt-1 min-h-[42px] flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-900">
+                    <span className="font-semibold text-[var(--gs-primary)]">
+                      {ga4Item.configMeta.ga4_measurement_id || 'G-GS94820144'}
+                    </span>
+                    <span className="text-[11px] text-[#16A34A] font-semibold">Auto-Synced</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="text-xs font-semibold text-slate-900">
+                    No Manual API Keys Required
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Click the button to sign in with your existing Google Analytics account, choose
+                    your GA4 property, and pull traffic data automatically.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={busyProvider !== null}
+                  onClick={handleConnectGoogleAnalyticsOAuth}
+                  className="min-h-[42px] inline-flex items-center justify-center gap-2.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-800 shadow-2xs hover:bg-slate-50 disabled:opacity-50 shrink-0"
+                >
+                  <svg className="h-4 w-4 shrink-0" viewBox="0 0 48 48">
+                    <path
+                      fill="#EA4335"
+                      d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+                    />
+                  </svg>
+                  <span>
+                    {busyProvider === 'oauth:google_analytics'
+                      ? 'Connecting Google Account...'
+                      : 'Connect with Google Analytics'}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {confirmDisconnectGa4 && ga4Item.connected && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-xs font-medium text-red-900">
+                  Disconnect Google Analytics account ({ga4Item.configMeta.ga4_account_email}) and
+                  stop GA4 property sync?
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDisconnectGa4(false)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisconnectGa4Confirmed}
+                    className="rounded-lg bg-[#DC2626] px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                  >
+                    Confirm Disconnect
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-[11px] text-slate-500 min-w-0">
+                {ga4Item.lastTestMessage ? (
+                  <span
+                    className={
+                      ga4Item.lastTestStatus === 'ok'
+                        ? 'text-[#16A34A] font-medium'
+                        : ga4Item.lastTestStatus === 'error'
+                          ? 'text-[#DC2626] font-medium'
+                          : 'text-slate-600'
+                    }
+                  >
+                    {ga4Item.lastTestMessage}
+                    {ga4Item.lastTestedAt && (
+                      <span className="ml-2 font-mono text-slate-400 tabular-nums">
+                        ({new Date(ga4Item.lastTestedAt).toLocaleString()})
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <span>{ga4Item.docsHint}</span>
+                )}
+              </div>
+
+              {ga4Item.connected && (
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    disabled={busyProvider !== null}
+                    onClick={() => handleSyncGa4Data(ga4Item)}
+                    className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      className={`h-3.5 w-3.5 ${
+                        busyProvider === 'sync:google_analytics' ? 'animate-spin' : ''
+                      }`}
+                    />
+                    <span>
+                      {busyProvider === 'sync:google_analytics'
+                        ? 'Syncing GA4...'
+                        : 'Sync GA4 Data Now'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={busyProvider !== null}
+                    onClick={handleConnectGoogleAnalyticsOAuth}
+                    className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    <span>Switch Google Account</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={busyProvider !== null}
+                    onClick={() => setConfirmDisconnectGa4(true)}
+                    className="min-h-[40px] whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3.5 py-2 text-xs font-semibold text-[#DC2626] hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Unplug className="h-3.5 w-3.5" />
+                    <span>
+                      {busyProvider === 'disc:google_analytics' ? 'Disconnecting...' : 'Disconnect'}
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

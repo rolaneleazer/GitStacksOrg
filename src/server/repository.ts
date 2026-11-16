@@ -1097,22 +1097,45 @@ export async function saveAdSenseSettings(
 
 // --- Page Content & Media Customizer ---
 
+function mergePageWithDefaults(key: PageKey, stored?: Partial<PageContentConfig>): PageContentConfig {
+  const def = DEFAULT_PAGE_CONTENTS[key];
+  const merged: PageContentConfig = {
+    ...def,
+    ...(stored || {})
+  };
+  if (key === 'contact') {
+    merged.contact_phone_label =
+      merged.contact_phone_label?.trim() || def.contact_phone_label || 'Direct Phone & Consultation Line';
+    merged.contact_phone = merged.contact_phone?.trim() || def.contact_phone || '+1 (415) 890-4210';
+    merged.contact_sales_label =
+      merged.contact_sales_label?.trim() || def.contact_sales_label || 'New Project Inquiries';
+    merged.contact_sales_email =
+      merged.contact_sales_email?.trim() || def.contact_sales_email || 'contact@gitstack.io';
+    merged.contact_editorial_label =
+      merged.contact_editorial_label?.trim() || def.contact_editorial_label || 'Editorial & Press';
+    merged.contact_editorial_email =
+      merged.contact_editorial_email?.trim() || def.contact_editorial_email || 'editorial@gitstack.io';
+    merged.contact_privacy_label =
+      merged.contact_privacy_label?.trim() || def.contact_privacy_label || 'Privacy & Compliance';
+    merged.contact_privacy_email =
+      merged.contact_privacy_email?.trim() || def.contact_privacy_email || 'privacy@gitstack.io';
+  }
+  return merged;
+}
+
 export async function listPageContents(): Promise<PageContentConfig[]> {
   const keys: PageKey[] = ['home', 'services', 'about', 'contact'];
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient().from('page_contents').select('*');
     if (!error && Array.isArray(data)) {
       const byKey = new Map((data as PageContentConfig[]).map((r) => [r.page_key, r]));
-      return keys.map((k) => ({ ...DEFAULT_PAGE_CONTENTS[k], ...(byKey.get(k) || {}) }));
+      return keys.map((k) => mergePageWithDefaults(k, byKey.get(k)));
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
   const db = await readLocalDb();
-  return keys.map((k) => ({
-    ...DEFAULT_PAGE_CONTENTS[k],
-    ...(db.page_contents?.[k] || {})
-  }));
+  return keys.map((k) => mergePageWithDefaults(k, db.page_contents?.[k]));
 }
 
 export async function upsertPageContent(

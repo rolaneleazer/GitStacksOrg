@@ -125,9 +125,26 @@ CREATE TABLE IF NOT EXISTS public.page_contents (
   secondary_image_alt TEXT NOT NULL DEFAULT '',
   intro_heading TEXT NOT NULL DEFAULT '',
   intro_body TEXT NOT NULL DEFAULT '',
+  contact_phone_label TEXT NOT NULL DEFAULT '',
+  contact_phone TEXT NOT NULL DEFAULT '',
+  contact_sales_label TEXT NOT NULL DEFAULT '',
+  contact_sales_email TEXT NOT NULL DEFAULT '',
+  contact_editorial_label TEXT NOT NULL DEFAULT '',
+  contact_editorial_email TEXT NOT NULL DEFAULT '',
+  contact_privacy_label TEXT NOT NULL DEFAULT '',
+  contact_privacy_email TEXT NOT NULL DEFAULT '',
   custom_blocks JSONB NOT NULL DEFAULT '[]'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_phone_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_phone TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_sales_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_sales_email TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_editorial_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_editorial_email TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_privacy_label TEXT NOT NULL DEFAULT '';
+ALTER TABLE public.page_contents ADD COLUMN IF NOT EXISTS contact_privacy_email TEXT NOT NULL DEFAULT '';
 
 -- 7. Back Office 7-Agent Operational Checklists (Private)
 CREATE TABLE IF NOT EXISTS public.agent_tasks (
@@ -655,7 +672,7 @@ CREATE POLICY "Authenticated team manage crm sync runs"
 
 -- 21. Encrypted Server-Side Integrations & Mail Vault
 CREATE TABLE IF NOT EXISTS public.crm_integration_secrets (
-  provider TEXT PRIMARY KEY CHECK (provider IN ('lark_smtp', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare')),
+  provider TEXT PRIMARY KEY CHECK (provider IN ('lark_smtp', 'google_analytics', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare')),
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   encrypted_secret TEXT NOT NULL DEFAULT '',
   secret_hint TEXT NOT NULL DEFAULT '',
@@ -681,7 +698,7 @@ BEGIN
   END LOOP;
   ALTER TABLE public.crm_integration_secrets
     ADD CONSTRAINT crm_integration_secrets_provider_check
-    CHECK (provider IN ('lark_smtp', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare'));
+    CHECK (provider IN ('lark_smtp', 'google_analytics', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare'));
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 

@@ -37,8 +37,40 @@ export function PageEditorPanel({
 }: PageEditorPanelProps) {
   const [activeKey, setActiveKey] = useState<PageKey>('home');
   const [drafts, setDrafts] = useState<Record<PageKey, PageContentConfig>>(() => {
-    const map = { ...DEFAULT_PAGE_CONTENTS };
-    for (const p of pages) map[p.page_key] = p;
+    const map: Record<PageKey, PageContentConfig> = { ...DEFAULT_PAGE_CONTENTS };
+    for (const p of pages) {
+      map[p.page_key] = {
+        ...DEFAULT_PAGE_CONTENTS[p.page_key],
+        ...p,
+        ...(p.page_key === 'contact'
+          ? {
+              contact_phone_label:
+                p.contact_phone_label?.trim() ||
+                DEFAULT_PAGE_CONTENTS.contact.contact_phone_label,
+              contact_phone:
+                p.contact_phone?.trim() || DEFAULT_PAGE_CONTENTS.contact.contact_phone,
+              contact_sales_label:
+                p.contact_sales_label?.trim() ||
+                DEFAULT_PAGE_CONTENTS.contact.contact_sales_label,
+              contact_sales_email:
+                p.contact_sales_email?.trim() ||
+                DEFAULT_PAGE_CONTENTS.contact.contact_sales_email,
+              contact_editorial_label:
+                p.contact_editorial_label?.trim() ||
+                DEFAULT_PAGE_CONTENTS.contact.contact_editorial_label,
+              contact_editorial_email:
+                p.contact_editorial_email?.trim() ||
+                DEFAULT_PAGE_CONTENTS.contact.contact_editorial_email,
+              contact_privacy_label:
+                p.contact_privacy_label?.trim() ||
+                DEFAULT_PAGE_CONTENTS.contact.contact_privacy_label,
+              contact_privacy_email:
+                p.contact_privacy_email?.trim() ||
+                DEFAULT_PAGE_CONTENTS.contact.contact_privacy_email
+            }
+          : {})
+      };
+    }
     return map;
   });
   const [saving, setSaving] = useState(false);
@@ -244,7 +276,9 @@ export function PageEditorPanel({
               </div>
               <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold text-slate-700">
-                  Section Sub-Heading
+                  {activeKey === 'contact'
+                    ? 'Consultation Hours & Office Address Heading'
+                    : 'Section Sub-Heading'}
                 </label>
                 <input
                   type="text"
@@ -255,7 +289,9 @@ export function PageEditorPanel({
               </div>
               <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold text-slate-700">
-                  Section Supporting Copy
+                  {activeKey === 'contact'
+                    ? 'Office Address, Hours & Response SLA Copy'
+                    : 'Section Supporting Copy'}
                 </label>
                 <textarea
                   rows={2}
@@ -265,6 +301,122 @@ export function PageEditorPanel({
                 />
               </div>
             </div>
+
+            {activeKey === 'contact' && (
+              <div className="border-t border-slate-200 pt-5 space-y-4">
+                <div>
+                  <h4 className="font-display text-xs font-bold text-slate-900">
+                    Direct Contact Directory, Phone Number &amp; Email Channels
+                  </h4>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Customize the clickable phone number, inquiry email channels, and labels shown
+                    in the left column of the public /contact page.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Phone Number Heading Label
+                    </label>
+                    <input
+                      type="text"
+                      value={current.contact_phone_label ?? 'Direct Phone & Consultation Line'}
+                      onChange={(e) => updateField('contact_phone_label', e.target.value)}
+                      placeholder="Direct Phone & Consultation Line"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Contact Phone Number (Clickable tel: link)
+                    </label>
+                    <input
+                      type="text"
+                      value={current.contact_phone ?? '+1 (415) 890-4210'}
+                      onChange={(e) => updateField('contact_phone', e.target.value)}
+                      placeholder="+1 (415) 890-4210"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 font-mono px-3 py-2 text-xs text-slate-900 tabular-nums focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Channel 1 Heading (Project Inquiries)
+                    </label>
+                    <input
+                      type="text"
+                      value={current.contact_sales_label ?? 'New Project Inquiries'}
+                      onChange={(e) => updateField('contact_sales_label', e.target.value)}
+                      placeholder="New Project Inquiries"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Channel 1 Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={current.contact_sales_email ?? 'contact@gitstack.io'}
+                      onChange={(e) => updateField('contact_sales_email', e.target.value)}
+                      placeholder="contact@gitstack.io"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 font-mono px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Channel 2 Heading (Editorial &amp; Press)
+                    </label>
+                    <input
+                      type="text"
+                      value={current.contact_editorial_label ?? 'Editorial & Press'}
+                      onChange={(e) => updateField('contact_editorial_label', e.target.value)}
+                      placeholder="Editorial & Press"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Channel 2 Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={current.contact_editorial_email ?? 'editorial@gitstack.io'}
+                      onChange={(e) => updateField('contact_editorial_email', e.target.value)}
+                      placeholder="editorial@gitstack.io"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 font-mono px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Channel 3 Heading (Privacy &amp; Compliance)
+                    </label>
+                    <input
+                      type="text"
+                      value={current.contact_privacy_label ?? 'Privacy & Compliance'}
+                      onChange={(e) => updateField('contact_privacy_label', e.target.value)}
+                      placeholder="Privacy & Compliance"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Channel 3 Email Address
+                    </label>
+                    <input
+                      type="email"
+                      value={current.contact_privacy_email ?? 'privacy@gitstack.io'}
+                      onChange={(e) => updateField('contact_privacy_email', e.target.value)}
+                      placeholder="privacy@gitstack.io"
+                      className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 font-mono px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Picture Customization */}
             <div className="border-t border-slate-200 pt-5 space-y-4">

@@ -151,21 +151,95 @@ export function ContactPage({
             )}
 
             <div className="mt-8 space-y-5 border-t border-slate-200 pt-6 text-sm text-slate-700">
+              {(cms.contact_phone || DEFAULT_PAGE_CONTENTS.contact.contact_phone) && (
+                <div>
+                  <div className="text-xs font-semibold text-slate-900">
+                    {cms.contact_phone_label ||
+                      DEFAULT_PAGE_CONTENTS.contact.contact_phone_label ||
+                      'Direct Phone & Consultation Line'}
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-slate-600 tabular-nums">
+                    <a
+                      href={`tel:${(
+                        cms.contact_phone ||
+                        DEFAULT_PAGE_CONTENTS.contact.contact_phone ||
+                        '+1 (415) 890-4210'
+                      ).replace(/[^\d+]/g, '')}`}
+                      className="hover:text-[var(--gs-primary)] hover:underline transition-colors"
+                    >
+                      {cms.contact_phone ||
+                        DEFAULT_PAGE_CONTENTS.contact.contact_phone ||
+                        '+1 (415) 890-4210'}
+                    </a>
+                  </p>
+                </div>
+              )}
               <div>
-                <div className="text-xs font-semibold text-slate-900">New Project Inquiries</div>
-                <p className="mt-1 font-mono text-xs text-slate-600">contact@gitstack.io</p>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-900">Editorial &amp; Press</div>
-                <p className="mt-1 font-mono text-xs text-slate-600">editorial@gitstack.io</p>
-              </div>
-              <div>
-                <div className="text-xs font-semibold text-slate-900">Privacy &amp; Compliance</div>
-                <p className="mt-1 font-mono text-xs text-slate-600">privacy@gitstack.io</p>
+                <div className="text-xs font-semibold text-slate-900">
+                  {cms.contact_sales_label ||
+                    DEFAULT_PAGE_CONTENTS.contact.contact_sales_label ||
+                    'New Project Inquiries'}
+                </div>
+                <p className="mt-1 font-mono text-xs text-slate-600">
+                  <a
+                    href={`mailto:${
+                      cms.contact_sales_email ||
+                      DEFAULT_PAGE_CONTENTS.contact.contact_sales_email ||
+                      'contact@gitstack.io'
+                    }`}
+                    className="hover:text-[var(--gs-primary)] hover:underline transition-colors"
+                  >
+                    {cms.contact_sales_email ||
+                      DEFAULT_PAGE_CONTENTS.contact.contact_sales_email ||
+                      'contact@gitstack.io'}
+                  </a>
+                </p>
               </div>
               <div>
                 <div className="text-xs font-semibold text-slate-900">
-                  {cms.intro_heading || 'Business Hours & Address'}
+                  {cms.contact_editorial_label ||
+                    DEFAULT_PAGE_CONTENTS.contact.contact_editorial_label ||
+                    'Editorial & Press'}
+                </div>
+                <p className="mt-1 font-mono text-xs text-slate-600">
+                  <a
+                    href={`mailto:${
+                      cms.contact_editorial_email ||
+                      DEFAULT_PAGE_CONTENTS.contact.contact_editorial_email ||
+                      'editorial@gitstack.io'
+                    }`}
+                    className="hover:text-[var(--gs-primary)] hover:underline transition-colors"
+                  >
+                    {cms.contact_editorial_email ||
+                      DEFAULT_PAGE_CONTENTS.contact.contact_editorial_email ||
+                      'editorial@gitstack.io'}
+                  </a>
+                </p>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-900">
+                  {cms.contact_privacy_label ||
+                    DEFAULT_PAGE_CONTENTS.contact.contact_privacy_label ||
+                    'Privacy & Compliance'}
+                </div>
+                <p className="mt-1 font-mono text-xs text-slate-600">
+                  <a
+                    href={`mailto:${
+                      cms.contact_privacy_email ||
+                      DEFAULT_PAGE_CONTENTS.contact.contact_privacy_email ||
+                      'privacy@gitstack.io'
+                    }`}
+                    className="hover:text-[var(--gs-primary)] hover:underline transition-colors"
+                  >
+                    {cms.contact_privacy_email ||
+                      DEFAULT_PAGE_CONTENTS.contact.contact_privacy_email ||
+                      'privacy@gitstack.io'}
+                  </a>
+                </p>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-900">
+                  {cms.intro_heading || 'New Project Inquiries & Consultation Hours'}
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-slate-600">
                   {cms.intro_body}

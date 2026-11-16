@@ -298,7 +298,7 @@ export default function App() {
       {!route.startsWith('/obama') &&
         !route.startsWith('/studio') && (
           <>
-            <BuyMeACoffeeWidget yOffset={84} position="Right" />
+            <BuyMeACoffeeWidget settings={adSenseSettings} yOffset={84} position="Right" />
             {(route === '/' || route === '' || Boolean(getExistingFloatingChatToken())) && (
               <FloatingLiveChat currentRoute={route || '/'} />
             )}

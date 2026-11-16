@@ -243,6 +243,8 @@ import {
   verifyDemoPassword,
   verifyDemoSessionToken,
   verifyEditorToken,
+  getBmcAnalytics,
+  recordBmcClick,
   type EditorSession
 } from './repository.ts';
 import {
@@ -782,6 +784,26 @@ export async function createApp(): Promise<Express> {
       res.status(500).json({
         error: err instanceof Error ? err.message : 'Failed to generate AdSense-safe article.'
       });
+    }
+  });
+
+  // --- Buy Me a Coffee Analytics & Telemetry API ---
+
+  app.get('/api/bmc/analytics', async (_req, res) => {
+    try {
+      res.json(getBmcAnalytics());
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to load Buy Me a Coffee analytics' });
+    }
+  });
+
+  app.post('/api/bmc/track-click', async (req, res) => {
+    try {
+      const placement = req.body?.placement || 'other';
+      const updated = recordBmcClick(placement);
+      res.json({ success: true, analytics: updated });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to record click' });
     }
   });
 

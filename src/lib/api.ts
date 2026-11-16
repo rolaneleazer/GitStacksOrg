@@ -13,6 +13,8 @@ import type {
   AnalyticsSummary,
   ApolloCandidate,
   ApolloSearchFilters,
+  BmcAnalyticsData,
+  BmcClickEvent,
   ApolloStatusResponse,
   Article,
   ArticleComment,
@@ -739,6 +741,17 @@ export const api = {
     }>('/api/generate-article', {
       method: 'POST',
       body: JSON.stringify(payload)
+    });
+  },
+
+  async getBmcAnalytics() {
+    return request<BmcAnalyticsData>('/api/bmc/analytics');
+  },
+
+  async trackBmcClick(placement: 'header' | 'footer' | 'floating' | 'other') {
+    return request<{ success: boolean; analytics: BmcAnalyticsData }>('/api/bmc/track-click', {
+      method: 'POST',
+      body: JSON.stringify({ placement })
     });
   },
 

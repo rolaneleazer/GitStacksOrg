@@ -84,7 +84,7 @@ export function Header({ currentPath, settings, onNavigate }: HeaderProps) {
 
         {/* Zone 3: 1 primary CTA action + BMC Button + Mobile Menu Toggle */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <BuyMeACoffeeButton variant="compact" className="hidden lg:inline-flex" />
+          <BuyMeACoffeeButton settings={settings} variant="compact" className="hidden lg:inline-flex" />
           {isExternalCta ? (
             <a
               href={ctaHref}
@@ -135,7 +135,7 @@ export function Header({ currentPath, settings, onNavigate }: HeaderProps) {
               );
             })}
             <div className="mt-2 flex flex-col gap-2">
-              <BuyMeACoffeeButton variant="compact" className="w-full justify-center min-h-[40px]" />
+              <BuyMeACoffeeButton settings={settings} variant="compact" className="w-full justify-center min-h-[40px]" />
               {isExternalCta ? (
                 <a
                   href={ctaHref}
@@ -212,7 +212,7 @@ export function Footer({
               contact@gitstack.io · San Francisco &amp; Global Remote
             </p>
             <div className="mt-5 pt-4 border-t border-slate-100">
-              <BuyMeACoffeeButton variant="full" />
+              <BuyMeACoffeeButton settings={settings} variant="full" />
             </div>
           </div>
 

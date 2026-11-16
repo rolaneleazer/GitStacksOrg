@@ -8,6 +8,7 @@ import {
   Bug,
   CheckCircle2,
   Cloud,
+  Coffee,
   Compass,
   Copy,
   Download,
@@ -41,6 +42,7 @@ import { AiSearchVisibilityPanel } from '../components/backoffice/AiSearchVisibi
 import { AiTrendContentStudio } from '../components/backoffice/AiTrendContentStudio.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
+import { BuyMeACoffeeHubPanel } from '../components/backoffice/BuyMeACoffeeHubPanel.tsx';
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
 import { CyberSecurityPanel } from '../components/backoffice/CyberSecurityPanel.tsx';
@@ -105,6 +107,7 @@ type StudioTab =
   | 'crm'
   | 'pages'
   | 'branding'
+  | 'buymeacoffee'
   | 'inbox'
   | 'notifications'
   | 'chat'
@@ -127,6 +130,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'crm',
     'pages',
     'branding',
+    'buymeacoffee',
     'inbox',
     'notifications',
     'chat',
@@ -147,6 +151,8 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'agents',
     'crm',
     'pages',
+    'branding',
+    'buymeacoffee',
     'articles',
     'notifications',
     'demo_users',
@@ -573,6 +579,24 @@ export function StudioPage({
     onSettingsChanged(res.settings);
     const agentsRes = await api.getAgentsOverview();
     setAgents(agentsRes.agents);
+  };
+
+  const handleSaveBmcSettings = async (patch: Partial<AdSenseSettings>) => {
+    setSavingAdSense(true);
+    try {
+      const res = await api.saveAdSenseSettings({
+        ...adSenseForm,
+        ...patch
+      });
+      setAdSenseForm(res.settings);
+      onSettingsChanged(res.settings);
+      const agentsRes = await api.getAgentsOverview();
+      setAgents(agentsRes.agents);
+    } catch (err) {
+      console.error('Failed to save Buy Me a Coffee settings:', err);
+    } finally {
+      setSavingAdSense(false);
+    }
   };
 
   const handleChangeAnalyticsDays = async (nextDays: 7 | 14 | 30) => {
@@ -1022,6 +1046,7 @@ export function StudioPage({
     { id: 'crm', label: 'CRM & Prospecting', icon: Briefcase },
     { id: 'pages', label: 'Page Content Editor', icon: FileEdit },
     { id: 'branding', label: 'Branding & Theme', icon: Palette },
+    { id: 'buymeacoffee', label: 'Buy Me a Coffee Hub', icon: Coffee },
     { id: 'inbox', label: 'Lark Mail & Lead Inbox', icon: Mail, count: inquiries.length },
     { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
     {
@@ -1257,6 +1282,16 @@ export function StudioPage({
               settings={adSenseForm}
               onSave={handleSaveBranding}
               saving={savingBranding}
+            />
+          )}
+
+          {/* PANEL 2C: BUY ME A COFFEE HUB & LIVE CONTROLLER */}
+          {currentTab === 'buymeacoffee' && (
+            <BuyMeACoffeeHubPanel
+              key={adSenseForm.updated_at || 'buymeacoffee'}
+              settings={adSenseForm}
+              onSave={handleSaveBmcSettings}
+              saving={savingAdSense}
             />
           )}
 

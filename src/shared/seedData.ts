@@ -445,6 +445,19 @@ export const DEFAULT_ADSENSE_SETTINGS: AdSenseSettings = {
   header_surface: 'white',
   header_cta_label: 'Book Consultation',
   header_cta_href: '/contact',
+  bmc_enabled: true,
+  bmc_handle: 'ronelmol',
+  bmc_custom_url: 'https://buymeacoffee.com/ronelmol',
+  bmc_button_text: 'Buy me a coffee',
+  bmc_button_color: '#FFDD00',
+  bmc_font_style: 'Cookie',
+  bmc_header_enabled: true,
+  bmc_footer_enabled: true,
+  bmc_floating_enabled: true,
+  bmc_floating_position: 'Right',
+  bmc_floating_y_offset: 84,
+  bmc_support_message:
+    'Support independent open-source tools, technical research, and live sandbox maintenance.',
   updated_at: '2026-11-10T00:00:00Z'
 };
 

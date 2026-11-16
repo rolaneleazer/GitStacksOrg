@@ -104,7 +104,35 @@ export interface AdSenseSettings {
   header_surface?: HeaderSurface;
   header_cta_label?: string;
   header_cta_href?: string;
+  // Buy Me a Coffee Customizable Settings
+  bmc_enabled?: boolean;
+  bmc_handle?: string;
+  bmc_custom_url?: string;
+  bmc_button_text?: string;
+  bmc_button_color?: string;
+  bmc_font_style?: 'Cookie' | 'Inter' | 'Plus Jakarta Sans';
+  bmc_header_enabled?: boolean;
+  bmc_footer_enabled?: boolean;
+  bmc_floating_enabled?: boolean;
+  bmc_floating_position?: 'Right' | 'Left';
+  bmc_floating_y_offset?: number;
+  bmc_support_message?: string;
   updated_at: string;
+}
+
+export interface BmcClickEvent {
+  id: string;
+  placement: 'header' | 'footer' | 'floating' | 'other';
+  timestamp: string;
+}
+
+export interface BmcAnalyticsData {
+  totalClicks: number;
+  headerClicks: number;
+  footerClicks: number;
+  floatingClicks: number;
+  lastClickedAt: string | null;
+  history: BmcClickEvent[];
 }
 
 export interface QualityCheckItem {

@@ -48,6 +48,8 @@ import type {
   CrmLead,
   CrmOAuthTokenRecord,
   CrmOutreachLog,
+  BmcAnalyticsData,
+  BmcClickEvent,
   CrmSourcesAnalyticsResponse,
   CrmSyncRun,
   DemoUser,
@@ -1183,6 +1185,18 @@ export async function getAdSenseSettings(userToken?: string): Promise<AdSenseSet
         header_surface: row.header_surface === 'tinted' ? 'tinted' : 'white',
         header_cta_label: row.header_cta_label || DEFAULT_ADSENSE_SETTINGS.header_cta_label,
         header_cta_href: row.header_cta_href || DEFAULT_ADSENSE_SETTINGS.header_cta_href,
+        bmc_enabled: row.bmc_enabled !== undefined ? Boolean(row.bmc_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_enabled,
+        bmc_handle: row.bmc_handle || DEFAULT_ADSENSE_SETTINGS.bmc_handle,
+        bmc_custom_url: row.bmc_custom_url || DEFAULT_ADSENSE_SETTINGS.bmc_custom_url,
+        bmc_button_text: row.bmc_button_text || DEFAULT_ADSENSE_SETTINGS.bmc_button_text,
+        bmc_button_color: row.bmc_button_color || DEFAULT_ADSENSE_SETTINGS.bmc_button_color,
+        bmc_font_style: row.bmc_font_style || DEFAULT_ADSENSE_SETTINGS.bmc_font_style,
+        bmc_header_enabled: row.bmc_header_enabled !== undefined ? Boolean(row.bmc_header_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_header_enabled,
+        bmc_footer_enabled: row.bmc_footer_enabled !== undefined ? Boolean(row.bmc_footer_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_footer_enabled,
+        bmc_floating_enabled: row.bmc_floating_enabled !== undefined ? Boolean(row.bmc_floating_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_floating_enabled,
+        bmc_floating_position: row.bmc_floating_position || DEFAULT_ADSENSE_SETTINGS.bmc_floating_position,
+        bmc_floating_y_offset: row.bmc_floating_y_offset || DEFAULT_ADSENSE_SETTINGS.bmc_floating_y_offset,
+        bmc_support_message: row.bmc_support_message || DEFAULT_ADSENSE_SETTINGS.bmc_support_message,
         updated_at: row.updated_at || new Date().toISOString()
       };
     }
@@ -1213,6 +1227,42 @@ export async function saveAdSenseSettings(
   db.site_settings = next;
   await writeLocalDb(db);
   return next;
+}
+
+// --- Buy Me a Coffee Click & Traffic Telemetry ---
+
+let inMemoryBmcAnalytics: BmcAnalyticsData = {
+  totalClicks: 24,
+  headerClicks: 12,
+  footerClicks: 8,
+  floatingClicks: 4,
+  lastClickedAt: new Date().toISOString(),
+  history: [
+    { id: 'bmc-1', placement: 'header', timestamp: new Date(Date.now() - 3600000 * 2).toISOString() },
+    { id: 'bmc-2', placement: 'floating', timestamp: new Date(Date.now() - 3600000 * 5).toISOString() },
+    { id: 'bmc-3', placement: 'footer', timestamp: new Date(Date.now() - 3600000 * 9).toISOString() }
+  ]
+};
+
+export function recordBmcClick(placement: 'header' | 'footer' | 'floating' | 'other') {
+  inMemoryBmcAnalytics.totalClicks++;
+  if (placement === 'header') inMemoryBmcAnalytics.headerClicks++;
+  else if (placement === 'footer') inMemoryBmcAnalytics.footerClicks++;
+  else if (placement === 'floating') inMemoryBmcAnalytics.floatingClicks++;
+  inMemoryBmcAnalytics.lastClickedAt = new Date().toISOString();
+  inMemoryBmcAnalytics.history.unshift({
+    id: `bmc-${Date.now()}`,
+    placement,
+    timestamp: new Date().toISOString()
+  });
+  if (inMemoryBmcAnalytics.history.length > 50) {
+    inMemoryBmcAnalytics.history.pop();
+  }
+  return inMemoryBmcAnalytics;
+}
+
+export function getBmcAnalytics() {
+  return inMemoryBmcAnalytics;
 }
 
 // --- Page Content & Media Customizer ---

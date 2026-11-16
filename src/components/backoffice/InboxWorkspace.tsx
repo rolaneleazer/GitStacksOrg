@@ -1,4 +1,5 @@
 import {
+  Bell,
   CheckCircle2,
   Download,
   Inbox,
@@ -37,6 +38,7 @@ interface InboxWorkspaceProps {
   onUpdateCommentStatus: (id: string, status: CommentStatus) => Promise<void>;
   onExportSubscribersCsv: () => void;
   onOpenSettings?: () => void;
+  onOpenNotifications?: () => void;
 }
 
 type InboxSubTab = 'inquiries' | 'live_chat' | 'lark' | 'community';
@@ -47,7 +49,9 @@ const CATEGORY_LABELS: Record<InboxEmailLog['category'], string> = {
   contact_alert: 'Contact Form Alert',
   demo_signup_alert: 'Demo Signup Alert',
   chat_offline_alert: 'Offline Chat Alert',
-  chat_reply: 'Live Chat Lark Reply'
+  chat_instant_alert: 'Instant Live Chat Alert',
+  chat_reply: 'Live Chat Lark Reply',
+  test_notification: 'Test Notification'
 };
 
 export function InboxWorkspace({
@@ -59,7 +63,8 @@ export function InboxWorkspace({
   onUpdateInquiryStatus,
   onUpdateCommentStatus,
   onExportSubscribersCsv,
-  onOpenSettings
+  onOpenSettings,
+  onOpenNotifications
 }: InboxWorkspaceProps) {
   const [subTab, setSubTab] = useState<InboxSubTab>('inquiries');
 
@@ -534,6 +539,16 @@ export function InboxWorkspace({
                 <Mail className="h-3.5 w-3.5" />
                 <span>{checkingWatcher ? 'Scanning...' : 'Check Unanswered Inquiries Now'}</span>
               </button>
+              {onOpenNotifications && (
+                <button
+                  type="button"
+                  onClick={onOpenNotifications}
+                  className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                >
+                  <Bell className="h-3.5 w-3.5 text-[var(--gs-primary)]" />
+                  <span>Notification Rules</span>
+                </button>
+              )}
             </div>
           </div>
 

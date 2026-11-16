@@ -100,6 +100,12 @@ import {
   recordVisitorPresence
 } from './realtime.ts';
 import {
+  clearChatAlertCooldown,
+  dispatchAdminLarkAlert,
+  dispatchLiveChatLarkNotification,
+  resolveLarkAlertTarget
+} from './notifications.ts';
+import {
   buildLarkAuthorizeUrl,
   exchangeLarkCodeForTokens,
   fetchLarkUserInfo,
@@ -146,6 +152,7 @@ import {
   findWebsiteChatSessionById,
   findWebsiteChatSessionByToken,
   getAdSenseSettings,
+  getAdminNotificationSettings,
   getAgentReportSettings,
   getAnalyticsSummary,
   getCrmOAuthToken,
@@ -183,6 +190,7 @@ import {
   recordAgentEmailReport,
   recordAnalyticsEvent,
   saveAdSenseSettings,
+  saveAdminNotificationSettings,
   saveAgentReportSettings,
   saveRoutingRules,
   seedStarterDataToSupabase,
@@ -1358,54 +1366,21 @@ export async function createApp(): Promise<Express> {
     subject: string;
     bodyText: string;
   }) {
-    const nowIso = new Date().toISOString();
-    let adminEmail = (process.env.STUDIO_ADMIN_EMAIL || 'gitstackitsolution@gmail.com').trim().toLowerCase();
     try {
-      const reportCfg = await getAgentReportSettings();
-      if (reportCfg?.recipient_email && isValidEmail(reportCfg.recipient_email)) {
-        adminEmail = reportCfg.recipient_email.trim().toLowerCase();
-      }
-    } catch {
-      // use fallback admin email
-    }
+      const settings = await getAdminNotificationSettings();
+      if (!settings.enabled) return;
+      if (params.category === 'contact_alert' && !settings.notify_on_inquiry) return;
+      if (params.category === 'demo_signup_alert' && !settings.notify_on_demo_signup) return;
 
-    try {
-      const sent = await sendLarkSmtpMail({
-        toEmail: adminEmail,
-        toName: 'GitStack Admin',
+      await dispatchAdminLarkAlert({
+        category: params.category,
+        relatedId: params.relatedId,
         subject: params.subject,
-        bodyText: params.bodyText
+        bodyText: params.bodyText,
+        sentBy: 'notification-module'
       });
-      await addInboxEmailLog({
-        id: `inblog-${crypto.randomUUID().slice(0, 8)}`,
-        recipient_email: adminEmail,
-        subject: params.subject,
-        body: params.bodyText,
-        channel: 'lark_smtp',
-        category: params.category,
-        related_id: params.relatedId,
-        provider_message_id: sent.messageId,
-        status: 'sent',
-        error_detail: '',
-        sent_by: 'system',
-        sent_at: nowIso
-      }).catch(() => {});
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Lark Mail notification skipped';
-      await addInboxEmailLog({
-        id: `inblog-${crypto.randomUUID().slice(0, 8)}`,
-        recipient_email: adminEmail,
-        subject: params.subject,
-        body: params.bodyText,
-        channel: 'lark_smtp',
-        category: params.category,
-        related_id: params.relatedId,
-        provider_message_id: '',
-        status: 'failed',
-        error_detail: msg,
-        sent_by: 'system',
-        sent_at: nowIso
-      }).catch(() => {});
+    } catch {
+      // non-blocking inquiry notification
     }
   }
 
@@ -4018,6 +3993,19 @@ export async function createApp(): Promise<Express> {
       broadcastToAdmins('chat:message', { session, message });
       broadcastToAdmins('chat:session_updated', { session, message });
 
+      const originHeader =
+        typeof req.headers.origin === 'string' && /^https?:\/\//i.test(req.headers.origin)
+          ? req.headers.origin
+          : typeof req.headers.host === 'string'
+            ? `${req.protocol}://${req.headers.host}`
+            : undefined;
+
+      void dispatchLiveChatLarkNotification({
+        session,
+        message,
+        originUrl: originHeader
+      }).catch(() => null);
+
       res.status(201).json({ session, message, adminOnline: isAdminOnline() });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to send chat message' });
@@ -4117,6 +4105,8 @@ export async function createApp(): Promise<Express> {
           },
           token
         );
+
+        clearChatAlertCooldown(session.id);
 
         let emailNotice: string | undefined;
         if (alsoSendEmail && session.visitor_email && session.visitor_email.includes('@')) {
@@ -4275,6 +4265,106 @@ export async function createApp(): Promise<Express> {
         res.json(result);
       } catch (err) {
         res.status(500).json({ error: err instanceof Error ? err.message : 'Inquiry check failed' });
+      }
+    }
+  );
+
+  // --- Lark Mail Notification Module & Alert Dispatch Rules ---
+  app.get(
+    '/api/admin/notifications',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const [target, allLogs] = await Promise.all([
+          resolveLarkAlertTarget(),
+          listInboxEmailLogs(token)
+        ]);
+        const alertCategories = new Set([
+          'chat_instant_alert',
+          'chat_offline_alert',
+          'contact_alert',
+          'demo_signup_alert',
+          'test_notification'
+        ]);
+        const logs = allLogs.filter((l) => alertCategories.has(l.category)).slice(0, 60);
+        res.json({
+          settings: target.settings,
+          resolvedRecipientEmail: target.recipientEmail,
+          larkConnected: target.larkConnected,
+          larkSenderEmail: target.larkSenderEmail,
+          adminOnline: isAdminOnline(),
+          logs
+        });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to load notification settings'
+        });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/notifications',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const saved = await saveAdminNotificationSettings(req.body || {}, token);
+        const target = await resolveLarkAlertTarget(saved);
+        res.json({
+          settings: target.settings,
+          resolvedRecipientEmail: target.recipientEmail,
+          larkConnected: target.larkConnected,
+          larkSenderEmail: target.larkSenderEmail
+        });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to save notification settings'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/notifications/test',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const { recipient_email, admin_login_url } = (req.body || {}) as {
+          recipient_email?: string;
+          admin_login_url?: string;
+        };
+        const result = await dispatchAdminLarkAlert({
+          category: 'test_notification',
+          relatedId: 'manual-test',
+          subject: '[GitStack Alert Test] Lark Mail Notification Active',
+          bodyText: [
+            'This is a live test alert from the GitStack Back Office Notification Module.',
+            '',
+            `Triggered By: ${req.editor!.profile?.full_name || req.editor!.email}`,
+            `Timestamp: ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC`,
+            '',
+            'Whenever a visitor sends a Live Chat message, submits the Contact Form, or activates a Live Demo pass, you will receive an alert like this with a direct link to sign in and reply.'
+          ].join('\n'),
+          sentBy: req.editor!.email,
+          overrideRecipientEmail: recipient_email,
+          overrideLoginUrl: admin_login_url,
+          bypassEnabledCheck: true,
+          userToken: token
+        });
+        res.json({
+          delivered: result.delivered,
+          log: result.log,
+          message: result.delivered
+            ? `Test alert successfully sent to ${result.log.recipient_email} via Lark Mail.`
+            : `Test delivery failed: ${result.log.error_detail || 'Check Lark Mail SMTP configuration.'}`
+        });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to dispatch test notification'
+        });
       }
     }
   );

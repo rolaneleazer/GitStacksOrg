@@ -25,6 +25,7 @@ import {
   SEED_USER_WORKFLOWS
 } from '../shared/seedData.ts';
 import type {
+  AdminNotificationSettings,
   AdSenseSettings,
   AgentConversationEntry,
   AgentEmailReport,
@@ -100,6 +101,7 @@ interface LocalDatabase {
   cloudflare_ai_forecasts?: CloudflareAiForecast[];
   website_chat_sessions?: WebsiteChatSession[];
   website_chat_messages?: WebsiteChatMessage[];
+  admin_notification_settings?: AdminNotificationSettings;
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -3180,6 +3182,88 @@ export async function appendWebsiteChatMessage(
   await writeLocalDb(db);
   return msg;
 }
+
+// --- Admin Notification Module Settings ---
+
+export const DEFAULT_ADMIN_NOTIFICATION_SETTINGS: AdminNotificationSettings = {
+  id: 'default',
+  enabled: true,
+  recipient_email: '',
+  admin_login_url: 'https://git-stack.org/obama',
+  notify_on_live_chat: true,
+  live_chat_mode: 'instant',
+  offline_delay_minutes: 2,
+  chat_cooldown_minutes: 2,
+  notify_on_inquiry: true,
+  notify_on_demo_signup: true,
+  updated_by: 'system',
+  updated_at: '2026-11-15T00:00:00Z'
+};
+
+export async function getAdminNotificationSettings(
+  userToken?: string
+): Promise<AdminNotificationSettings> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('admin_notification_settings')
+      .select('*')
+      .eq('id', 'default')
+      .limit(1);
+    if (!error && data && data[0]) {
+      return {
+        ...DEFAULT_ADMIN_NOTIFICATION_SETTINGS,
+        ...(data[0] as AdminNotificationSettings),
+        offline_delay_minutes: Number((data[0] as AdminNotificationSettings).offline_delay_minutes ?? 2),
+        chat_cooldown_minutes: Number((data[0] as AdminNotificationSettings).chat_cooldown_minutes ?? 2)
+      };
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  return {
+    ...DEFAULT_ADMIN_NOTIFICATION_SETTINGS,
+    ...(db.admin_notification_settings || {})
+  };
+}
+
+export async function saveAdminNotificationSettings(
+  settings: AdminNotificationSettings,
+  userToken?: string
+): Promise<AdminNotificationSettings> {
+  const normalized: AdminNotificationSettings = {
+    ...DEFAULT_ADMIN_NOTIFICATION_SETTINGS,
+    ...settings,
+    id: 'default',
+    offline_delay_minutes: Math.max(0, Math.min(60, Number(settings.offline_delay_minutes) || 0)),
+    chat_cooldown_minutes: Math.max(0, Math.min(60, Number(settings.chat_cooldown_minutes) || 0)),
+    updated_at: new Date().toISOString()
+  };
+
+  let saved: AdminNotificationSettings | null = null;
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('admin_notification_settings')
+      .upsert(normalized, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) {
+      saved = data as AdminNotificationSettings;
+    } else if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  // Always mirror locally too so public chat/inquiry routes always read latest alert rules cleanly
+  const db = await readLocalDb();
+  db.admin_notification_settings = saved || normalized;
+  await writeLocalDb(db);
+
+  return saved || normalized;
+}
+
 
 
 

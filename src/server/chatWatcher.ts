@@ -1,17 +1,15 @@
 import crypto from 'node:crypto';
 import type { WebsiteChatMessage, WebsiteChatSession } from '../shared/types.ts';
+import { dispatchAdminLarkAlert, resolveLarkAlertTarget } from './notifications.ts';
 import { broadcastToAdmins, broadcastToVisitor, isAdminOnline } from './realtime.ts';
 import {
-  addInboxEmailLog,
   appendWebsiteChatMessage,
-  getAgentReportSettings,
+  getAdminNotificationSettings,
   listWebsiteChatMessages,
   listWebsiteChatSessions,
   upsertWebsiteChatSession
 } from './repository.ts';
-import { resolveIntegrationConfig, sendLarkSmtpMail } from './vault.ts';
 
-const OFFLINE_ESCALATION_DELAY_MS = 2 * 60 * 1000; // 2 minutes
 let lastWatcherRunIso: string | null = null;
 let watcherTimerStarted = false;
 
@@ -20,15 +18,8 @@ export function getChatWatcherLastRunAt(): string | null {
 }
 
 export async function resolveAdminNotificationEmail(): Promise<string> {
-  const reportSettings = await getAgentReportSettings().catch(() => null);
-  if (reportSettings?.recipient_email?.includes('@')) {
-    return reportSettings.recipient_email.trim();
-  }
-  const larkResolved = await resolveIntegrationConfig('lark_smtp').catch(() => null);
-  if (larkResolved?.configMeta?.email?.includes('@')) {
-    return larkResolved.configMeta.email.trim();
-  }
-  return (process.env.STUDIO_ADMIN_EMAIL || 'gitstackitsolution@gmail.com').trim();
+  const target = await resolveLarkAlertTarget();
+  return target.recipientEmail;
 }
 
 export function isSessionUnanswered(session: WebsiteChatSession): boolean {
@@ -55,9 +46,24 @@ export async function runOfflineChatInquiryCheck(options?: {
   const ranAt = new Date().toISOString();
   lastWatcherRunIso = ranAt;
   const adminOnlineNow = isAdminOnline();
-  const sessions = await listWebsiteChatSessions();
+  const [sessions, notifSettings] = await Promise.all([
+    listWebsiteChatSessions(),
+    getAdminNotificationSettings()
+  ]);
   const unanswered = sessions.filter(isSessionUnanswered);
 
+  if (!options?.forceManual && (!notifSettings.enabled || !notifSettings.notify_on_live_chat)) {
+    return {
+      checkedCount: sessions.length,
+      unansweredCount: unanswered.length,
+      escalatedCount: 0,
+      escalatedSessions: [],
+      adminOnline: adminOnlineNow,
+      ranAt
+    };
+  }
+
+  const delayMs = Math.max(1, notifSettings.offline_delay_minutes || 2) * 60 * 1000;
   const nowMs = Date.now();
   const escalatedSessions: string[] = [];
 
@@ -70,12 +76,11 @@ export async function runOfflineChatInquiryCheck(options?: {
 
     const shouldEscalate = options?.forceManual
       ? elapsedMs >= 0
-      : !adminOnlineNow && elapsedMs >= OFFLINE_ESCALATION_DELAY_MS;
+      : !adminOnlineNow && elapsedMs >= delayMs;
 
     if (!shouldEscalate) continue;
 
     const messages = await listWebsiteChatMessages(session.id);
-    const adminEmail = await resolveAdminNotificationEmail();
     const transcript = messages
       .slice(-12)
       .map(
@@ -91,45 +96,20 @@ export async function runOfflineChatInquiryCheck(options?: {
       `Visitor Name: ${session.visitor_name}`,
       `Visitor Email: ${session.visitor_email || 'Not provided yet'}`,
       `Page URL: ${session.page_path}`,
-      `Status: Back Office offline > 2 minutes`,
+      `Status: Back Office offline > ${notifSettings.offline_delay_minutes || 2} minute(s)`,
       '',
       'Recent Chat Transcript:',
-      transcript || '(No message content)',
-      '',
-      'Reply directly from Back Office (/obama -> Lark Mail & Lead Inbox -> Live Website Chat) or reply directly to the visitor email above.'
+      transcript || '(No message content)'
     ].join('\n');
 
-    let mailStatus: 'sent' | 'failed' = 'sent';
-    let providerMessageId = '';
-    let errorDetail = '';
-
-    try {
-      const sent = await sendLarkSmtpMail({
-        toEmail: adminEmail,
-        toName: 'GitStack Admin',
-        subject,
-        bodyText
-      });
-      providerMessageId = sent.messageId;
-    } catch (err) {
-      mailStatus = 'failed';
-      errorDetail = err instanceof Error ? err.message : 'Lark Mail SMTP not configured';
-    }
-
-    await addInboxEmailLog({
-      id: `eml-${crypto.randomUUID().slice(0, 10)}`,
-      recipient_email: adminEmail,
-      subject,
-      body: bodyText,
-      channel: 'lark_smtp',
+    const dispatched = await dispatchAdminLarkAlert({
       category: 'chat_offline_alert',
-      related_id: session.id,
-      provider_message_id: providerMessageId,
-      status: mailStatus,
-      error_detail: errorDetail,
-      sent_by: options?.triggeredBy || 'inquiry-watcher-agent',
-      sent_at: ranAt
-    }).catch(() => null);
+      relatedId: session.id,
+      subject,
+      bodyText,
+      sentBy: options?.triggeredBy || 'inquiry-watcher-agent',
+      bypassEnabledCheck: Boolean(options?.forceManual)
+    });
 
     const updatedSession: WebsiteChatSession = {
       ...session,
@@ -143,10 +123,9 @@ export async function runOfflineChatInquiryCheck(options?: {
       session_id: session.id,
       sender_role: 'agent',
       sender_name: 'Mira (Inquiry Watcher)',
-      body:
-        mailStatus === 'sent'
-          ? 'Our team is currently away from the live desk, so I forwarded your inquiry to their Lark Mail inbox. Feel free to drop your email address above so they can reply directly.'
-          : 'Our team is currently away from the live desk. Your inquiry is queued in the Back Office Inbox—please leave your email address so we can follow up directly.',
+      body: dispatched.delivered
+        ? 'Our team is currently away from the live desk, so I forwarded your inquiry to their Lark Mail inbox. Feel free to drop your email address above so they can reply directly.'
+        : 'Our team is currently away from the live desk. Your inquiry is queued in the Back Office Inbox—please leave your email address so we can follow up directly.',
       created_at: ranAt
     };
     await appendWebsiteChatMessage(agentNotice);

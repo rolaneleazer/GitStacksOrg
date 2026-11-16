@@ -762,7 +762,7 @@ CREATE POLICY "Public or team log inbox lark emails"
 ALTER TABLE public.inbox_email_logs DROP CONSTRAINT IF EXISTS inbox_email_logs_category_check;
 ALTER TABLE public.inbox_email_logs
   ADD CONSTRAINT inbox_email_logs_category_check
-  CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert', 'chat_offline_alert', 'chat_reply'));
+  CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert', 'chat_offline_alert', 'chat_instant_alert', 'chat_reply', 'test_notification'));
 
 -- 24. Cloudflare Historical Hourly Snapshots
 CREATE TABLE IF NOT EXISTS public.cloudflare_hourly_snapshots (
@@ -863,4 +863,56 @@ CREATE POLICY "Public and team manage website chat messages"
   ON public.website_chat_messages FOR ALL
   USING (true)
   WITH CHECK (true);
+
+-- 28. Admin Lark Mail Notification Module Settings
+CREATE TABLE IF NOT EXISTS public.admin_notification_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  recipient_email TEXT NOT NULL DEFAULT '',
+  admin_login_url TEXT NOT NULL DEFAULT 'https://git-stack.org/obama',
+  notify_on_live_chat BOOLEAN NOT NULL DEFAULT TRUE,
+  live_chat_mode TEXT NOT NULL CHECK (live_chat_mode IN ('instant', 'offline_only')) DEFAULT 'instant',
+  offline_delay_minutes INTEGER NOT NULL DEFAULT 2,
+  chat_cooldown_minutes INTEGER NOT NULL DEFAULT 2,
+  notify_on_inquiry BOOLEAN NOT NULL DEFAULT TRUE,
+  notify_on_demo_signup BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_by TEXT NOT NULL DEFAULT 'system',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.admin_notification_settings TO anon, authenticated, service_role;
+ALTER TABLE public.admin_notification_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated team manage admin notification settings" ON public.admin_notification_settings;
+CREATE POLICY "Authenticated team manage admin notification settings"
+  ON public.admin_notification_settings FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+INSERT INTO public.admin_notification_settings (
+  id,
+  enabled,
+  recipient_email,
+  admin_login_url,
+  notify_on_live_chat,
+  live_chat_mode,
+  offline_delay_minutes,
+  chat_cooldown_minutes,
+  notify_on_inquiry,
+  notify_on_demo_signup
+)
+VALUES (
+  'default',
+  TRUE,
+  '',
+  'https://git-stack.org/obama',
+  TRUE,
+  'instant',
+  2,
+  2,
+  TRUE,
+  TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
 

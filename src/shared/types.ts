@@ -841,7 +841,9 @@ export interface InboxEmailLog {
     | 'demo_signup_alert'
     | 'contact_alert'
     | 'chat_offline_alert'
-    | 'chat_reply';
+    | 'chat_instant_alert'
+    | 'chat_reply'
+    | 'test_notification';
   related_id?: string | null;
   provider_message_id: string;
   status: 'sent' | 'failed';
@@ -1094,4 +1096,22 @@ export interface WebsiteChatThreadResponse {
   messages: WebsiteChatMessage[];
   adminOnline: boolean;
 }
+
+export type LiveChatNotifyMode = 'instant' | 'offline_only';
+
+export interface AdminNotificationSettings {
+  id: string;
+  enabled: boolean;
+  recipient_email: string;
+  admin_login_url: string;
+  notify_on_live_chat: boolean;
+  live_chat_mode: LiveChatNotifyMode;
+  offline_delay_minutes: number;
+  chat_cooldown_minutes: number;
+  notify_on_inquiry: boolean;
+  notify_on_demo_signup: boolean;
+  updated_by: string;
+  updated_at: string;
+}
+
 

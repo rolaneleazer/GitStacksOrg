@@ -2,6 +2,7 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bell,
   Bot,
   Briefcase,
   CheckCircle2,
@@ -39,6 +40,7 @@ import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
 import { IntegrationsVaultPanel } from '../components/backoffice/IntegrationsVaultPanel.tsx';
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
+import { NotificationModulePanel } from '../components/backoffice/NotificationModulePanel.tsx';
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
 import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
 import { UserAccessPanel } from '../components/backoffice/UserAccessPanel.tsx';
@@ -94,6 +96,7 @@ type StudioTab =
   | 'pages'
   | 'branding'
   | 'inbox'
+  | 'notifications'
   | 'chat'
   | 'workflows'
   | 'analytics'
@@ -112,6 +115,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'pages',
     'branding',
     'inbox',
+    'notifications',
     'chat',
     'workflows',
     'analytics',
@@ -128,6 +132,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'crm',
     'pages',
     'articles',
+    'notifications',
     'demo_users',
     'workflows',
     'analytics',
@@ -135,7 +140,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'resources',
     'profile'
   ],
-  support_agent: ['inbox', 'chat', 'workflows', 'resources', 'profile']
+  support_agent: ['inbox', 'notifications', 'chat', 'workflows', 'resources', 'profile']
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -987,6 +992,7 @@ export function StudioPage({
     { id: 'pages', label: 'Page Content Editor', icon: FileEdit },
     { id: 'branding', label: 'Branding & Theme', icon: Palette },
     { id: 'inbox', label: 'Lark Mail & Lead Inbox', icon: Mail, count: inquiries.length },
+    { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
     {
       id: 'chat',
       label: 'Live Q&A Chat Box',
@@ -1231,6 +1237,7 @@ export function StudioPage({
               onOpenSettings={
                 currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
               }
+              onOpenNotifications={() => setActiveTab('notifications')}
               onUpdateInquiryStatus={async (id, status) => {
                 await api.updateInquiryStatus(id, status);
                 setInquiries((prev) =>
@@ -1244,6 +1251,17 @@ export function StudioPage({
                 );
               }}
               onExportSubscribersCsv={handleExportSubscribersCsv}
+            />
+          )}
+
+          {/* PANEL 3B: LARK MAIL NOTIFICATION MODULE */}
+          {currentTab === 'notifications' && (
+            <NotificationModulePanel
+              currentUserRole={currentUserRole}
+              onOpenSettings={
+                currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
+              }
+              onOpenInbox={() => setActiveTab('inbox')}
             />
           )}
 

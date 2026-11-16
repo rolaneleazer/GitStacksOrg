@@ -1,5 +1,6 @@
 import type {
   AdSenseSettings,
+  AdminNotificationSettings,
   AgentConversationEntry,
   AgentEmailReport,
   AgentId,
@@ -1221,6 +1222,44 @@ export const api = {
     }>('/api/admin/chat/check-unanswered', {
       method: 'POST',
       body: JSON.stringify({})
+    });
+  },
+
+  // --- Notification Module & Lark Mail Alert Dispatch ---
+  async getAdminNotifications() {
+    return request<{
+      settings: AdminNotificationSettings;
+      resolvedRecipientEmail: string;
+      larkConnected: boolean;
+      larkSenderEmail: string;
+      adminOnline: boolean;
+      logs: InboxEmailLog[];
+    }>('/api/admin/notifications');
+  },
+
+  async saveAdminNotifications(payload: Partial<AdminNotificationSettings>) {
+    return request<{
+      settings: AdminNotificationSettings;
+      resolvedRecipientEmail: string;
+      larkConnected: boolean;
+      larkSenderEmail: string;
+    }>('/api/admin/notifications', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async sendTestAdminNotification(payload?: {
+    recipient_email?: string;
+    admin_login_url?: string;
+  }) {
+    return request<{
+      delivered: boolean;
+      log: InboxEmailLog;
+      message: string;
+    }>('/api/admin/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
     });
   }
 };

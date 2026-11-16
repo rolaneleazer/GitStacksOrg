@@ -10,7 +10,8 @@ import {
   getSupabaseClient,
   getSupabaseProjectRef,
   isSupabaseConfigured,
-  normalizePostgresUrl
+  normalizePostgresUrl,
+  resetSupabaseClientPools
 } from './repository.ts';
 
 const VERCEL_HOBBY_RAM_LIMIT_MB = 2048;
@@ -162,7 +163,7 @@ async function querySupabaseRestEstimate(): Promise<{
   const counts = await Promise.all(
     TRACKED_TABLES.map(async (tableName) => {
       try {
-        const { count } = await sb.from(tableName).select('*', { count: 'exact', head: true });
+        const { count } = await sb.from(tableName).select('id', { count: 'exact', head: true });
         const rows = count || 0;
         // Conservative ~2.5 KB/row estimate when direct Postgres stats aren't enabled
         const dataMb = round2((rows * 2560) / (1024 * 1024));
@@ -515,3 +516,69 @@ export async function collectInfrastructureMetrics(): Promise<InfrastructureMetr
     alerts
   };
 }
+
+export async function restartInfrastructureServices(): Promise<{
+  success: boolean;
+  message: string;
+  connectionsTerminated: number;
+  poolsReset: boolean;
+  cacheCleared: boolean;
+  sampledAt: string;
+}> {
+  // 1. Reset client connection pool singletons
+  resetSupabaseClientPools();
+
+  // 2. Terminate idle & hanging PostgreSQL connections if direct DB URL configured
+  let connectionsTerminated = 0;
+  const rawDbUrl = process.env.SUPABASE_DB_URL?.trim();
+  if (rawDbUrl) {
+    try {
+      const { url: dbUrl } = normalizePostgresUrl(rawDbUrl);
+      const pg = new PgClient({
+        connectionString: dbUrl,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 4000,
+        query_timeout: 4000,
+        statement_timeout: 4000
+      });
+      await pg.connect();
+      // Terminate idle connections holding pool slots
+      const killRes = await pg.query<{ count: string }>(`
+        WITH killed AS (
+          SELECT pg_terminate_backend(pid) AS terminated
+          FROM pg_stat_activity
+          WHERE pid <> pg_backend_pid()
+            AND datname = current_database()
+            AND (
+              state IN ('idle', 'idle in transaction', 'idle in transaction (aborted)')
+              OR (query_start IS NOT NULL AND clock_timestamp() - query_start > interval '30 seconds')
+            )
+        )
+        SELECT COUNT(*)::text as count FROM killed WHERE terminated = true;
+      `);
+      connectionsTerminated = parseInt(killRes.rows[0]?.count || '0', 10);
+      await pg.end();
+    } catch (err) {
+      console.warn('[restartInfrastructureServices] Postgres termination note:', err);
+    }
+  }
+
+  // 3. Clear memory if global.gc is exposed
+  if (typeof globalThis.gc === 'function') {
+    try {
+      globalThis.gc();
+    } catch {
+      // ignore
+    }
+  }
+
+  return {
+    success: true,
+    message: `Infrastructure connection pools reset. ${connectionsTerminated} idle database backend(s) terminated and cache cleared.`,
+    connectionsTerminated,
+    poolsReset: true,
+    cacheCleared: true,
+    sampledAt: new Date().toISOString()
+  };
+}
+

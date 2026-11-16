@@ -89,7 +89,7 @@ import {
   searchApolloPeople,
   searchGoogleMapsEstablishments
 } from './connectors.ts';
-import { collectInfrastructureMetrics } from './infrastructure.ts';
+import { collectInfrastructureMetrics, restartInfrastructureServices } from './infrastructure.ts';
 import {
   broadcastToAdmins,
   broadcastToVisitor,
@@ -723,6 +723,21 @@ export async function createApp(): Promise<Express> {
       } catch (err) {
         res.status(500).json({
           error: err instanceof Error ? err.message : 'Failed to collect infrastructure telemetry.'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/infrastructure/restart-services',
+    requireRoles('super_admin', 'editor'),
+    async (_req, res) => {
+      try {
+        const result = await restartInfrastructureServices();
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to reset infrastructure connection pools.'
         });
       }
     }

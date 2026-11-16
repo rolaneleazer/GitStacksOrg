@@ -202,7 +202,8 @@ export function AgentsWorkspace({
         .catch(() => {});
     };
 
-    const pollId = window.setInterval(refreshHud, 12_000);
+    // Fallback polling reduced to 60s (WebSocket handles live push events)
+    const pollId = window.setInterval(refreshHud, 60_000);
     let ws: WebSocket | null = null;
     try {
       const wsUrl = getRealtimeWsUrl();

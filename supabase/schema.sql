@@ -1219,3 +1219,31 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- ============================================================================
+-- 37. Recommended Free-Tier Performance Indexes
+-- Eliminates Sequential Scans on frequently filtered, joined & ordered columns
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_posts_status_updated ON public.posts (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_slug ON public.posts (slug);
+CREATE INDEX IF NOT EXISTS idx_comments_post_status_created ON public.comments (post_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_subscribers_created ON public.subscribers (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inquiries_status_created ON public.inquiries (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inquiries_assigned_to ON public.inquiries (assigned_to);
+CREATE INDEX IF NOT EXISTS idx_chat_threads_status_last_msg ON public.chat_threads (status, last_message_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_threads_assigned_to ON public.chat_threads (assigned_to);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_created ON public.chat_messages (thread_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_crm_leads_updated_at ON public.crm_leads (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_crm_leads_stage ON public.crm_leads (stage);
+CREATE INDEX IF NOT EXISTS idx_crm_leads_assigned_to ON public.crm_leads (assigned_to);
+CREATE INDEX IF NOT EXISTS idx_crm_outreach_lead_sent ON public.crm_outreach_logs (lead_id, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webchat_sessions_visitor ON public.website_chat_sessions (visitor_token);
+CREATE INDEX IF NOT EXISTS idx_webchat_sessions_status_updated ON public.website_chat_sessions (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_webchat_messages_session_created ON public.website_chat_messages (session_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_product_qa_logs_created ON public.product_qa_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_qa_logs_status_level ON public.product_qa_logs (status, level, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cyber_findings_status_detected ON public.cyber_security_findings (status, detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workflow_items_user_updated ON public.user_workflow_items (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_demo_users_email ON public.demo_users (email);
+CREATE INDEX IF NOT EXISTS idx_demo_users_last_active ON public.demo_users (last_active_at DESC);
+

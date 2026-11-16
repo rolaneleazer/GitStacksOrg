@@ -81,6 +81,47 @@ import type {
   CyberSecuritySettings
 } from '../shared/types.ts';
 
+// Explicit Supabase column projection lists to prevent SELECT * over-fetching on Supabase Free Tier
+const USER_PROFILE_COLUMNS = 'user_id, email, full_name, role, job_title, bio, avatar_url, phone, timezone, status, created_at, updated_at';
+const POST_COLUMNS = 'id, slug, title, summary_tldr, content_markdown, category, author_name, author_role, author_bio, cover_image, cover_alt, meta_title, meta_description, primary_keyword, faqs, "references", word_count, read_time_minutes, quality_score, geo_score, status, published_at, updated_at, created_at';
+const POST_LIST_COLUMNS = 'id, slug, title, summary_tldr, category, author_name, author_role, author_bio, cover_image, cover_alt, meta_title, meta_description, primary_keyword, faqs, "references", word_count, read_time_minutes, quality_score, geo_score, status, published_at, updated_at, created_at';
+const COMMENT_COLUMNS = 'id, post_id, author_name, author_email, body, status, created_at';
+const SUBSCRIBER_COLUMNS = 'id, email, name, interest_topic, consent_given, created_at';
+const INQUIRY_COLUMNS = 'id, reference_code, full_name, company, work_email, service_interest, budget_range, timeline, project_brief, status, assigned_to, assigned_at, created_at';
+const SITE_SETTINGS_COLUMNS = 'id, adsense_publisher_id, ads_txt_content, auto_ads_enabled, ad_slots_enabled, editorial_review_note, ga4_measurement_id, ga4_enabled, ga4_track_events, brand_name, brand_logo_url, brand_logo_alt, theme_preset, primary_color, header_surface, header_cta_label, header_cta_href, updated_at';
+const PAGE_CONTENT_COLUMNS = 'page_key, hero_kicker, hero_title, hero_subtitle, hero_cta_label, hero_image, hero_image_alt, secondary_image, secondary_image_alt, intro_heading, intro_body, contact_phone_label, contact_phone, contact_sales_label, contact_sales_email, contact_editorial_label, contact_editorial_email, contact_privacy_label, contact_privacy_email, custom_blocks, updated_at';
+const AGENT_TASK_COLUMNS = 'id, agent_id, title, priority, completed, notes, updated_at';
+const CHAT_THREAD_COLUMNS = 'id, subject, source_type, source_ref_id, requester_name, requester_email, status, assigned_to, assigned_at, last_message_at, created_at';
+const CHAT_MESSAGE_COLUMNS = 'id, thread_id, sender_role, sender_name, body, created_at';
+const ANALYTICS_EVENT_COLUMNS = 'id, event_type, path, referrer, session_id, meta, created_at';
+const WORKFLOW_ITEM_COLUMNS = 'id, user_id, assigned_by, title, description, category, priority, status, due_date, linked_entity_type, linked_entity_id, created_at, updated_at';
+const ROUTING_RULE_COLUMNS = 'id, source_type, match_key, assignee_user_id, enabled, updated_at';
+const AGENT_OFFICE_PROFILE_COLUMNS = 'agent_id, name, role_title, badge_label, avatar_image, work_status, current_task, confidence_score, status_tone, desk_x, desk_y, last_active_at, assigned_inquiry_ids, assigned_chat_ids, updated_at';
+const AGENT_CONVERSATION_COLUMNS = 'id, from_agent_id, to_agent_id, message, intent, confidence, trigger_ref_id, created_at';
+const AGENT_REPORT_SETTINGS_COLUMNS = 'id, ceo_recipient_email, scheduled_hour_utc, eod_summary_enabled, instant_alerts_enabled, last_sent_at, updated_at';
+const AGENT_EMAIL_REPORT_COLUMNS = 'id, subject, recipient_email, report_date, total_inquiries, total_active_chats, overall_health_score, executive_summary, highlights, agent_statuses, provider_message_id, created_at, status, sent_at';
+const CRM_LEAD_COLUMNS = 'id, contact_name, role_title, email, email_status, company_name, company_domain, website_url, github_url, phone, location, rating, source_detail, source_type, source_urls, tech_stack, research_brief, recommended_service, fit_score, deal_value, stage, proposal_subject, proposal_body, follow_up_sequence, assigned_to, last_contacted_at, next_followup_at, converted_inquiry_id, created_at, updated_at';
+const CRM_OUTREACH_LOG_COLUMNS = 'id, lead_id, channel, recipient_email, subject, body, provider_message_id, status, error_detail, step_label, sent_by, sent_at';
+const CRM_OAUTH_TOKEN_COLUMNS = 'id, user_id, provider, access_token, refresh_token, expires_at, account_email, account_name, updated_at';
+const CRM_SYNC_RUN_COLUMNS = 'id, source_type, query_label, fetched_count, inserted_count, merged_count, mx_verified_count, status, error_detail, triggered_by, created_at';
+const INTEGRATION_SECRET_COLUMNS = 'provider, enabled, encrypted_secret, secret_hint, config_meta, last_tested_at, last_test_status, last_test_message, updated_by, updated_at';
+const DEMO_USER_COLUMNS = 'id, full_name, email, company, phone, crm_lead_id, login_count, actions_count, explored_modules, sandbox_conversions, last_action_label, last_active_at, created_at';
+const DEMO_USER_FULL_COLUMNS = 'id, full_name, email, company, phone, password_hash, crm_lead_id, login_count, actions_count, explored_modules, sandbox_conversions, last_action_label, last_active_at, created_at';
+const INBOX_EMAIL_LOG_COLUMNS = 'id, recipient_email, subject, body, channel, category, related_id, provider_message_id, status, error_detail, sent_by, sent_at';
+const CLOUDFLARE_SNAPSHOT_COLUMNS = 'id, zone_id, zone_name, bucket_hour, requests, bytes, cached_requests, status_1xx, status_2xx, status_3xx, status_4xx, status_5xx, top_paths, top_countries, created_at, updated_at';
+const CLOUDFLARE_FORECAST_COLUMNS = 'zone_id, zone_name, model_used, horizon_days, range_analyzed, forecast_payload, generated_at';
+const WEBSITE_CHAT_SESSION_COLUMNS = 'id, visitor_token, visitor_name, visitor_email, page_path, status, last_visitor_msg_at, last_admin_reply_at, escalated_at, converted_lead_id, created_at, updated_at';
+const WEBSITE_CHAT_MESSAGE_COLUMNS = 'id, session_id, sender_role, sender_name, body, created_at';
+const ADMIN_NOTIFICATION_SETTINGS_COLUMNS = 'id, enabled, recipient_email, admin_login_url, notify_on_live_chat, live_chat_mode, offline_delay_minutes, chat_cooldown_minutes, notify_on_inquiry, notify_on_demo_signup, updated_by, updated_at';
+const PRODUCT_QA_LOG_COLUMNS = 'id, level, source, module_name, page_path, code_location, error_name, message, stack_trace, http_status, request_method, request_path, session_id, user_agent, fingerprint, ai_root_cause, ai_fix_suggestion, status, created_at';
+const PRODUCT_QA_REPORT_COLUMNS = 'id, report_date, trigger_type, recipient_email, subject, health_score, total_logs, error_count, warn_count, top_module, top_page, executive_summary, module_breakdown, page_breakdown, recommended_actions, pdf_filename, status, provider_message_id, error_detail, created_at';
+const PRODUCT_QA_SETTINGS_COLUMNS = 'id, agent_enabled, realtime_alert_on_critical, eod_enabled, eod_hour_utc, recipient_email, last_eod_sent_date, last_scan_at, updated_at';
+const AI_SEARCH_RUN_COLUMNS = 'id, run_date, trigger_type, overall_score, ai_citation_score, seo_authority_score, searchable_platforms_count, total_platforms_count, top_ranked_services_count, platforms, query_rankings, content_recommendations, summary, created_at';
+const AI_SEARCH_SETTINGS_COLUMNS = 'id, daily_test_enabled, daily_hour_utc, recipient_email, target_domain, auto_optimize_llms_txt, last_run_date, last_run_at, updated_at';
+const CYBER_FINDING_COLUMNS = 'id, domain, severity, status, title, cve_or_rule, affected_module, description, ai_remediation, detected_at, updated_at';
+const CYBER_REPORT_COLUMNS = 'id, report_date, trigger_type, recipient_email, subject, posture_score, grade, critical_count, high_count, medium_count, low_count, domain_checks, executive_summary, ai_threat_intel, recommended_hardening, pdf_filename, status, provider_message_id, error_detail, created_at';
+const CYBER_SETTINGS_COLUMNS = 'id, sentinel_enabled, daily_report_enabled, daily_hour_utc, realtime_critical_alert, recipient_email, last_report_date, last_scan_at, updated_at';
+
 interface LocalDatabase {
   posts: Article[];
   comments: ArticleComment[];
@@ -170,13 +211,22 @@ export function isSupabaseConfigured(): boolean {
   return Boolean(getSupabaseUrl() && (getSupabasePublicKey() || getSupabaseServiceKey()));
 }
 
+let cachedDefaultClient: SupabaseClient | null = null;
+let cachedDefaultKey: string | null = null;
+const userClientCache = new Map<string, SupabaseClient>();
+
 export function getSupabaseClient(userToken?: string): SupabaseClient {
   const url = getSupabaseUrl()!;
   const serviceKey = getSupabaseServiceKey();
   const publicKey = getSupabasePublicKey();
+  const targetKey = serviceKey || publicKey!;
 
   if (userToken && !serviceKey && publicKey) {
-    return createClient(url, publicKey, {
+    const cacheKey = `${url}:${userToken}`;
+    const existing = userClientCache.get(cacheKey);
+    if (existing) return existing;
+
+    const client = createClient(url, publicKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: {
         headers: {
@@ -184,11 +234,32 @@ export function getSupabaseClient(userToken?: string): SupabaseClient {
         }
       }
     });
+    if (userClientCache.size > 50) {
+      const first = userClientCache.keys().next().value;
+      if (first) userClientCache.delete(first);
+    }
+    userClientCache.set(cacheKey, client);
+    return client;
   }
 
-  return createClient(url, serviceKey || publicKey!, {
+  const clientKey = `${url}:${targetKey}`;
+  if (cachedDefaultClient && cachedDefaultKey === clientKey) {
+    return cachedDefaultClient;
+  }
+
+  cachedDefaultClient = createClient(url, targetKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
+  cachedDefaultKey = clientKey;
+  return cachedDefaultClient;
+}
+
+export function resetSupabaseClientPools(): { defaultPoolReset: boolean; userClientsCleared: number } {
+  const userCount = userClientCache.size;
+  cachedDefaultClient = null;
+  cachedDefaultKey = null;
+  userClientCache.clear();
+  return { defaultPoolReset: true, userClientsCleared: userCount };
 }
 
 function isFallbackableDbError(error: { code?: string; message?: string } | null): boolean {
@@ -266,12 +337,17 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
   }
 }
 
-export function normalizePostgresUrl(raw: string): { url: string; host: string } {
+export function normalizePostgresUrl(raw: string): {
+  url: string;
+  host: string;
+  isPooler: boolean;
+  port: number;
+} {
   const trimmed = raw.trim();
   const schemeIdx = trimmed.indexOf('://');
   const lastAt = trimmed.lastIndexOf('@');
   if (schemeIdx === -1 || lastAt === -1) {
-    return { url: trimmed, host: '' };
+    return { url: trimmed, host: '', isPooler: false, port: 5432 };
   }
   const prefix = trimmed.slice(0, schemeIdx + 3);
   const authPart = trimmed.slice(schemeIdx + 3, lastAt);
@@ -282,7 +358,30 @@ export function normalizePostgresUrl(raw: string): { url: string; host: string }
       ? authPart
       : `${authPart.slice(0, colonIdx)}:${encodeURIComponent(decodeURIComponentSafe(authPart.slice(colonIdx + 1)))}`;
   const hostMatch = hostAndRest.match(/^([^:/?]+)/);
-  return { url: `${prefix}${encodedAuth}@${hostAndRest}`, host: hostMatch?.[1] || '' };
+  const host = hostMatch?.[1] || '';
+
+  // Extract port if specified
+  const portMatch = hostAndRest.match(/^[^:/?]+:(\d+)/);
+  const port = portMatch ? parseInt(portMatch[1], 10) : 5432;
+  const isPooler = port === 6543 || host.includes('pooler.supabase.com');
+
+  let normalizedUrl = `${prefix}${encodedAuth}@${hostAndRest}`;
+
+  // Ensure sslmode=require and pooler configuration for Supabase Free Tier stability
+  if (!normalizedUrl.includes('sslmode=')) {
+    const separator = normalizedUrl.includes('?') ? '&' : '?';
+    normalizedUrl = `${normalizedUrl}${separator}sslmode=require`;
+  }
+  if (isPooler && !normalizedUrl.includes('connection_limit=')) {
+    normalizedUrl = `${normalizedUrl}&connection_limit=1`;
+  }
+
+  return {
+    url: normalizedUrl,
+    host,
+    isPooler,
+    port
+  };
 }
 
 function decodeURIComponentSafe(val: string): string {
@@ -473,7 +572,7 @@ async function resolveOrBootstrapUserProfile(
     const sb = getSupabaseClient(userToken);
     const { data: existingById, error: idErr } = await sb
       .from('user_profiles')
-      .select('*')
+      .select(USER_PROFILE_COLUMNS)
       .eq('user_id', userId)
       .limit(1);
 
@@ -496,7 +595,7 @@ async function resolveOrBootstrapUserProfile(
       // Check if an account exists by email (for first bootstrap) or count super_admins
       const { data: byEmail } = await sb
         .from('user_profiles')
-        .select('*')
+        .select(USER_PROFILE_COLUMNS)
         .eq('email', cleanEmail)
         .limit(1);
 
@@ -702,7 +801,11 @@ export async function autoSeedSupabaseIfEmpty(): Promise<boolean> {
 export async function listPosts(includeDrafts: boolean, userToken?: string): Promise<Article[]> {
   if (isSupabaseConfigured()) {
     const sb = getSupabaseClient(userToken);
-    let query = sb.from('posts').select('*').order('updated_at', { ascending: false });
+    let query = sb
+      .from('posts')
+      .select(POST_LIST_COLUMNS)
+      .order('updated_at', { ascending: false })
+      .limit(50);
     if (!includeDrafts) {
       query = query.eq('status', 'published');
     }
@@ -733,7 +836,7 @@ export async function getPostBySlug(
 ): Promise<Article | null> {
   if (isSupabaseConfigured()) {
     const sb = getSupabaseClient(userToken);
-    let query = sb.from('posts').select('*').eq('slug', slug).limit(1);
+    let query = sb.from('posts').select(POST_COLUMNS).eq('slug', slug).limit(1);
     if (!includeDrafts) {
       query = query.eq('status', 'published');
     }
@@ -802,7 +905,11 @@ export async function listComments(
 ): Promise<ArticleComment[]> {
   if (isSupabaseConfigured()) {
     const sb = getSupabaseClient(userToken);
-    let query = sb.from('comments').select('*').order('created_at', { ascending: false });
+    let query = sb
+      .from('comments')
+      .select(COMMENT_COLUMNS)
+      .order('created_at', { ascending: false })
+      .limit(50);
     if (postId) query = query.eq('post_id', postId);
     if (!includeAll) query = query.eq('status', 'approved');
     const { data, error } = await query;
@@ -892,8 +999,9 @@ export async function listSubscribers(userToken?: string): Promise<NewsletterSub
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('subscribers')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(SUBSCRIBER_COLUMNS)
+      .order('created_at', { ascending: false })
+      .limit(50);
     if (!error) return (data || []) as NewsletterSubscriber[];
     if (!isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -930,8 +1038,9 @@ export async function listInquiries(userToken?: string): Promise<ClientInquiry[]
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('inquiries')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select(INQUIRY_COLUMNS)
+      .order('created_at', { ascending: false })
+      .limit(50);
     if (!error) return (data || []) as ClientInquiry[];
     if (!isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -1050,7 +1159,7 @@ export async function getAdSenseSettings(userToken?: string): Promise<AdSenseSet
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('site_settings')
-      .select('*')
+      .select(SITE_SETTINGS_COLUMNS)
       .eq('id', 'default')
       .limit(1);
     if (!error && data && data[0]) {
@@ -1137,7 +1246,10 @@ function mergePageWithDefaults(key: PageKey, stored?: Partial<PageContentConfig>
 export async function listPageContents(userToken?: string): Promise<PageContentConfig[]> {
   const keys: PageKey[] = ['home', 'services', 'about', 'contact'];
   if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient(userToken).from('page_contents').select('*');
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('page_contents')
+      .select(PAGE_CONTENT_COLUMNS)
+      .limit(10);
     if (!error && Array.isArray(data)) {
       const byKey = new Map((data as PageContentConfig[]).map((r) => [r.page_key, r]));
       return keys.map((k) => mergePageWithDefaults(k, byKey.get(k)));
@@ -1194,8 +1306,9 @@ export async function listAgentTasks(userToken?: string): Promise<AgentTask[]> {
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('agent_tasks')
-      .select('*')
-      .order('updated_at', { ascending: false });
+      .select(AGENT_TASK_COLUMNS)
+      .order('updated_at', { ascending: false })
+      .limit(50);
     if (!error && Array.isArray(data)) {
       return data as AgentTask[];
     }
@@ -1248,8 +1361,9 @@ export async function listChatThreads(userToken?: string): Promise<ChatThread[]>
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('chat_threads')
-      .select('*')
-      .order('last_message_at', { ascending: false });
+      .select(CHAT_THREAD_COLUMNS)
+      .order('last_message_at', { ascending: false })
+      .limit(50);
     if (!error && Array.isArray(data)) {
       threads = data as ChatThread[];
     } else if (error && !isFallbackableDbError(error)) {
@@ -1272,9 +1386,10 @@ export async function listChatMessages(threadId: string, userToken?: string): Pr
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('chat_messages')
-      .select('*')
+      .select(CHAT_MESSAGE_COLUMNS)
       .eq('thread_id', threadId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(50);
     if (!error && Array.isArray(data)) {
       return data as ChatMessage[];
     }
@@ -1401,9 +1516,10 @@ export async function getAnalyticsSummary(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('analytics_events')
-      .select('*')
+      .select(ANALYTICS_EVENT_COLUMNS)
       .gte('created_at', new Date(cutoffMs).toISOString())
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(500);
     if (!error && Array.isArray(data)) {
       events = data as AnalyticsEvent[];
     } else if (error && !isFallbackableDbError(error)) {
@@ -1511,8 +1627,9 @@ export async function listUserProfiles(userToken?: string): Promise<UserProfile[
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('user_profiles')
-      .select('*')
-      .order('created_at', { ascending: true });
+      .select(USER_PROFILE_COLUMNS)
+      .order('created_at', { ascending: true })
+      .limit(50);
     if (!error && Array.isArray(data)) {
       return data as UserProfile[];
     }
@@ -1649,9 +1766,7 @@ export async function createTeamUser(
         'SUPABASE_SECRET_KEY is required on the server to provision new Supabase Auth users directly.'
       );
     }
-    const adminClient = createClient(getSupabaseUrl()!, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
-    });
+    const adminClient = getSupabaseClient();
     const { data: authData, error: authErr } = await adminClient.auth.admin.createUser({
       email: cleanEmail,
       password: input.password,
@@ -1762,9 +1877,7 @@ export async function updateTeamUser(
     if (!serviceKey) {
       throw new Error('SUPABASE_SECRET_KEY is required to reset user passwords.');
     }
-    const adminClient = createClient(getSupabaseUrl()!, serviceKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
-    });
+    const adminClient = getSupabaseClient();
     const { error: pwErr } = await adminClient.auth.admin.updateUserById(targetUserId, {
       password: updates.password.trim()
     });
@@ -1823,9 +1936,7 @@ export async function deleteTeamUser(
   if (isSupabaseConfigured()) {
     const serviceKey = getSupabaseServiceKey();
     if (serviceKey) {
-      const adminClient = createClient(getSupabaseUrl()!, serviceKey, {
-        auth: { persistSession: false, autoRefreshToken: false }
-      });
+      const adminClient = getSupabaseClient();
       const { error: delAuthErr } = await adminClient.auth.admin.deleteUser(targetUserId);
       if (delAuthErr && !delAuthErr.message.toLowerCase().includes('not found')) {
         throw new Error(delAuthErr.message);
@@ -1862,8 +1973,9 @@ export async function listWorkflowItems(
   if (isSupabaseConfigured()) {
     let query = getSupabaseClient(userToken)
       .from('user_workflow_items')
-      .select('*')
-      .order('updated_at', { ascending: false });
+      .select(WORKFLOW_ITEM_COLUMNS)
+      .order('updated_at', { ascending: false })
+      .limit(50);
     if (userId) query = query.eq('user_id', userId);
     const { data, error } = await query;
     if (!error && Array.isArray(data)) return data as UserWorkflowItem[];
@@ -1945,8 +2057,9 @@ export async function listRoutingRules(userToken?: string): Promise<RoutingRule[
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('routing_rules')
-      .select('*')
-      .order('source_type', { ascending: true });
+      .select(ROUTING_RULE_COLUMNS)
+      .order('source_type', { ascending: true })
+      .limit(50);
     if (!error && Array.isArray(data)) {
       return data.length > 0 ? (data as RoutingRule[]) : [...SEED_ROUTING_RULES];
     }
@@ -2015,13 +2128,14 @@ export async function listAgentOfficeProfiles(userToken?: string): Promise<Agent
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('agent_office_profiles')
-      .select('*');
+      .select(AGENT_OFFICE_PROFILE_COLUMNS)
+      .limit(20);
     if (!error && Array.isArray(data)) {
       const byId = new Map<AgentId, AgentOfficeProfile>();
       for (const def of DEFAULT_AGENT_OFFICE_PROFILES) {
         byId.set(def.agent_id, def);
       }
-      for (const row of data as AgentOfficeProfile[]) {
+      for (const row of (data as unknown as AgentOfficeProfile[])) {
         byId.set(row.agent_id, {
           ...row,
           desk_x: Number(row.desk_x),
@@ -2092,11 +2206,11 @@ export async function listAgentConversations(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('agent_conversations')
-      .select('*')
+      .select(AGENT_CONVERSATION_COLUMNS)
       .order('created_at', { ascending: false })
-      .limit(120);
+      .limit(50);
     if (!error && Array.isArray(data)) {
-      return data.length > 0 ? (data as AgentConversationEntry[]) : [...SEED_AGENT_CONVERSATIONS];
+      return data.length > 0 ? (data as unknown as AgentConversationEntry[]) : [...SEED_AGENT_CONVERSATIONS];
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -2133,11 +2247,11 @@ export async function getAgentReportSettings(userToken?: string): Promise<AgentR
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('agent_report_settings')
-      .select('*')
+      .select(AGENT_REPORT_SETTINGS_COLUMNS)
       .eq('id', 'default')
       .limit(1);
     if (!error && data && data[0]) {
-      return { ...DEFAULT_AGENT_REPORT_SETTINGS, ...(data[0] as AgentReportSettings) };
+      return { ...DEFAULT_AGENT_REPORT_SETTINGS, ...((data[0] as unknown as AgentReportSettings) || {}) };
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -2170,11 +2284,11 @@ export async function listAgentEmailReports(userToken?: string): Promise<AgentEm
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('agent_email_reports')
-      .select('*')
+      .select(AGENT_EMAIL_REPORT_COLUMNS)
       .order('sent_at', { ascending: false })
-      .limit(60);
+      .limit(50);
     if (!error && Array.isArray(data)) {
-      return data as AgentEmailReport[];
+      return data as unknown as AgentEmailReport[];
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -2230,8 +2344,9 @@ export async function listCrmLeads(userToken?: string): Promise<CrmLead[]> {
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('crm_leads')
-      .select('*')
-      .order('updated_at', { ascending: false });
+      .select(CRM_LEAD_COLUMNS)
+      .order('updated_at', { ascending: false })
+      .limit(50);
     if (!error && Array.isArray(data)) {
       return data as CrmLead[];
     }
@@ -2419,9 +2534,9 @@ export async function listCrmOutreachLogs(
   if (isSupabaseConfigured()) {
     let query = getSupabaseClient(userToken)
       .from('crm_outreach_logs')
-      .select('*')
+      .select(CRM_OUTREACH_LOG_COLUMNS)
       .order('sent_at', { ascending: false })
-      .limit(120);
+      .limit(50);
     if (leadId) query = query.eq('lead_id', leadId);
     const { data, error } = await query;
     if (!error && Array.isArray(data)) return data as CrmOutreachLog[];
@@ -2466,10 +2581,10 @@ export async function getCrmOAuthToken(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('crm_oauth_tokens')
-      .select('*')
+      .select(CRM_OAUTH_TOKEN_COLUMNS)
       .eq('id', tokenId)
       .limit(1);
-    if (!error && data && data[0]) return data[0] as CrmOAuthTokenRecord;
+    if (!error && data && data[0]) return data[0] as unknown as CrmOAuthTokenRecord;
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -2540,10 +2655,10 @@ export async function listCrmSyncRuns(userToken?: string): Promise<CrmSyncRun[]>
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('crm_sync_runs')
-      .select('*')
+      .select(CRM_SYNC_RUN_COLUMNS)
       .order('created_at', { ascending: false })
-      .limit(80);
-    if (!error && Array.isArray(data)) return data as CrmSyncRun[];
+      .limit(50);
+    if (!error && Array.isArray(data)) return data as unknown as CrmSyncRun[];
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -2682,7 +2797,8 @@ export async function listIntegrationSecretRows(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('crm_integration_secrets')
-      .select('*');
+      .select(INTEGRATION_SECRET_COLUMNS)
+      .limit(20);
     if (!error && Array.isArray(data)) {
       return data as IntegrationSecretRecord[];
     }
@@ -2734,7 +2850,7 @@ export async function getIntegrationSecretRow(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('crm_integration_secrets')
-      .select('*')
+      .select(INTEGRATION_SECRET_COLUMNS)
       .eq('provider', provider)
       .limit(1);
     if (!error && data && data[0]) {
@@ -2858,11 +2974,11 @@ export async function listDemoUsersRaw(userToken?: string): Promise<DemoUser[]> 
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('demo_users')
-      .select('*')
+      .select(DEMO_USER_FULL_COLUMNS)
       .order('last_active_at', { ascending: false })
-      .limit(500);
+      .limit(50);
     if (!error && Array.isArray(data)) {
-      return data as DemoUser[];
+      return data as unknown as DemoUser[];
     }
     if (error && !isFallbackableDbError(error)) {
       throw new Error(error.message);
@@ -2880,10 +2996,10 @@ export async function findDemoUserByEmail(email: string): Promise<DemoUser | nul
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient()
       .from('demo_users')
-      .select('*')
+      .select(DEMO_USER_FULL_COLUMNS)
       .eq('email', normalized)
       .limit(1);
-    if (!error && data && data[0]) return data[0] as DemoUser;
+    if (!error && data && data[0]) return data[0] as unknown as DemoUser;
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -2895,10 +3011,10 @@ export async function findDemoUserById(id: string): Promise<DemoUser | null> {
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient()
       .from('demo_users')
-      .select('*')
+      .select(DEMO_USER_FULL_COLUMNS)
       .eq('id', id)
       .limit(1);
-    if (!error && data && data[0]) return data[0] as DemoUser;
+    if (!error && data && data[0]) return data[0] as unknown as DemoUser;
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -2949,11 +3065,11 @@ export async function listInboxEmailLogs(userToken?: string): Promise<InboxEmail
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('inbox_email_logs')
-      .select('*')
+      .select(INBOX_EMAIL_LOG_COLUMNS)
       .order('sent_at', { ascending: false })
-      .limit(100);
+      .limit(50);
     if (!error && Array.isArray(data)) {
-      return data as InboxEmailLog[];
+      return data as unknown as InboxEmailLog[];
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -3030,10 +3146,10 @@ export async function listCloudflareHourlySnapshots(
   if (isSupabaseConfigured()) {
     let query = getSupabaseClient(userToken)
       .from('cloudflare_hourly_snapshots')
-      .select('*')
+      .select(CLOUDFLARE_SNAPSHOT_COLUMNS)
       .eq('zone_id', zoneId)
       .order('bucket_hour', { ascending: true })
-      .limit(2400);
+      .limit(100);
     if (sinceIso) {
       query = query.gte('bucket_hour', sinceIso);
     }
@@ -3072,7 +3188,7 @@ export async function getCloudflareAiForecast(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('cloudflare_ai_forecasts')
-      .select('*')
+      .select(CLOUDFLARE_FORECAST_COLUMNS)
       .eq('zone_id', zoneId)
       .limit(1);
     if (!error && data && data[0] && data[0].forecast_payload) {
@@ -3128,10 +3244,10 @@ export async function findWebsiteChatSessionByToken(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient()
       .from('website_chat_sessions')
-      .select('*')
+      .select(WEBSITE_CHAT_SESSION_COLUMNS)
       .eq('visitor_token', visitorToken)
       .limit(1);
-    if (!error && data && data[0]) return data[0] as WebsiteChatSession;
+    if (!error && data && data[0]) return data[0] as unknown as WebsiteChatSession;
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -3146,10 +3262,10 @@ export async function findWebsiteChatSessionById(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('website_chat_sessions')
-      .select('*')
+      .select(WEBSITE_CHAT_SESSION_COLUMNS)
       .eq('id', sessionId)
       .limit(1);
-    if (!error && data && data[0]) return data[0] as WebsiteChatSession;
+    if (!error && data && data[0]) return data[0] as unknown as WebsiteChatSession;
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -3186,11 +3302,11 @@ export async function listWebsiteChatSessions(userToken?: string): Promise<Websi
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('website_chat_sessions')
-      .select('*')
+      .select(WEBSITE_CHAT_SESSION_COLUMNS)
       .order('updated_at', { ascending: false })
-      .limit(200);
+      .limit(50);
     if (!error && Array.isArray(data)) {
-      sessions = data as WebsiteChatSession[];
+      sessions = data as unknown as WebsiteChatSession[];
     } else if (error && !isFallbackableDbError(error)) {
       throw new Error(error.message);
     } else {
@@ -3214,12 +3330,12 @@ export async function listWebsiteChatMessages(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('website_chat_messages')
-      .select('*')
+      .select(WEBSITE_CHAT_MESSAGE_COLUMNS)
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true })
-      .limit(300);
+      .limit(50);
     if (!error && Array.isArray(data)) {
-      return data as WebsiteChatMessage[];
+      return data as unknown as WebsiteChatMessage[];
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -3236,11 +3352,11 @@ export async function listAllWebsiteChatMessages(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('website_chat_messages')
-      .select('*')
+      .select(WEBSITE_CHAT_MESSAGE_COLUMNS)
       .order('created_at', { ascending: false })
-      .limit(800);
+      .limit(50);
     if (!error && Array.isArray(data)) {
-      return data as WebsiteChatMessage[];
+      return data as unknown as WebsiteChatMessage[];
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -3296,7 +3412,7 @@ export async function getAdminNotificationSettings(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('admin_notification_settings')
-      .select('*')
+      .select(ADMIN_NOTIFICATION_SETTINGS_COLUMNS)
       .eq('id', 'default')
       .limit(1);
     if (!error && data && data[0]) {
@@ -3399,12 +3515,13 @@ export async function listProductQaLogs(
   limit = 250,
   userToken?: string
 ): Promise<ProductQaLog[]> {
+  const safeLimit = Math.min(limit, 50);
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('product_qa_logs')
-      .select('*')
+      .select(PRODUCT_QA_LOG_COLUMNS)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .limit(safeLimit);
     if (!error && Array.isArray(data)) {
       return data as ProductQaLog[];
     }
@@ -3416,7 +3533,7 @@ export async function listProductQaLogs(
   const db = await readLocalDb();
   return [...(db.product_qa_logs || [])]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, limit);
+    .slice(0, safeLimit);
 }
 
 export async function findProductQaLogById(
@@ -3426,7 +3543,7 @@ export async function findProductQaLogById(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('product_qa_logs')
-      .select('*')
+      .select(PRODUCT_QA_LOG_COLUMNS)
       .eq('id', id)
       .limit(1);
     if (!error && data && data[0]) return data[0] as ProductQaLog;
@@ -3489,12 +3606,13 @@ export async function listProductQaReports(
   limit = 40,
   userToken?: string
 ): Promise<ProductQaReport[]> {
+  const safeLimit = Math.min(limit, 50);
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('product_qa_reports')
-      .select('*')
+      .select(PRODUCT_QA_REPORT_COLUMNS)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .limit(safeLimit);
     if (!error && Array.isArray(data)) return data as ProductQaReport[];
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -3502,7 +3620,7 @@ export async function listProductQaReports(
   const db = await readLocalDb();
   return [...(db.product_qa_reports || [])]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, limit);
+    .slice(0, safeLimit);
 }
 
 export async function findProductQaReportById(
@@ -3512,7 +3630,7 @@ export async function findProductQaReportById(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('product_qa_reports')
-      .select('*')
+      .select(PRODUCT_QA_REPORT_COLUMNS)
       .eq('id', id)
       .limit(1);
     if (!error && data && data[0]) return data[0] as ProductQaReport;
@@ -3527,7 +3645,7 @@ export async function getProductQaSettings(userToken?: string): Promise<ProductQ
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('product_qa_settings')
-      .select('*')
+      .select(PRODUCT_QA_SETTINGS_COLUMNS)
       .eq('id', 'default')
       .limit(1);
     if (!error && data && data[0]) {
@@ -3626,12 +3744,13 @@ export async function listAiSearchVisibilityRuns(
   limit = 30,
   userToken?: string
 ): Promise<AiSearchVisibilityRun[]> {
+  const safeLimit = Math.min(limit, 50);
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('ai_search_visibility_runs')
-      .select('*')
+      .select(AI_SEARCH_RUN_COLUMNS)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .limit(safeLimit);
     if (!error && Array.isArray(data)) return data as AiSearchVisibilityRun[];
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -3639,7 +3758,7 @@ export async function listAiSearchVisibilityRuns(
   const db = await readLocalDb();
   return [...(db.ai_search_visibility_runs || [])]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, limit);
+    .slice(0, safeLimit);
 }
 
 export async function getAiSearchVisibilitySettings(
@@ -3648,7 +3767,7 @@ export async function getAiSearchVisibilitySettings(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('ai_search_visibility_settings')
-      .select('*')
+      .select(AI_SEARCH_SETTINGS_COLUMNS)
       .eq('id', 'default')
       .limit(1);
     if (!error && data && data[0]) {
@@ -3747,12 +3866,13 @@ export async function listCyberSecurityFindings(
   limit = 100,
   userToken?: string
 ): Promise<CyberSecurityFinding[]> {
+  const safeLimit = Math.min(limit, 50);
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('cyber_security_findings')
-      .select('*')
+      .select(CYBER_FINDING_COLUMNS)
       .order('detected_at', { ascending: false })
-      .limit(limit);
+      .limit(safeLimit);
     if (!error && Array.isArray(data)) return data as CyberSecurityFinding[];
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -3760,7 +3880,7 @@ export async function listCyberSecurityFindings(
   const db = await readLocalDb();
   return [...(db.cyber_security_findings || [])]
     .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime())
-    .slice(0, limit);
+    .slice(0, safeLimit);
 }
 
 export async function updateCyberSecurityFindingStatus(
@@ -3816,12 +3936,13 @@ export async function listCyberSecurityReports(
   limit = 40,
   userToken?: string
 ): Promise<CyberSecurityReport[]> {
+  const safeLimit = Math.min(limit, 50);
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('cyber_security_reports')
-      .select('*')
+      .select(CYBER_REPORT_COLUMNS)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .limit(safeLimit);
     if (!error && Array.isArray(data)) return data as CyberSecurityReport[];
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
@@ -3829,7 +3950,7 @@ export async function listCyberSecurityReports(
   const db = await readLocalDb();
   return [...(db.cyber_security_reports || [])]
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, limit);
+    .slice(0, safeLimit);
 }
 
 export async function findCyberSecurityReportById(
@@ -3839,7 +3960,7 @@ export async function findCyberSecurityReportById(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('cyber_security_reports')
-      .select('*')
+      .select(CYBER_REPORT_COLUMNS)
       .eq('id', id)
       .limit(1);
     if (!error && data && data[0]) return data[0] as CyberSecurityReport;
@@ -3856,7 +3977,7 @@ export async function getCyberSecuritySettings(
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('cyber_security_settings')
-      .select('*')
+      .select(CYBER_SETTINGS_COLUMNS)
       .eq('id', 'default')
       .limit(1);
     if (!error && data && data[0]) {

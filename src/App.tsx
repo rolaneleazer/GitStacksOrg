@@ -6,6 +6,7 @@ import {
   useCookieConsent
 } from './components/AdSenseCompliance.tsx';
 import { FloatingLiveChat } from './components/FloatingLiveChat.tsx';
+import { BuyMeACoffeeWidget } from './components/BuyMeACoffee.tsx';
 import { Footer, Header } from './components/LayoutChrome.tsx';
 import { api, getExistingFloatingChatToken } from './lib/api.ts';
 import { ArticlePage } from './pages/ArticlePage.tsx';
@@ -134,7 +135,7 @@ export default function App() {
     api.sendPublicPresence(route || '/');
     const id = window.setInterval(() => {
       api.sendPublicPresence(route || '/');
-    }, 15_000);
+    }, 60_000);
     return () => window.clearInterval(id);
   }, [route]);
 
@@ -295,9 +296,13 @@ export default function App() {
         onNavigate={navigate}
       />
       {!route.startsWith('/obama') &&
-        !route.startsWith('/studio') &&
-        (route === '/' || route === '' || Boolean(getExistingFloatingChatToken())) && (
-          <FloatingLiveChat currentRoute={route || '/'} />
+        !route.startsWith('/studio') && (
+          <>
+            <BuyMeACoffeeWidget yOffset={84} position="Right" />
+            {(route === '/' || route === '' || Boolean(getExistingFloatingChatToken())) && (
+              <FloatingLiveChat currentRoute={route || '/'} />
+            )}
+          </>
         )}
     </div>
   );

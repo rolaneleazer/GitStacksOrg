@@ -98,11 +98,11 @@ export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPan
     loadDashboard(false);
   }, [loadDashboard]);
 
-  // Real-time WebSocket stream + 10s fallback polling
+  // Real-time WebSocket stream + 60s fallback polling (WebSocket pushes live errors)
   useEffect(() => {
     const pollId = window.setInterval(() => {
       loadDashboard(true);
-    }, 10_000);
+    }, 60_000);
 
     let ws: WebSocket | null = null;
     try {

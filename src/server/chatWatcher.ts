@@ -157,5 +157,5 @@ export function startChatWatcherLoop(): void {
   watcherTimerStarted = true;
   setInterval(() => {
     runOfflineChatInquiryCheck().catch(() => null);
-  }, 30_000);
+  }, 60_000);
 }

@@ -109,12 +109,12 @@ export function FloatingLiveChat({ currentRoute }: FloatingLiveChatProps) {
     };
   }, [loadThread, open]);
 
-  // 4-second poll fallback while drawer is open
+  // 60-second poll fallback while drawer is open (WebSocket provides instant delivery)
   useEffect(() => {
     if (!open) return;
     setUnreadCount(0);
     loadThread();
-    const id = window.setInterval(loadThread, 4000);
+    const id = window.setInterval(loadThread, 60_000);
     return () => window.clearInterval(id);
   }, [open, loadThread]);
 

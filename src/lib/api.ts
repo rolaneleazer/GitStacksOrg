@@ -174,36 +174,107 @@ export function getExistingFloatingChatToken(): string | null {
   }
 }
 
+interface CacheRecord {
+  data: unknown;
+  timestamp: number;
+}
+
+const getCache = new Map<string, CacheRecord>();
+const inflightPromises = new Map<string, Promise<unknown>>();
+const SWR_TTL_MS = 30_000;
+
+export function invalidateClientApiCache(pattern?: string): void {
+  if (!pattern) {
+    getCache.clear();
+    inflightPromises.clear();
+    return;
+  }
+  for (const key of Array.from(getCache.keys())) {
+    if (key.includes(pattern)) {
+      getCache.delete(key);
+    }
+  }
+}
+
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
   const token = getStoredToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...((options.headers as Record<string, string>) || {})
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  const isGet = method === 'GET';
+
+  // Invalidate read caches on mutations
+  if (!isGet) {
+    if (url.includes('/api/posts')) invalidateClientApiCache('/api/posts');
+    if (url.includes('/api/comments')) invalidateClientApiCache('/api/comments');
+    if (url.includes('/api/adsense')) invalidateClientApiCache('/api/adsense');
+    if (url.includes('/api/pages')) invalidateClientApiCache('/api/pages');
+    if (url.includes('/api/crm')) invalidateClientApiCache('/api/crm');
+    if (url.includes('/api/inbox')) invalidateClientApiCache('/api/inbox');
+    if (url.includes('/api/qa')) invalidateClientApiCache('/api/qa');
+    if (url.includes('/api/cyber')) invalidateClientApiCache('/api/cyber');
   }
-  const res = await fetch(url, { ...options, headers });
-  const text = await res.text();
-  let data: unknown = {};
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    data = { error: text };
+
+  // Request deduplication & SWR caching for GET requests
+  const cacheKey = `${url}:${token || 'anon'}`;
+  if (isGet) {
+    const inflight = inflightPromises.get(cacheKey);
+    if (inflight) {
+      return inflight as Promise<T>;
+    }
+    const cached = getCache.get(cacheKey);
+    const now = Date.now();
+    if (cached && now - cached.timestamp < SWR_TTL_MS) {
+      return cached.data as T;
+    }
   }
-  if (!res.ok) {
-    const errObj = data as { error?: string; blockingIssues?: string[]; quotaExceeded?: boolean };
-    const err = new Error(errObj.error || `Request failed (${res.status})`) as Error & {
-      blockingIssues?: string[];
-      status?: number;
-      quotaExceeded?: boolean;
+
+  const executeFetch = async (): Promise<T> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...((options.headers as Record<string, string>) || {})
     };
-    err.blockingIssues = errObj.blockingIssues;
-    err.status = res.status;
-    err.quotaExceeded = errObj.quotaExceeded;
-    throw err;
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(url, { ...options, headers });
+    const text = await res.text();
+    let data: unknown = {};
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: text };
+    }
+    if (!res.ok) {
+      const errObj = data as { error?: string; blockingIssues?: string[]; quotaExceeded?: boolean };
+      const err = new Error(errObj.error || `Request failed (${res.status})`) as Error & {
+        blockingIssues?: string[];
+        status?: number;
+        quotaExceeded?: boolean;
+      };
+      err.blockingIssues = errObj.blockingIssues;
+      err.status = res.status;
+      err.quotaExceeded = errObj.quotaExceeded;
+      throw err;
+    }
+
+    if (isGet) {
+      getCache.set(cacheKey, { data, timestamp: Date.now() });
+      if (getCache.size > 100) {
+        const oldestKey = getCache.keys().next().value;
+        if (oldestKey) getCache.delete(oldestKey);
+      }
+    }
+    return data as T;
+  };
+
+  if (isGet) {
+    const promise = executeFetch().finally(() => {
+      inflightPromises.delete(cacheKey);
+    });
+    inflightPromises.set(cacheKey, promise);
+    return promise;
   }
-  return data as T;
+
+  return executeFetch();
 }
 
 export const api = {
@@ -596,6 +667,21 @@ export const api = {
 
   async getInfrastructureMetrics() {
     return request<InfrastructureMetricsResponse>('/api/infrastructure/metrics');
+  },
+
+  async restartInfrastructureServices() {
+    const res = await request<{
+      success: boolean;
+      message: string;
+      connectionsTerminated: number;
+      poolsReset: boolean;
+      cacheCleared: boolean;
+      sampledAt: string;
+    }>('/api/infrastructure/restart-services', {
+      method: 'POST'
+    });
+    invalidateClientApiCache();
+    return res;
   },
 
   // --- Virtual Office HQ & Daily Agent Email Proof Reports ---

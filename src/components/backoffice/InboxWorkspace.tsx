@@ -175,14 +175,14 @@ export function InboxWorkspace({
     }
   }, [selectedChatId, loadSelectedChatThread]);
 
-  // Real-time WS + 5s poll for Live Website Chat
+  // Real-time WS + 60s fallback poll for Live Website Chat
   useEffect(() => {
     const pollId = window.setInterval(() => {
       loadChatSessions(true);
       if (subTab === 'live_chat' && selectedChatId) {
         loadSelectedChatThread(selectedChatId);
       }
-    }, 5000);
+    }, 60_000);
 
     let ws: WebSocket | null = null;
     try {

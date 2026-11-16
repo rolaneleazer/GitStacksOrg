@@ -10,7 +10,9 @@ import {
   Pause,
   Play,
   RefreshCw,
-  Server
+  RotateCcw,
+  Server,
+  ShieldAlert
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api.ts';
@@ -24,7 +26,7 @@ interface InfrastructureMonitorProps {
   currentUserRole: UserRole;
 }
 
-type PollMode = '5s' | '15s' | 'paused';
+type PollMode = '60s' | '120s' | 'paused';
 
 function formatTimeLabel(iso: string): string {
   try {
@@ -82,7 +84,7 @@ function buildAreaPath(
 export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitorProps) {
   const [data, setData] = useState<InfrastructureMetricsResponse | null>(null);
   const [samples, setSamples] = useState<InfrastructureSamplePoint[]>([]);
-  const [pollMode, setPollMode] = useState<PollMode>('5s');
+  const [pollMode, setPollMode] = useState<PollMode>('60s');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +93,16 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
   const [showRss, setShowRss] = useState(true);
   const [showHeap, setShowHeap] = useState(true);
   const [showDb, setShowDb] = useState(true);
+
+  const [restartModalOpen, setRestartModalOpen] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartResult, setRestartResult] = useState<{
+    success: boolean;
+    message: string;
+    connectionsTerminated: number;
+    sampledAt: string;
+  } | null>(null);
+  const [restartError, setRestartError] = useState<string | null>(null);
 
   const mountedRef = useRef(true);
 
@@ -142,7 +154,7 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
 
   useEffect(() => {
     if (pollMode === 'paused') return;
-    const ms = pollMode === '5s' ? 5000 : 15000;
+    const ms = pollMode === '60s' ? 60000 : 120000;
     const timer = window.setInterval(() => {
       fetchSample(false);
     }, ms);
@@ -160,6 +172,27 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
     link.download = `gitstack-infra-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleConfirmRestart = async () => {
+    setRestarting(true);
+    setRestartError(null);
+    try {
+      const res = await api.restartInfrastructureServices();
+      setRestartResult({
+        success: res.success,
+        message: res.message,
+        connectionsTerminated: res.connectionsTerminated,
+        sampledAt: res.sampledAt
+      });
+      setRestartModalOpen(false);
+      // Immediately resample metrics to reflect lowered connection count
+      await fetchSample(false);
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : 'Failed to restart connection pools.');
+    } finally {
+      setRestarting(false);
+    }
   };
 
   const activeSample = useMemo(() => {
@@ -292,7 +325,7 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
             aria-label="Live polling interval"
             className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 w-full sm:w-auto"
           >
-            {(['5s', '15s', 'paused'] as const).map((mode) => (
+            {(['60s', '120s', 'paused'] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -327,13 +360,48 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
             type="button"
             onClick={handleExportSnapshot}
             disabled={!data}
-            className="min-h-[42px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-60 whitespace-nowrap"
+            className="min-h-[42px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 whitespace-nowrap"
           >
             <Download className="h-3.5 w-3.5" />
             <span>Export JSON</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setRestartError(null);
+              setRestartModalOpen(true);
+            }}
+            className="min-h-[42px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 transition-colors whitespace-nowrap"
+            title="Drop idle connections & reset Supabase connection pools"
+          >
+            <RotateCcw className="h-3.5 w-3.5 text-amber-700" />
+            <span>Reset Pools &amp; Drop Connections</span>
+          </button>
         </div>
       </div>
+
+      {restartResult && (
+        <div className="flex items-start justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs font-medium text-emerald-900">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-slate-900">{restartResult.message}</p>
+              <p className="text-emerald-700 mt-0.5">
+                Supabase client connection pools reconstructed, server caches purged, and{' '}
+                <strong className="font-bold">{restartResult.connectionsTerminated}</strong> idle database backend(s) terminated at {formatTimeLabel(restartResult.sampledAt)}.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRestartResult(null)}
+            className="rounded px-2 py-1 text-emerald-800 hover:bg-emerald-100 font-semibold whitespace-nowrap"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium text-red-800">
@@ -960,6 +1028,83 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
                   ? 'In Vercel Project Settings → Environment Variables, set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY, and SUPABASE_DB_URL. Add optional VERCEL_TOKEN + SUPABASE_ACCESS_TOKEN for cloud deployment metadata.'
                   : 'Vercel environment variables (Supabase keys and optional cloud tokens) are managed by a Super Admin in Vercel Project Settings.'}
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Connection Reset & Backend Termination Confirmation Modal */}
+      {restartModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="restart-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+        >
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                <ShieldAlert className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 id="restart-modal-title" className="font-display text-base font-bold text-slate-900">
+                  Reset Connection Pools &amp; Terminate Idle Backends?
+                </h3>
+                <p className="mt-1 text-xs leading-relaxed text-slate-600">
+                  Execute emergency connection reclamation to instantly recover database throughput when experiencing connection pool saturation or swap latency.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs space-y-2.5 text-slate-700">
+              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                <Database className="h-3.5 w-3.5 text-[var(--gs-primary)]" />
+                <span>Reclamation Operations Executed:</span>
+              </div>
+              <ul className="list-disc pl-4 space-y-1 text-slate-600">
+                <li>
+                  Executes <code className="font-mono font-semibold text-slate-800">pg_terminate_backend(pid)</code> on idle and hanging PostgreSQL client connections.
+                </li>
+                <li>
+                  Clears Supabase singleton connection pools (<code className="font-mono text-slate-800">cachedDefaultClient</code> &amp; user client cache).
+                </li>
+                <li>
+                  Flushes server-side response caches and client SWR inflight deduplication maps.
+                </li>
+                <li>
+                  Current Database Load:{' '}
+                  <strong className="font-mono font-bold text-slate-900">
+                    {data?.supabase.activeConnections || 0} / {data?.supabase.maxConnections || 60} connections
+                  </strong>{' '}
+                  ({data?.supabase.storageUsedPercent || 0}% storage budget used).
+                </li>
+              </ul>
+            </div>
+
+            {restartError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+                {restartError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRestartModalOpen(false)}
+                disabled={restarting}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRestart}
+                disabled={restarting}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors disabled:opacity-60"
+              >
+                {restarting && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                <span>{restarting ? 'Resetting Pools...' : 'Confirm Reset & Drop Connections'}</span>
+              </button>
             </div>
           </div>
         </div>

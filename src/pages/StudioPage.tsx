@@ -396,7 +396,7 @@ export function StudioPage({
     api.sendAdminHeartbeat().catch(() => {});
     const hbInterval = window.setInterval(() => {
       api.sendAdminHeartbeat().catch(() => {});
-    }, 25_000);
+    }, 60_000);
 
     let ws: WebSocket | null = null;
     try {

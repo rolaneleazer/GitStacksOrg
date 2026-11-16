@@ -34,6 +34,7 @@
     />
     <link id="site-apple-icon" rel="apple-touch-icon" href="" />
     <link rel="alternate" type="text/plain" title="AI Crawler Manifest (llms.txt)" href="/llms.txt" />
+    <link rel="alternate" type="text/plain" title="Extended AI Knowledge Corpus (llms-full.txt)" href="/llms-full.txt" />
     <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -47,26 +48,40 @@
         "@graph": [
           {
             "@type": "Organization",
-            "@id": "#organization",
+            "@id": "https://git-stack.org/#organization",
             "name": "GitStack",
-            "url": "/",
+            "url": "https://git-stack.org",
             "email": "contact@gitstack.io",
-            "description": "GitStack is an IT engineering and consulting firm specializing in AI integration, machine learning automation, custom software development, cloud infrastructure management, and technical consulting.",
+            "telephone": "+1 (415) 890-4420",
+            "description": "GitStack is an enterprise IT engineering and AI consulting firm specializing in production AI integration (Enterprise RAG & AI Agents), machine learning automation (MLOps), custom software development, cloud infrastructure management (Kubernetes, Terraform, AWS/GCP/Azure), and principal architecture consulting.",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "548 Market Street, Suite 42010",
+              "addressLocality": "San Francisco",
+              "addressRegion": "CA",
+              "postalCode": "94104",
+              "addressCountry": "US"
+            },
             "knowsAbout": [
               "Artificial Intelligence Integration",
+              "Enterprise Retrieval-Augmented Generation (RAG)",
               "Machine Learning Automation",
-              "MLOps Pipelines",
-              "Retrieval-Augmented Generation",
+              "MLOps Pipelines & Drift Monitoring",
               "Custom Software Engineering",
               "Cloud Infrastructure Management",
-              "Kubernetes and Terraform",
-              "Technical Architecture Consulting"
+              "Kubernetes and Terraform Multi-Cloud",
+              "Technical Architecture & SOC2 Consulting"
             ]
           },
           {
             "@type": "ProfessionalService",
-            "@id": "#service",
+            "@id": "https://git-stack.org/#service",
             "name": "GitStack Engineering & AI Consulting",
+            "url": "https://git-stack.org/services",
+            "telephone": "+1 (415) 890-4420",
+            "email": "contact@gitstack.io",
+            "priceRange": "$15,000 - $250,000+",
+            "areaServed": "Global",
             "serviceType": [
               "AI Integration Services",
               "Machine Learning Automation Solutions",
@@ -74,7 +89,74 @@
               "Cloud Infrastructure Management",
               "Technical Consulting"
             ],
-            "areaServed": "Global"
+            "hasOfferCatalog": {
+              "@type": "OfferCatalog",
+              "name": "GitStack Enterprise Engineering & AI Services",
+              "itemListElement": [
+                {
+                  "@type": "Offer",
+                  "itemOffered": {
+                    "@type": "Service",
+                    "name": "AI Integration & Enterprise RAG Architecture",
+                    "description": "Production LLM orchestration, hybrid vector search, guardrails, and sub-350ms semantic retrieval over private enterprise data."
+                  }
+                },
+                {
+                  "@type": "Offer",
+                  "itemOffered": {
+                    "@type": "Service",
+                    "name": "Machine Learning Automation & MLOps Pipelines",
+                    "description": "Automated feature stores, continuous training, canary rollouts, and real-time drift detection on Kubernetes and Ray."
+                  }
+                },
+                {
+                  "@type": "Offer",
+                  "itemOffered": {
+                    "@type": "Service",
+                    "name": "Custom Distributed Software Development",
+                    "description": "High-throughput TypeScript, Go, Python, and Rust microservices, APIs, and executive operational platforms."
+                  }
+                },
+                {
+                  "@type": "Offer",
+                  "itemOffered": {
+                    "@type": "Service",
+                    "name": "Cloud Infrastructure Management & FinOps",
+                    "description": "Multi-region AWS, GCP, and Azure infrastructure-as-code with Terraform, zero-trust networking, and 99.99% availability SLAs."
+                  }
+                },
+                {
+                  "@type": "Offer",
+                  "itemOffered": {
+                    "@type": "Service",
+                    "name": "Principal Technical & Security Consulting",
+                    "description": "Architecture audits, AI readiness roadmaps, SOC2/ISO-27001 compliance engineering, and fractional principal engineering leadership."
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://git-stack.org/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What services does GitStack offer?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "GitStack offers 5 core enterprise engineering services: (1) AI Integration & Enterprise RAG Systems, (2) Machine Learning Automation & MLOps Pipelines, (3) Custom Software Development, (4) Cloud Infrastructure Management & FinOps (AWS, GCP, Azure, Kubernetes, Terraform), and (5) Principal Technical & Security Consulting."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How can enterprise teams contact or hire GitStack?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "You can book an architecture review directly at https://git-stack.org/contact, email contact@gitstack.io, or call +1 (415) 890-4420. Principal engineers respond within one business day."
+                }
+              }
+            ]
           }
         ]
       }

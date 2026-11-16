@@ -106,6 +106,18 @@ import {
   resolveLarkAlertTarget
 } from './notifications.ts';
 import {
+  applyAiSeoContentBooster,
+  getAiSearchVisibilityDashboard,
+  runDailyAiSearchVisibilityTest
+} from './aiSeoVisibility.ts';
+import {
+  generateAndSendCyberSecurityReport,
+  getCyberSecurityDashboard,
+  mitigateCyberFinding,
+  renderCyberSecurityPdfBuffer
+} from './cyberSecurity.ts';
+import {
+  acceptFeatureBaseline,
   generateAndSendQaEodReport,
   getQaDashboardData,
   reanalyzeSingleQaLog,
@@ -157,6 +169,7 @@ import {
   deleteWorkflowItem,
   findDemoUserByEmail,
   findDemoUserById,
+  findCyberSecurityReportById,
   findProductQaReportById,
   findWebsiteChatSessionById,
   findWebsiteChatSessionByToken,
@@ -184,6 +197,7 @@ import {
   listComments,
   listCrmLeads,
   listCrmOutreachLogs,
+  listCyberSecurityFindings,
   listDemoUsersWithStats,
   listInboxEmailLogs,
   listInquiries,
@@ -201,6 +215,8 @@ import {
   saveAdSenseSettings,
   saveAdminNotificationSettings,
   saveAgentReportSettings,
+  saveAiSearchVisibilitySettings,
+  saveCyberSecuritySettings,
   saveProductQaSettings,
   saveRoutingRules,
   seedStarterDataToSupabase,
@@ -439,6 +455,14 @@ export async function createApp(): Promise<Express> {
 
   await ensureDatabaseReadyOnBoot();
 
+  // Hardened HTTP Security Headers Middleware (Audited by Aegis CyberSec Sentinel)
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+  });
+
   // --- Crawler, AI Discovery & AdSense Root Endpoints ---
 
   app.get('/robots.txt', (req, res) => {
@@ -455,10 +479,16 @@ export async function createApp(): Promise<Express> {
       'User-agent: OAI-SearchBot',
       'Allow: /',
       '',
+      'User-agent: GPTBot',
+      'Allow: /',
+      '',
       'User-agent: ChatGPT-User',
       'Allow: /',
       '',
       'User-agent: Google-Extended',
+      'Allow: /',
+      '',
+      'User-agent: Googlebot',
       'Allow: /',
       '',
       'User-agent: PerplexityBot',
@@ -467,8 +497,18 @@ export async function createApp(): Promise<Express> {
       'User-agent: ClaudeBot',
       'Allow: /',
       '',
+      'User-agent: anthropic-ai',
+      'Allow: /',
+      '',
+      'User-agent: Bingbot',
+      'Allow: /',
+      '',
+      'User-agent: Applebot-Extended',
+      'Allow: /',
+      '',
       `Sitemap: ${origin}/sitemap.xml`,
-      `# AI Manifest: ${origin}/llms.txt`
+      `# AI Manifest: ${origin}/llms.txt`,
+      `# Extended AI Corpus: ${origin}/llms-full.txt`
     ].join('\n');
     res.type('text/plain').send(body);
   });
@@ -4665,6 +4705,224 @@ export async function createApp(): Promise<Express> {
       res.send(pdfBuffer);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to render PDF report' });
+    }
+  });
+
+  app.post(
+    '/api/admin/qa/features/baseline',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const { feature_id } = (req.body || {}) as { feature_id?: string };
+        const result = await acceptFeatureBaseline(feature_id || 'all', token);
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to accept feature baseline'
+        });
+      }
+    }
+  );
+
+  // --- AI & Search Engine Visibility (GEO / SEO) Module ---
+
+  app.get(
+    '/api/admin/ai-visibility/dashboard',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const dashboard = await getAiSearchVisibilityDashboard(token);
+        res.json(dashboard);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to load AI & Search Visibility dashboard'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/ai-visibility/run',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const { send_email, recipient_email } = (req.body || {}) as {
+          send_email?: boolean;
+          recipient_email?: string;
+        };
+        const result = await runDailyAiSearchVisibilityTest({
+          triggerType: 'manual',
+          sendEmailReport: Boolean(send_email),
+          overrideRecipientEmail: recipient_email,
+          userToken: token
+        });
+        const dashboard = await getAiSearchVisibilityDashboard(token);
+        res.json({ ...result, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to run AI & Search visibility test'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/ai-visibility/boost',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const boost = await applyAiSeoContentBooster(token);
+        const dashboard = await getAiSearchVisibilityDashboard(token);
+        res.json({ ...boost, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to apply AI & SEO content booster'
+        });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/ai-visibility/settings',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const settings = await saveAiSearchVisibilitySettings(req.body || {}, token);
+        res.json({ settings });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to save AI visibility settings'
+        });
+      }
+    }
+  );
+
+  // --- Cybersecurity & Live AI Sentinel (Aegis) Module ---
+
+  app.get(
+    '/api/admin/cybersecurity/dashboard',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const dashboard = await getCyberSecurityDashboard(token);
+        res.json(dashboard);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to load Cybersecurity dashboard'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/cybersecurity/scan',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        await saveCyberSecuritySettings({ last_scan_at: new Date().toISOString() }, token);
+        const dashboard = await getCyberSecurityDashboard(token);
+        res.json({ dashboard, message: 'Aegis Live AI CyberSec Sentinel completed 8-domain security audit.' });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to run Cybersecurity scan'
+        });
+      }
+    }
+  );
+
+  app.patch(
+    '/api/admin/cybersecurity/findings/:id',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const status = req.body?.status as 'open' | 'mitigated' | 'accepted' | 'monitoring';
+        if (!['open', 'mitigated', 'accepted', 'monitoring'].includes(status)) {
+          return res.status(400).json({ error: 'Invalid finding status.' });
+        }
+        const finding = await mitigateCyberFinding(req.params.id, status, token);
+        if (!finding) {
+          return res.status(404).json({ error: 'Cybersecurity finding not found.' });
+        }
+        const dashboard = await getCyberSecurityDashboard(token);
+        res.json({ finding, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to update finding status'
+        });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/cybersecurity/settings',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const settings = await saveCyberSecuritySettings(req.body || {}, token);
+        res.json({ settings });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to save Cybersecurity settings'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/cybersecurity/report/send',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const { recipient_email } = (req.body || {}) as { recipient_email?: string };
+        const result = await generateAndSendCyberSecurityReport({
+          triggerType: 'manual',
+          overrideRecipientEmail: recipient_email,
+          userToken: token
+        });
+        const dashboard = await getCyberSecurityDashboard(token);
+        res.json({ ...result, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to generate and send Cybersecurity PDF report'
+        });
+      }
+    }
+  );
+
+  app.get('/api/admin/cybersecurity/report/:id/pdf', async (req, res) => {
+    try {
+      const queryToken = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+      const token = getBearerToken(req) || queryToken || undefined;
+      const session = await verifyEditorToken(token);
+      if (!session) {
+        return res.status(401).json({ error: 'Authentication required to download Cybersecurity PDF report.' });
+      }
+      const report = await findCyberSecurityReportById(req.params.id, token);
+      if (!report) {
+        return res.status(404).json({ error: 'Cybersecurity report not found.' });
+      }
+      const findings = await listCyberSecurityFindings(50, token);
+      const pdfBuffer = await renderCyberSecurityPdfBuffer(report, findings);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        `inline; filename="${report.pdf_filename || `GitStack-CyberSec-Report-${report.report_date}.pdf`}"`
+      );
+      res.send(pdfBuffer);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to render Cybersecurity PDF report'
+      });
     }
   });
 

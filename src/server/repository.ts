@@ -55,6 +55,7 @@ import type {
   DirectoryUser,
   InboxEmailLog,
   InquiryStatus,
+  IntegrationConfigMeta,
   IntegrationProviderId,
   IntegrationSecretRecord,
   LeadSourceType,
@@ -72,7 +73,12 @@ import type {
   UserStatus,
   UserWorkflowItem,
   WebsiteChatMessage,
-  WebsiteChatSession
+  WebsiteChatSession,
+  AiSearchVisibilityRun,
+  AiSearchVisibilitySettings,
+  CyberSecurityFinding,
+  CyberSecurityReport,
+  CyberSecuritySettings
 } from '../shared/types.ts';
 
 interface LocalDatabase {
@@ -108,6 +114,11 @@ interface LocalDatabase {
   product_qa_logs?: ProductQaLog[];
   product_qa_reports?: ProductQaReport[];
   product_qa_settings?: ProductQaSettings;
+  ai_search_visibility_runs?: AiSearchVisibilityRun[];
+  ai_search_visibility_settings?: AiSearchVisibilitySettings;
+  cyber_security_findings?: CyberSecurityFinding[];
+  cyber_security_reports?: CyberSecurityReport[];
+  cyber_security_settings?: CyberSecuritySettings;
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -1035,9 +1046,9 @@ export async function assignInquiry(
   return item;
 }
 
-export async function getAdSenseSettings(): Promise<AdSenseSettings> {
+export async function getAdSenseSettings(userToken?: string): Promise<AdSenseSettings> {
   if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient()
+    const { data, error } = await getSupabaseClient(userToken)
       .from('site_settings')
       .select('*')
       .eq('id', 'default')
@@ -1123,10 +1134,10 @@ function mergePageWithDefaults(key: PageKey, stored?: Partial<PageContentConfig>
   return merged;
 }
 
-export async function listPageContents(): Promise<PageContentConfig[]> {
+export async function listPageContents(userToken?: string): Promise<PageContentConfig[]> {
   const keys: PageKey[] = ['home', 'services', 'about', 'contact'];
   if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient().from('page_contents').select('*');
+    const { data, error } = await getSupabaseClient(userToken).from('page_contents').select('*');
     if (!error && Array.isArray(data)) {
       const byKey = new Map((data as PageContentConfig[]).map((r) => [r.page_key, r]));
       return keys.map((k) => mergePageWithDefaults(k, byKey.get(k)));
@@ -1136,6 +1147,24 @@ export async function listPageContents(): Promise<PageContentConfig[]> {
 
   const db = await readLocalDb();
   return keys.map((k) => mergePageWithDefaults(k, db.page_contents?.[k]));
+}
+
+export async function getAllPageContents(
+  userToken?: string
+): Promise<Record<PageKey, PageContentConfig>> {
+  const rows = await listPageContents(userToken);
+  const map = { ...DEFAULT_PAGE_CONTENTS };
+  for (const r of rows) {
+    map[r.page_key] = r;
+  }
+  return map;
+}
+
+export async function listArticles(
+  publishedOnly = false,
+  userToken?: string
+): Promise<Article[]> {
+  return listPosts(!publishedOnly, userToken);
 }
 
 export async function upsertPageContent(
@@ -2666,6 +2695,38 @@ export async function listIntegrationSecretRows(
   return [...(db.crm_integration_secrets || [])];
 }
 
+export async function listIntegrationSecretStatuses(
+  userToken?: string
+): Promise<
+  {
+    provider: IntegrationProviderId;
+    configured: boolean;
+    maskedPreview: string;
+    configMeta: IntegrationConfigMeta;
+  }[]
+> {
+  const rows = await listIntegrationSecretRows(userToken);
+  const providers: IntegrationProviderId[] = [
+    'lark_smtp',
+    'google_analytics',
+    'apollo',
+    'google_maps',
+    'gemini',
+    'github',
+    'cloudflare'
+  ];
+  return providers.map((provider) => {
+    const found = rows.find((r) => r.provider === provider);
+    const configured = Boolean(found && found.enabled && found.encrypted_secret);
+    return {
+      provider,
+      configured,
+      maskedPreview: found?.secret_hint || (configured ? 'Configured' : 'Not configured'),
+      configMeta: found?.config_meta || {}
+    };
+  });
+}
+
 export async function getIntegrationSecretRow(
   provider: IntegrationProviderId,
   userToken?: string
@@ -3304,6 +3365,7 @@ export const DEFAULT_PRODUCT_QA_SETTINGS: ProductQaSettings = {
   recipient_email: '',
   last_eod_sent_date: '',
   last_scan_at: null,
+  feature_baselines: {},
   updated_at: '2026-11-15T00:00:00Z'
 };
 
@@ -3473,7 +3535,8 @@ export async function getProductQaSettings(userToken?: string): Promise<ProductQ
       return {
         ...DEFAULT_PRODUCT_QA_SETTINGS,
         ...row,
-        eod_hour_utc: Number(row.eod_hour_utc ?? 15)
+        eod_hour_utc: Number(row.eod_hour_utc ?? 15),
+        feature_baselines: row.feature_baselines || {}
       };
     }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
@@ -3482,7 +3545,8 @@ export async function getProductQaSettings(userToken?: string): Promise<ProductQ
   const db = await readLocalDb();
   return {
     ...DEFAULT_PRODUCT_QA_SETTINGS,
-    ...(db.product_qa_settings || {})
+    ...(db.product_qa_settings || {}),
+    feature_baselines: db.product_qa_settings?.feature_baselines || {}
   };
 }
 
@@ -3498,6 +3562,7 @@ export async function saveProductQaSettings(
     id: 'default',
     eod_hour_utc:
       Number.isInteger(nextHour) && nextHour >= 0 && nextHour <= 23 ? nextHour : current.eod_hour_utc,
+    feature_baselines: settings.feature_baselines ?? current.feature_baselines ?? {},
     updated_at: new Date().toISOString()
   };
 
@@ -3520,6 +3585,334 @@ export async function saveProductQaSettings(
   await writeLocalDb(db);
   return saved || normalized;
 }
+
+// --- AI & Search Engine Visibility (GEO / SEO) Runs & Settings ---
+
+export const DEFAULT_AI_SEARCH_VISIBILITY_SETTINGS: AiSearchVisibilitySettings = {
+  id: 'default',
+  daily_test_enabled: true,
+  daily_hour_utc: 14,
+  recipient_email: '',
+  target_domain: 'https://git-stack.org',
+  auto_optimize_llms_txt: true,
+  last_run_date: '',
+  last_run_at: null,
+  updated_at: '2026-11-15T00:00:00Z'
+};
+
+export async function addAiSearchVisibilityRun(
+  run: AiSearchVisibilityRun,
+  userToken?: string
+): Promise<AiSearchVisibilityRun> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('ai_search_visibility_runs')
+      .insert(run)
+      .select()
+      .single();
+    if (!error && data) return data as AiSearchVisibilityRun;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.ai_search_visibility_runs || [];
+  list.unshift(run);
+  db.ai_search_visibility_runs = list.slice(0, 90);
+  await writeLocalDb(db);
+  return run;
+}
+
+export async function listAiSearchVisibilityRuns(
+  limit = 30,
+  userToken?: string
+): Promise<AiSearchVisibilityRun[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('ai_search_visibility_runs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (!error && Array.isArray(data)) return data as AiSearchVisibilityRun[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.ai_search_visibility_runs || [])]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
+
+export async function getAiSearchVisibilitySettings(
+  userToken?: string
+): Promise<AiSearchVisibilitySettings> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('ai_search_visibility_settings')
+      .select('*')
+      .eq('id', 'default')
+      .limit(1);
+    if (!error && data && data[0]) {
+      return {
+        ...DEFAULT_AI_SEARCH_VISIBILITY_SETTINGS,
+        ...(data[0] as AiSearchVisibilitySettings),
+        daily_hour_utc: Number((data[0] as AiSearchVisibilitySettings).daily_hour_utc ?? 14)
+      };
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return {
+    ...DEFAULT_AI_SEARCH_VISIBILITY_SETTINGS,
+    ...(db.ai_search_visibility_settings || {})
+  };
+}
+
+export async function saveAiSearchVisibilitySettings(
+  settings: Partial<AiSearchVisibilitySettings>,
+  userToken?: string
+): Promise<AiSearchVisibilitySettings> {
+  const current = await getAiSearchVisibilitySettings(userToken).catch(
+    () => DEFAULT_AI_SEARCH_VISIBILITY_SETTINGS
+  );
+  const nextHour = Number(settings.daily_hour_utc ?? current.daily_hour_utc);
+  const normalized: AiSearchVisibilitySettings = {
+    ...current,
+    ...settings,
+    id: 'default',
+    daily_hour_utc:
+      Number.isInteger(nextHour) && nextHour >= 0 && nextHour <= 23 ? nextHour : current.daily_hour_utc,
+    updated_at: new Date().toISOString()
+  };
+
+  let saved: AiSearchVisibilitySettings | null = null;
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('ai_search_visibility_settings')
+      .upsert(normalized, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) {
+      saved = data as AiSearchVisibilitySettings;
+    } else if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  db.ai_search_visibility_settings = saved || normalized;
+  await writeLocalDb(db);
+  return saved || normalized;
+}
+
+// --- Cybersecurity & Live AI Sentinel Findings, Reports & Settings ---
+
+export const DEFAULT_CYBER_SECURITY_SETTINGS: CyberSecuritySettings = {
+  id: 'default',
+  sentinel_enabled: true,
+  daily_report_enabled: true,
+  daily_hour_utc: 15,
+  realtime_critical_alert: true,
+  recipient_email: '',
+  last_report_date: '',
+  last_scan_at: null,
+  updated_at: '2026-11-15T00:00:00Z'
+};
+
+export async function upsertCyberSecurityFinding(
+  finding: CyberSecurityFinding,
+  userToken?: string
+): Promise<CyberSecurityFinding> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_findings')
+      .upsert(finding, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) return data as CyberSecurityFinding;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.cyber_security_findings || [];
+  const idx = list.findIndex((f) => f.id === finding.id);
+  if (idx >= 0) list[idx] = finding;
+  else list.unshift(finding);
+  db.cyber_security_findings = list.slice(0, 200);
+  await writeLocalDb(db);
+  return finding;
+}
+
+export async function listCyberSecurityFindings(
+  limit = 100,
+  userToken?: string
+): Promise<CyberSecurityFinding[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_findings')
+      .select('*')
+      .order('detected_at', { ascending: false })
+      .limit(limit);
+    if (!error && Array.isArray(data)) return data as CyberSecurityFinding[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.cyber_security_findings || [])]
+    .sort((a, b) => new Date(b.detected_at).getTime() - new Date(a.detected_at).getTime())
+    .slice(0, limit);
+}
+
+export async function updateCyberSecurityFindingStatus(
+  id: string,
+  status: CyberSecurityFinding['status'],
+  userToken?: string
+): Promise<CyberSecurityFinding | null> {
+  const now = new Date().toISOString();
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_findings')
+      .update({ status, updated_at: now })
+      .eq('id', id)
+      .select()
+      .single();
+    if (!error && data) return data as CyberSecurityFinding;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.cyber_security_findings || [];
+  const idx = list.findIndex((f) => f.id === id);
+  if (idx === -1) return null;
+  list[idx] = { ...list[idx], status, updated_at: now };
+  db.cyber_security_findings = list;
+  await writeLocalDb(db);
+  return list[idx];
+}
+
+export async function addCyberSecurityReport(
+  report: CyberSecurityReport,
+  userToken?: string
+): Promise<CyberSecurityReport> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_reports')
+      .insert(report)
+      .select()
+      .single();
+    if (!error && data) return data as CyberSecurityReport;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  const list = db.cyber_security_reports || [];
+  list.unshift(report);
+  db.cyber_security_reports = list.slice(0, 90);
+  await writeLocalDb(db);
+  return report;
+}
+
+export async function listCyberSecurityReports(
+  limit = 40,
+  userToken?: string
+): Promise<CyberSecurityReport[]> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (!error && Array.isArray(data)) return data as CyberSecurityReport[];
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return [...(db.cyber_security_reports || [])]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
+
+export async function findCyberSecurityReportById(
+  id: string,
+  userToken?: string
+): Promise<CyberSecurityReport | null> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_reports')
+      .select('*')
+      .eq('id', id)
+      .limit(1);
+    if (!error && data && data[0]) return data[0] as CyberSecurityReport;
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return (db.cyber_security_reports || []).find((r) => r.id === id) || null;
+}
+
+export async function getCyberSecuritySettings(
+  userToken?: string
+): Promise<CyberSecuritySettings> {
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_settings')
+      .select('*')
+      .eq('id', 'default')
+      .limit(1);
+    if (!error && data && data[0]) {
+      return {
+        ...DEFAULT_CYBER_SECURITY_SETTINGS,
+        ...(data[0] as CyberSecuritySettings),
+        daily_hour_utc: Number((data[0] as CyberSecuritySettings).daily_hour_utc ?? 15)
+      };
+    }
+    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+  }
+
+  const db = await readLocalDb();
+  return {
+    ...DEFAULT_CYBER_SECURITY_SETTINGS,
+    ...(db.cyber_security_settings || {})
+  };
+}
+
+export async function saveCyberSecuritySettings(
+  settings: Partial<CyberSecuritySettings>,
+  userToken?: string
+): Promise<CyberSecuritySettings> {
+  const current = await getCyberSecuritySettings(userToken).catch(
+    () => DEFAULT_CYBER_SECURITY_SETTINGS
+  );
+  const nextHour = Number(settings.daily_hour_utc ?? current.daily_hour_utc);
+  const normalized: CyberSecuritySettings = {
+    ...current,
+    ...settings,
+    id: 'default',
+    daily_hour_utc:
+      Number.isInteger(nextHour) && nextHour >= 0 && nextHour <= 23 ? nextHour : current.daily_hour_utc,
+    updated_at: new Date().toISOString()
+  };
+
+  let saved: CyberSecuritySettings | null = null;
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('cyber_security_settings')
+      .upsert(normalized, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) {
+      saved = data as CyberSecuritySettings;
+    } else if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  db.cyber_security_settings = saved || normalized;
+  await writeLocalDb(db);
+  return saved || normalized;
+}
+
 
 
 

@@ -35,17 +35,18 @@ interface ProductQaPanelProps {
   onOpenSettings?: () => void;
 }
 
-type QaSubTab = 'logs' | 'breakdown' | 'reports';
+type QaSubTab = 'features' | 'logs' | 'breakdown' | 'reports';
 
 export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPanelProps) {
   const canEditSettings = currentUserRole === 'super_admin' || currentUserRole === 'editor';
 
-  const [subTab, setSubTab] = useState<QaSubTab>('logs');
+  const [subTab, setSubTab] = useState<QaSubTab>('features');
   const [data, setData] = useState<ProductQaDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [simulating, setSimulating] = useState<string | null>(null);
   const [analyzingLogId, setAnalyzingLogId] = useState<string | null>(null);
+  const [acceptingBaselineId, setAcceptingBaselineId] = useState<string | null>(null);
   const [sendingReport, setSendingReport] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [notice, setNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -318,6 +319,38 @@ export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPan
     }
   };
 
+  const handleAcceptFeatureBaseline = async (featureId: string) => {
+    if (!canEditSettings || acceptingBaselineId) return;
+    setAcceptingBaselineId(featureId);
+    setNotice(null);
+    try {
+      const res = await api.acceptQaFeatureBaseline(featureId);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              featureChecks: res.featureChecks,
+              settings: res.settings
+            }
+          : prev
+      );
+      setNotice({
+        type: 'ok',
+        text:
+          featureId === 'all'
+            ? 'Accepted all 16 system module configurations as the new planned baseline.'
+            : 'Accepted current module state as the new planned baseline specification.'
+      });
+    } catch (err) {
+      setNotice({
+        type: 'err',
+        text: err instanceof Error ? err.message : 'Failed to update feature baseline.'
+      });
+    } finally {
+      setAcceptingBaselineId(null);
+    }
+  };
+
   const summary = data?.summary || {
     healthScore: 100,
     totalLogs24h: 0,
@@ -461,6 +494,15 @@ export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPan
         <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-100 p-1 w-full lg:w-fit">
           <button
             type="button"
+            onClick={() => setSubTab('features')}
+            className={`min-h-[38px] flex-1 lg:flex-none rounded-md px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
+              subTab === 'features' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+            }`}
+          >
+            System Features &amp; Spec Drift ({data?.featureChecks?.length || 16})
+          </button>
+          <button
+            type="button"
             onClick={() => setSubTab('logs')}
             className={`min-h-[38px] flex-1 lg:flex-none rounded-md px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 ${
               subTab === 'logs' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
@@ -523,6 +565,204 @@ export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPan
           </button>
         </div>
       </div>
+
+      {/* SUBTAB 0: SYSTEM FEATURES DAILY VERIFICATION & PLANNED SPEC DRIFT */}
+      {subTab === 'features' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <h3 className="font-display text-sm font-bold text-slate-900">
+                  All System Features — Daily Functional Verification &amp; Planned Specification Drift
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Every system module is tested daily against its planned architecture blueprint. If a module is edited or customized, its live fingerprint diverges from the baseline so you can immediately distinguish <strong>IDENTICAL</strong> modules from <strong>MODIFIED / MAJOR UPDATES</strong>. Included in your daily EOD PDF report.
+                </p>
+              </div>
+              {canEditSettings && (
+                <button
+                  type="button"
+                  disabled={Boolean(acceptingBaselineId)}
+                  onClick={() => handleAcceptFeatureBaseline('all')}
+                  className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60 whitespace-nowrap shrink-0"
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5 text-[var(--gs-primary)]" />
+                  <span>
+                    {acceptingBaselineId === 'all'
+                      ? 'Updating Baselines...'
+                      : 'Accept All Current States as Baseline'}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            {/* Feature Drift Summary Strip */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-medium text-slate-500">
+                    Daily Functional Feature Tests
+                  </div>
+                  <div className="mt-0.5 text-xs font-semibold text-slate-700">
+                    Verified live &amp; included in EOD PDF
+                  </div>
+                </div>
+                <span className="font-mono text-lg font-bold text-[#16A34A] tabular-nums">
+                  {(data?.featureChecks || []).filter((f) => f.test_status === 'passing').length}/
+                  {(data?.featureChecks || []).length || 16} Passing
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-medium text-slate-500">
+                    Identical to Planned Blueprint
+                  </div>
+                  <div className="mt-0.5 text-xs font-semibold text-slate-700">
+                    Baseline Hash == Live Hash
+                  </div>
+                </div>
+                <span className="font-mono text-lg font-bold text-[var(--gs-primary)] tabular-nums">
+                  {(data?.featureChecks || []).filter((f) => f.drift_status === 'identical').length}{' '}
+                  Identical
+                </span>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-medium text-slate-500">
+                    Edited / Major Module Updates
+                  </div>
+                  <div className="mt-0.5 text-xs font-semibold text-slate-700">
+                    Detected since initial baseline
+                  </div>
+                </div>
+                <span className="font-mono text-lg font-bold text-purple-700 tabular-nums">
+                  {
+                    (data?.featureChecks || []).filter((f) => f.drift_status !== 'identical')
+                      .length
+                  }{' '}
+                  Updated
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-[11px] font-semibold text-slate-500">
+                    <th className="py-2.5 pr-3">System Feature &amp; Module</th>
+                    <th className="py-2.5 px-3">Daily Test</th>
+                    <th className="py-2.5 px-3">Spec vs Planned</th>
+                    <th className="py-2.5 px-3">Fingerprint (Base → Live)</th>
+                    <th className="py-2.5 px-3">Verification &amp; Change Summary</th>
+                    <th className="py-2.5 pl-3 text-right">Baseline Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 text-xs">
+                  {(data?.featureChecks || []).map((feat) => {
+                    const isIdentical = feat.drift_status === 'identical';
+                    const isMajor = feat.drift_status === 'major_update';
+                    return (
+                      <tr key={feat.id} className="hover:bg-slate-50/80 align-top">
+                        <td className="py-3.5 pr-3 max-w-[260px]">
+                          <div className="font-semibold text-slate-900">{feat.feature_name}</div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                            <span>{feat.module_name}</span>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono text-[var(--gs-primary)]">
+                              {feat.route_or_endpoint}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-500 leading-relaxed">
+                            Plan: {feat.planned_spec}
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1 font-mono text-[11px] font-bold uppercase ${
+                              feat.test_status === 'passing'
+                                ? 'text-[#16A34A]'
+                                : feat.test_status === 'degraded'
+                                  ? 'text-[#D97706]'
+                                  : 'text-[#DC2626]'
+                            }`}
+                          >
+                            {feat.test_status === 'passing' ? (
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                            ) : (
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                            )}
+                            <span>{feat.test_status}</span>
+                          </span>
+                          <div className="mt-1 text-[11px] text-slate-500 max-w-[170px] whitespace-normal">
+                            {feat.test_detail}
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-block rounded px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase ${
+                              isIdentical
+                                ? 'bg-blue-50 text-[var(--gs-primary)] border border-blue-200'
+                                : isMajor
+                                  ? 'bg-purple-50 text-purple-800 border border-purple-200'
+                                  : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}
+                          >
+                            {isIdentical
+                              ? 'IDENTICAL TO PLAN'
+                              : isMajor
+                                ? 'MAJOR UPDATE'
+                                : 'MODIFIED'}
+                          </span>
+                        </td>
+
+                        <td className="py-3.5 px-3 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+                          <div>Base: {feat.baseline_fingerprint}</div>
+                          <div
+                            className={
+                              isIdentical
+                                ? 'text-slate-500'
+                                : 'font-bold text-purple-700'
+                            }
+                          >
+                            Live: {feat.current_fingerprint}
+                          </div>
+                        </td>
+
+                        <td className="py-3.5 px-3 text-slate-700 max-w-[290px] leading-relaxed">
+                          {feat.change_summary}
+                        </td>
+
+                        <td className="py-3.5 pl-3 text-right whitespace-nowrap">
+                          {!isIdentical && canEditSettings ? (
+                            <button
+                              type="button"
+                              disabled={acceptingBaselineId === feat.id}
+                              onClick={() => handleAcceptFeatureBaseline(feat.id)}
+                              className="min-h-[34px] rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-50"
+                            >
+                              {acceptingBaselineId === feat.id
+                                ? 'Saving...'
+                                : 'Accept as Baseline'}
+                            </button>
+                          ) : (
+                            <span className="font-mono text-[11px] text-slate-400">
+                              Baseline Synced
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUBTAB 1: LIVE LOGS & CODE INSPECTOR */}
       {subTab === 'logs' && (
@@ -1267,6 +1507,55 @@ export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPan
                           {activeReport.executive_summary}
                         </p>
                       </div>
+
+                      {Array.isArray(activeReport.feature_checks) &&
+                        activeReport.feature_checks.length > 0 && (
+                          <div>
+                            <div className="text-xs font-bold text-slate-900">
+                              Daily System Feature Verification &amp; Spec Drift (
+                              {
+                                activeReport.feature_checks.filter(
+                                  (f) => f.test_status === 'passing'
+                                ).length
+                              }
+                              /{activeReport.feature_checks.length} Passing ·{' '}
+                              {
+                                activeReport.feature_checks.filter(
+                                  (f) => f.drift_status === 'identical'
+                                ).length
+                              }{' '}
+                              Identical)
+                            </div>
+                            <div className="mt-1.5 max-h-[180px] overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-200 text-[11px]">
+                              {activeReport.feature_checks.map((fc) => (
+                                <div
+                                  key={fc.id}
+                                  className="px-3 py-2 flex items-center justify-between gap-2 bg-slate-50/50"
+                                >
+                                  <span className="font-medium text-slate-800 truncate">
+                                    {fc.feature_name}
+                                  </span>
+                                  <div className="flex items-center gap-2 shrink-0 font-mono">
+                                    <span className="text-[#16A34A] font-bold uppercase">
+                                      {fc.test_status}
+                                    </span>
+                                    <span
+                                      className={`font-bold uppercase ${
+                                        fc.drift_status === 'identical'
+                                          ? 'text-[var(--gs-primary)]'
+                                          : 'text-purple-700'
+                                      }`}
+                                    >
+                                      {fc.drift_status === 'identical'
+                                        ? 'IDENTICAL'
+                                        : fc.drift_status.toUpperCase()}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                       {activeReport.recommended_actions.length > 0 && (
                         <div>

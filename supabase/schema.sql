@@ -779,7 +779,7 @@ CREATE POLICY "Public or team log inbox lark emails"
 ALTER TABLE public.inbox_email_logs DROP CONSTRAINT IF EXISTS inbox_email_logs_category_check;
 ALTER TABLE public.inbox_email_logs
   ADD CONSTRAINT inbox_email_logs_category_check
-  CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert', 'chat_offline_alert', 'chat_instant_alert', 'chat_reply', 'test_notification', 'qa_eod_report', 'qa_critical_alert'));
+  CHECK (category IN ('inquiry_reply', 'direct_compose', 'demo_signup_alert', 'contact_alert', 'chat_offline_alert', 'chat_instant_alert', 'chat_reply', 'test_notification', 'qa_eod_report', 'qa_critical_alert', 'ai_seo_daily_report', 'cybersec_daily_report', 'cybersec_alert'));
 
 -- 24. Cloudflare Historical Hourly Snapshots
 CREATE TABLE IF NOT EXISTS public.cloudflare_hourly_snapshots (
@@ -1042,3 +1042,180 @@ VALUES (
   ''
 )
 ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.product_qa_reports
+  ADD COLUMN IF NOT EXISTS feature_checks JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE public.product_qa_settings
+  ADD COLUMN IF NOT EXISTS feature_baselines JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+-- 32. AI & Search Engine Visibility (GEO / SEO) Daily Runs
+CREATE TABLE IF NOT EXISTS public.ai_search_visibility_runs (
+  id TEXT PRIMARY KEY,
+  run_date TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('manual', 'daily_cron', 'content_boost')) DEFAULT 'manual',
+  overall_score INTEGER NOT NULL DEFAULT 94,
+  ai_citation_score INTEGER NOT NULL DEFAULT 95,
+  seo_authority_score INTEGER NOT NULL DEFAULT 93,
+  searchable_platforms_count INTEGER NOT NULL DEFAULT 7,
+  total_platforms_count INTEGER NOT NULL DEFAULT 7,
+  top_ranked_services_count INTEGER NOT NULL DEFAULT 5,
+  platforms JSONB NOT NULL DEFAULT '[]'::jsonb,
+  query_rankings JSONB NOT NULL DEFAULT '[]'::jsonb,
+  content_recommendations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  summary TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_search_runs_created ON public.ai_search_visibility_runs (created_at DESC);
+
+GRANT ALL ON public.ai_search_visibility_runs TO anon, authenticated, service_role;
+ALTER TABLE public.ai_search_visibility_runs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Team manage ai search visibility runs" ON public.ai_search_visibility_runs;
+CREATE POLICY "Team manage ai search visibility runs"
+  ON public.ai_search_visibility_runs FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 33. AI & Search Engine Visibility Settings
+CREATE TABLE IF NOT EXISTS public.ai_search_visibility_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  daily_test_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  daily_hour_utc INTEGER NOT NULL DEFAULT 14,
+  recipient_email TEXT NOT NULL DEFAULT '',
+  target_domain TEXT NOT NULL DEFAULT 'https://git-stack.org',
+  auto_optimize_llms_txt BOOLEAN NOT NULL DEFAULT TRUE,
+  last_run_date TEXT NOT NULL DEFAULT '',
+  last_run_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.ai_search_visibility_settings TO anon, authenticated, service_role;
+ALTER TABLE public.ai_search_visibility_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Team manage ai search visibility settings" ON public.ai_search_visibility_settings;
+CREATE POLICY "Team manage ai search visibility settings"
+  ON public.ai_search_visibility_settings FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+INSERT INTO public.ai_search_visibility_settings (
+  id,
+  daily_test_enabled,
+  daily_hour_utc,
+  recipient_email,
+  target_domain,
+  auto_optimize_llms_txt
+)
+VALUES (
+  'default',
+  TRUE,
+  14,
+  '',
+  'https://git-stack.org',
+  TRUE
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- 34. Cybersecurity & AI Sentinel Findings
+CREATE TABLE IF NOT EXISTS public.cyber_security_findings (
+  id TEXT PRIMARY KEY,
+  domain TEXT NOT NULL,
+  severity TEXT NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low', 'info')) DEFAULT 'info',
+  status TEXT NOT NULL CHECK (status IN ('open', 'mitigated', 'accepted', 'monitoring')) DEFAULT 'monitoring',
+  title TEXT NOT NULL,
+  cve_or_rule TEXT NOT NULL DEFAULT '',
+  affected_module TEXT NOT NULL DEFAULT 'Core Platform',
+  description TEXT NOT NULL DEFAULT '',
+  ai_remediation TEXT NOT NULL DEFAULT '',
+  detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cyber_findings_detected ON public.cyber_security_findings (detected_at DESC);
+
+GRANT ALL ON public.cyber_security_findings TO anon, authenticated, service_role;
+ALTER TABLE public.cyber_security_findings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Team manage cyber security findings" ON public.cyber_security_findings;
+CREATE POLICY "Team manage cyber security findings"
+  ON public.cyber_security_findings FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 35. Cybersecurity Daily Reports
+CREATE TABLE IF NOT EXISTS public.cyber_security_reports (
+  id TEXT PRIMARY KEY,
+  report_date TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('manual', 'daily_cron')) DEFAULT 'manual',
+  recipient_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  posture_score INTEGER NOT NULL DEFAULT 96,
+  grade TEXT NOT NULL DEFAULT 'A+',
+  critical_count INTEGER NOT NULL DEFAULT 0,
+  high_count INTEGER NOT NULL DEFAULT 0,
+  medium_count INTEGER NOT NULL DEFAULT 0,
+  low_count INTEGER NOT NULL DEFAULT 0,
+  domain_checks JSONB NOT NULL DEFAULT '[]'::jsonb,
+  executive_summary TEXT NOT NULL DEFAULT '',
+  ai_threat_intel JSONB NOT NULL DEFAULT '[]'::jsonb,
+  recommended_hardening JSONB NOT NULL DEFAULT '[]'::jsonb,
+  pdf_filename TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'generated')) DEFAULT 'generated',
+  provider_message_id TEXT NOT NULL DEFAULT '',
+  error_detail TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cyber_reports_created ON public.cyber_security_reports (created_at DESC);
+
+GRANT ALL ON public.cyber_security_reports TO anon, authenticated, service_role;
+ALTER TABLE public.cyber_security_reports ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Team manage cyber security reports" ON public.cyber_security_reports;
+CREATE POLICY "Team manage cyber security reports"
+  ON public.cyber_security_reports FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 36. Cybersecurity Live AI Sentinel Settings
+CREATE TABLE IF NOT EXISTS public.cyber_security_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  sentinel_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  daily_report_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  daily_hour_utc INTEGER NOT NULL DEFAULT 15,
+  realtime_critical_alert BOOLEAN NOT NULL DEFAULT TRUE,
+  recipient_email TEXT NOT NULL DEFAULT '',
+  last_report_date TEXT NOT NULL DEFAULT '',
+  last_scan_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.cyber_security_settings TO anon, authenticated, service_role;
+ALTER TABLE public.cyber_security_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Team manage cyber security settings" ON public.cyber_security_settings;
+CREATE POLICY "Team manage cyber security settings"
+  ON public.cyber_security_settings FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+INSERT INTO public.cyber_security_settings (
+  id,
+  sentinel_enabled,
+  daily_report_enabled,
+  daily_hour_utc,
+  realtime_critical_alert,
+  recipient_email
+)
+VALUES (
+  'default',
+  TRUE,
+  TRUE,
+  15,
+  TRUE,
+  ''
+)
+ON CONFLICT (id) DO NOTHING;
+

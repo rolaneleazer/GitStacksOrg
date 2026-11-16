@@ -53,6 +53,7 @@ import type {
   ProductQaReport,
   ProductQaSettings,
   PublicDemoUser,
+  QaFeatureCheckItem,
   QaLogStatus,
   RoutingRule,
   SiteAuditReport,
@@ -64,7 +65,15 @@ import type {
   WebsiteChatMessage,
   WebsiteChatSession,
   WebsiteChatStatus,
-  WebsiteChatThreadResponse
+  WebsiteChatThreadResponse,
+  AiSearchVisibilityDashboardResponse,
+  AiSearchVisibilityRun,
+  AiSearchVisibilitySettings,
+  CyberFindingStatus,
+  CyberSecurityDashboardResponse,
+  CyberSecurityFinding,
+  CyberSecurityReport,
+  CyberSecuritySettings
 } from '../shared/types.ts';
 
 const TOKEN_KEY = 'gitstack_studio_token';
@@ -1360,5 +1369,101 @@ export const api = {
   getQaReportPdfUrl(reportId: string): string {
     const token = getStoredToken() || '';
     return `/api/admin/qa/report/${encodeURIComponent(reportId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
+
+  async acceptQaFeatureBaseline(featureId: string) {
+    return request<{ featureChecks: QaFeatureCheckItem[]; settings: ProductQaSettings }>(
+      '/api/admin/qa/features/baseline',
+      {
+        method: 'POST',
+        body: JSON.stringify({ feature_id: featureId })
+      }
+    );
+  },
+
+  // --- AI & Search Engine Visibility (GEO / SEO) ---
+  async getAiVisibilityDashboard() {
+    return request<AiSearchVisibilityDashboardResponse>('/api/admin/ai-visibility/dashboard');
+  },
+
+  async runAiVisibilityTest(payload?: { send_email?: boolean; recipient_email?: string }) {
+    return request<{
+      run: AiSearchVisibilityRun;
+      emailDelivered: boolean;
+      message: string;
+      dashboard: AiSearchVisibilityDashboardResponse;
+    }>('/api/admin/ai-visibility/run', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  },
+
+  async applyAiSeoBooster() {
+    return request<{
+      updatedPages: string[];
+      run: AiSearchVisibilityRun;
+      message: string;
+      dashboard: AiSearchVisibilityDashboardResponse;
+    }>('/api/admin/ai-visibility/boost', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async saveAiVisibilitySettings(payload: Partial<AiSearchVisibilitySettings>) {
+    return request<{ settings: AiSearchVisibilitySettings }>('/api/admin/ai-visibility/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  // --- Cybersecurity & Live AI Sentinel (Aegis) ---
+  async getCyberSecurityDashboard() {
+    return request<CyberSecurityDashboardResponse>('/api/admin/cybersecurity/dashboard');
+  },
+
+  async runCyberSecurityScan() {
+    return request<{ dashboard: CyberSecurityDashboardResponse; message: string }>(
+      '/api/admin/cybersecurity/scan',
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async updateCyberFindingStatus(findingId: string, status: CyberFindingStatus) {
+    return request<{ finding: CyberSecurityFinding; dashboard: CyberSecurityDashboardResponse }>(
+      `/api/admin/cybersecurity/findings/${encodeURIComponent(findingId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      }
+    );
+  },
+
+  async saveCyberSecuritySettings(payload: Partial<CyberSecuritySettings>) {
+    return request<{ settings: CyberSecuritySettings }>('/api/admin/cybersecurity/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async sendCyberSecurityReport(payload?: { recipient_email?: string }) {
+    return request<{
+      report: CyberSecurityReport;
+      delivered: boolean;
+      message: string;
+      dashboard: CyberSecurityDashboardResponse;
+    }>('/api/admin/cybersecurity/report/send', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
+  },
+
+  getCyberSecurityReportPdfUrl(reportId: string): string {
+    const token = getStoredToken() || '';
+    return `/api/admin/cybersecurity/report/${encodeURIComponent(reportId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
   }
 };
+

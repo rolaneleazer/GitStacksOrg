@@ -278,6 +278,96 @@ export async function renderQaEodPdfBuffer(
       y += 10;
     }
 
+    // --- SYSTEM FEATURE VERIFICATION & BASELINE DRIFT MATRIX ---
+    const featureChecks = Array.isArray(report.feature_checks) ? report.feature_checks : [];
+    if (featureChecks.length > 0) {
+      ensureSpace(120);
+      const passingCount = featureChecks.filter((f) => f.test_status === 'passing').length;
+      const identicalCount = featureChecks.filter((f) => f.drift_status === 'identical').length;
+      const updatedCount = featureChecks.length - identicalCount;
+
+      doc
+        .fillColor('#0F172A')
+        .font('Helvetica-Bold')
+        .fontSize(12)
+        .text(
+          `System Feature Daily Tests & Spec Drift (${passingCount}/${featureChecks.length} Passing · ${identicalCount} Identical · ${updatedCount} Updated)`,
+          44,
+          y
+        );
+      y += 18;
+
+      doc.rect(44, y, pageWidth, 22).fill('#F1F5F9');
+      doc.fillColor('#475569').font('Helvetica-Bold').fontSize(7.5);
+      doc.text('FEATURE / MODULE', 50, y + 7, { width: 145 });
+      doc.text('TEST', 198, y + 7, { width: 52 });
+      doc.text('SPEC DRIFT', 252, y + 7, { width: 78 });
+      doc.text('BASELINE vs LIVE CHANGE SUMMARY', 334, y + 7, { width: 210 });
+      y += 22;
+
+      for (const feat of featureChecks) {
+        ensureSpace(28);
+        doc.rect(44, y, pageWidth, 26).stroke('#E2E8F0');
+        doc
+          .fillColor('#0F172A')
+          .font('Helvetica-Bold')
+          .fontSize(8)
+          .text(truncateText(feat.feature_name, 28), 50, y + 5, { width: 145 });
+        doc
+          .fillColor('#64748B')
+          .font('Helvetica')
+          .fontSize(7)
+          .text(truncateText(feat.module_name, 28), 50, y + 15, { width: 145 });
+
+        const testColor =
+          feat.test_status === 'passing'
+            ? '#16A34A'
+            : feat.test_status === 'degraded'
+              ? '#D97706'
+              : '#DC2626';
+        doc
+          .fillColor(testColor)
+          .font('Helvetica-Bold')
+          .fontSize(7.5)
+          .text(feat.test_status.toUpperCase(), 198, y + 9, { width: 52 });
+
+        const driftLabel =
+          feat.drift_status === 'identical'
+            ? 'IDENTICAL'
+            : feat.drift_status === 'major_update'
+              ? 'MAJOR UPDATE'
+              : 'MODIFIED';
+        const driftColor =
+          feat.drift_status === 'identical'
+            ? '#1D4ED8'
+            : feat.drift_status === 'major_update'
+              ? '#7C3AED'
+              : '#D97706';
+        doc
+          .fillColor(driftColor)
+          .font('Helvetica-Bold')
+          .fontSize(7.5)
+          .text(driftLabel, 252, y + 9, { width: 78 });
+
+        doc
+          .fillColor('#334155')
+          .font('Helvetica')
+          .fontSize(7.5)
+          .text(truncateText(feat.change_summary || feat.test_detail, 46), 334, y + 6, {
+            width: 212
+          });
+        doc
+          .fillColor('#64748B')
+          .font('Courier')
+          .fontSize(6.5)
+          .text(`Base:${feat.baseline_fingerprint} -> Live:${feat.current_fingerprint}`, 334, y + 16, {
+            width: 212
+          });
+        y += 26;
+      }
+      y += 14;
+    }
+
     // --- RECOMMENDED ENGINEERING ACTIONS ---
     if (report.recommended_actions.length > 0) {
       ensureSpace(90);

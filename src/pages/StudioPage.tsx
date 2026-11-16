@@ -23,7 +23,10 @@ import {
   Palette,
   Plus,
   RefreshCw,
+  Search,
+  Shield,
   ShieldCheck,
+  Sparkles,
   Trash2,
   UserCheck,
   UserCog,
@@ -32,10 +35,12 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
+import { AiSearchVisibilityPanel } from '../components/backoffice/AiSearchVisibilityPanel.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
+import { CyberSecurityPanel } from '../components/backoffice/CyberSecurityPanel.tsx';
 import { DemoUsersDashboardPanel } from '../components/backoffice/DemoUsersDashboardPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
@@ -103,8 +108,10 @@ type StudioTab =
   | 'workflows'
   | 'analytics'
   | 'cloudflare'
+  | 'ai_visibility'
   | 'resources'
   | 'qa'
+  | 'cybersecurity'
   | 'articles'
   | 'users'
   | 'demo_users'
@@ -123,8 +130,10 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'workflows',
     'analytics',
     'cloudflare',
+    'ai_visibility',
     'resources',
     'qa',
+    'cybersecurity',
     'articles',
     'users',
     'demo_users',
@@ -141,11 +150,23 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'workflows',
     'analytics',
     'cloudflare',
+    'ai_visibility',
     'resources',
     'qa',
+    'cybersecurity',
     'profile'
   ],
-  support_agent: ['inbox', 'notifications', 'chat', 'workflows', 'resources', 'qa', 'profile']
+  support_agent: [
+    'inbox',
+    'notifications',
+    'chat',
+    'workflows',
+    'ai_visibility',
+    'resources',
+    'qa',
+    'cybersecurity',
+    'profile'
+  ]
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -1012,8 +1033,10 @@ export function StudioPage({
     },
     { id: 'analytics', label: 'Google Analytics', icon: BarChart3 },
     { id: 'cloudflare', label: 'Cloudflare Analytics', icon: Cloud },
+    { id: 'ai_visibility', label: 'AI & Search Visibility', icon: Sparkles },
     { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'qa', label: 'Product QA & Logs', icon: Bug },
+    { id: 'cybersecurity', label: 'Cybersecurity & AI Sentinel', icon: Shield },
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
     { id: 'demo_users', label: 'Demo Users & Leads', icon: UserCheck },
@@ -1325,14 +1348,35 @@ export function StudioPage({
             />
           )}
 
+          {/* PANEL 5A-2: AI & SEARCH ENGINE VISIBILITY (GEO / SEO) */}
+          {currentTab === 'ai_visibility' && (
+            <AiSearchVisibilityPanel
+              currentUserRole={currentUserRole}
+              onPagesBoosted={() => {
+                onPagesChanged();
+                loadWorkspaceData(analyticsDays);
+              }}
+            />
+          )}
+
           {/* PANEL 5B: VERCEL & SUPABASE LIVE RESOURCE MONITOR */}
           {currentTab === 'resources' && (
             <InfrastructureMonitor currentUserRole={currentUserRole} />
           )}
 
-          {/* PANEL 5C: PRODUCT QA LOGS, LIVE AGENT & EOD PDF REPORT */}
+          {/* PANEL 5C: PRODUCT QA LOGS, SYSTEM FEATURE REGISTRY & EOD PDF REPORT */}
           {currentTab === 'qa' && (
             <ProductQaPanel
+              currentUserRole={currentUserRole}
+              onOpenSettings={
+                currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
+              }
+            />
+          )}
+
+          {/* PANEL 5D: CYBERSECURITY POSTURE & LIVE AI SENTINEL (AEGIS) */}
+          {currentTab === 'cybersecurity' && (
+            <CyberSecurityPanel
               currentUserRole={currentUserRole}
               onOpenSettings={
                 currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined

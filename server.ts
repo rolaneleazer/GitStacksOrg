@@ -1,9 +1,11 @@
 import express from 'express';
 import http from 'node:http';
 import path from 'node:path';
+import { startAiSearchVisibilityLoop } from './src/server/aiSeoVisibility.ts';
 import { getExpressApp } from './src/server/app.ts';
 import { startChatWatcherLoop } from './src/server/chatWatcher.ts';
 import { startCloudflareAutoSnapshotLoop } from './src/server/cloudflareHistory.ts';
+import { startCyberSecurityLoop } from './src/server/cyberSecurity.ts';
 import { startQaMonitorLoop } from './src/server/qaMonitor.ts';
 import { attachRealtimeHub } from './src/server/realtime.ts';
 import { verifyEditorToken } from './src/server/repository.ts';
@@ -35,6 +37,8 @@ async function startServer() {
   startChatWatcherLoop();
   startCloudflareAutoSnapshotLoop();
   startQaMonitorLoop();
+  startAiSearchVisibilityLoop();
+  startCyberSecurityLoop();
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`GitStack server running on http://0.0.0.0:${PORT}`);

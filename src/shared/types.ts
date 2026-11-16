@@ -886,7 +886,10 @@ export interface InboxEmailLog {
     | 'chat_reply'
     | 'test_notification'
     | 'qa_eod_report'
-    | 'qa_critical_alert';
+    | 'qa_critical_alert'
+    | 'ai_seo_daily_report'
+    | 'cybersec_daily_report'
+    | 'cybersec_alert';
   related_id?: string | null;
   provider_message_id: string;
   status: 'sent' | 'failed';
@@ -1210,6 +1213,25 @@ export interface QaCodeHotspotItem {
   latest_at: string;
 }
 
+export type QaFeatureDriftStatus = 'identical' | 'modified' | 'major_update';
+export type QaFeatureTestStatus = 'passing' | 'degraded' | 'failing';
+
+export interface QaFeatureCheckItem {
+  id: string;
+  module_name: string;
+  feature_name: string;
+  planned_spec: string;
+  route_or_endpoint: string;
+  baseline_fingerprint: string;
+  current_fingerprint: string;
+  drift_status: QaFeatureDriftStatus;
+  change_summary: string;
+  test_status: QaFeatureTestStatus;
+  test_detail: string;
+  last_tested_at: string;
+  last_modified_at: string | null;
+}
+
 export interface ProductQaReport {
   id: string;
   report_date: string;
@@ -1225,6 +1247,7 @@ export interface ProductQaReport {
   executive_summary: string;
   module_breakdown: QaModuleBreakdownItem[];
   page_breakdown: QaPageBreakdownItem[];
+  feature_checks?: QaFeatureCheckItem[];
   recommended_actions: string[];
   pdf_filename: string;
   status: 'sent' | 'failed' | 'generated';
@@ -1242,6 +1265,14 @@ export interface ProductQaSettings {
   recipient_email: string;
   last_eod_sent_date: string;
   last_scan_at: string | null;
+  feature_baselines?: Record<
+    string,
+    {
+      fingerprint: string;
+      accepted_at: string;
+      spec_summary: string;
+    }
+  >;
   updated_at: string;
 }
 
@@ -1258,13 +1289,181 @@ export interface ProductQaDashboardResponse {
     topFailingModule: string;
     topFailingPage: string;
     topCodeHotspot: string;
+    totalFeaturesCount?: number;
+    passingFeaturesCount?: number;
+    identicalFeaturesCount?: number;
+    modifiedFeaturesCount?: number;
   };
   moduleBreakdown: QaModuleBreakdownItem[];
   pageBreakdown: QaPageBreakdownItem[];
   codeHotspots: QaCodeHotspotItem[];
+  featureChecks: QaFeatureCheckItem[];
   logs: ProductQaLog[];
   reports: ProductQaReport[];
 }
+
+// --- AI & Search Engine Visibility (GEO / SEO) Daily Monitor ---
+
+export type AiSearchPlatformId =
+  | 'chatgpt_search'
+  | 'gemini_ai_overview'
+  | 'perplexity_ai'
+  | 'claude_search'
+  | 'copilot_bing_ai'
+  | 'google_organic'
+  | 'bing_organic';
+
+export interface AiSearchPlatformResult {
+  platform_id: AiSearchPlatformId;
+  platform_name: string;
+  category: 'ai_engine' | 'search_engine';
+  crawler_agent: string;
+  searchable: boolean;
+  citation_rank: string;
+  visibility_score: number;
+  indexed_signals: string[];
+  sample_ai_answer: string;
+  status_note: string;
+}
+
+export interface AiSearchQueryRankItem {
+  query: string;
+  service_pillar: string;
+  ai_rank_status: string;
+  seo_rank_status: string;
+  target_route: string;
+  citation_snippet: string;
+}
+
+export interface AiSearchVisibilityRun {
+  id: string;
+  run_date: string;
+  trigger_type: 'manual' | 'daily_cron' | 'content_boost';
+  overall_score: number;
+  ai_citation_score: number;
+  seo_authority_score: number;
+  searchable_platforms_count: number;
+  total_platforms_count: number;
+  top_ranked_services_count: number;
+  platforms: AiSearchPlatformResult[];
+  query_rankings: AiSearchQueryRankItem[];
+  content_recommendations: string[];
+  summary: string;
+  created_at: string;
+}
+
+export interface AiSearchVisibilitySettings {
+  id: string;
+  daily_test_enabled: boolean;
+  daily_hour_utc: number;
+  recipient_email: string;
+  target_domain: string;
+  auto_optimize_llms_txt: boolean;
+  last_run_date: string;
+  last_run_at: string | null;
+  updated_at: string;
+}
+
+export interface AiSearchVisibilityDashboardResponse {
+  settings: AiSearchVisibilitySettings;
+  resolvedRecipientEmail: string;
+  larkConnected: boolean;
+  latestRun: AiSearchVisibilityRun;
+  history: AiSearchVisibilityRun[];
+  seoComplianceChecklist: {
+    id: string;
+    label: string;
+    status: 'compliant' | 'action_needed';
+    detail: string;
+    endpoint_or_tag: string;
+  }[];
+}
+
+// --- Cybersecurity Posture, Live AI CyberSec Sentinel & Daily Report ---
+
+export type CyberSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type CyberFindingStatus = 'open' | 'monitoring' | 'mitigated' | 'accepted';
+
+export interface CyberSecurityFinding {
+  id: string;
+  domain: string;
+  severity: CyberSeverity;
+  status: CyberFindingStatus;
+  title: string;
+  cve_or_rule: string;
+  affected_module: string;
+  description: string;
+  ai_remediation: string;
+  detected_at: string;
+  updated_at: string;
+}
+
+export interface CyberDomainCheck {
+  domain_id: string;
+  domain_name: string;
+  status: 'protected' | 'warning' | 'critical';
+  score: number;
+  summary: string;
+  controls_verified: string[];
+}
+
+export interface CyberSecurityReport {
+  id: string;
+  report_date: string;
+  trigger_type: 'manual' | 'daily_cron';
+  recipient_email: string;
+  subject: string;
+  posture_score: number;
+  grade: 'A+' | 'A' | 'B' | 'C' | 'D';
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+  domain_checks: CyberDomainCheck[];
+  executive_summary: string;
+  ai_threat_intel: string[];
+  recommended_hardening: string[];
+  pdf_filename: string;
+  status: 'sent' | 'failed' | 'generated';
+  provider_message_id: string;
+  error_detail: string;
+  created_at: string;
+}
+
+export interface CyberSecuritySettings {
+  id: string;
+  sentinel_enabled: boolean;
+  daily_report_enabled: boolean;
+  daily_hour_utc: number;
+  realtime_critical_alert: boolean;
+  recipient_email: string;
+  last_report_date: string;
+  last_scan_at: string | null;
+  updated_at: string;
+}
+
+export interface CyberSecurityDashboardResponse {
+  settings: CyberSecuritySettings;
+  resolvedRecipientEmail: string;
+  larkConnected: boolean;
+  posture: {
+    score: number;
+    grade: 'A+' | 'A' | 'B' | 'C' | 'D';
+    criticalCount: number;
+    highCount: number;
+    mediumCount: number;
+    lowCount: number;
+    protectedDomainsCount: number;
+    totalDomainsCount: number;
+    lastScanAt: string;
+  };
+  domainChecks: CyberDomainCheck[];
+  findings: CyberSecurityFinding[];
+  reports: CyberSecurityReport[];
+  aiThreatIntel: string[];
+}
+
+
 
 
 

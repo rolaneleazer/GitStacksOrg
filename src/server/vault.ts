@@ -86,11 +86,11 @@ const PROVIDER_DEFS: Record<IntegrationProviderId, ProviderMetaDef> = {
     category: 'Cloud & Edge',
     description:
       'Streams real-time edge requests, bandwidth, cache ratio, 5xx errors, and Top-N traffic breakdowns via Cloudflare GraphQL.',
-    docsHint: 'Cloudflare Dashboard -> My Profile -> API Tokens (Read Zone Analytics) + Zone ID',
-    defaultConfigMeta: {
-      zone_id: '',
-      zone_name: 'git-stack.org'
-    }
+      docsHint: 'Cloudflare Dashboard -> Account or Profile API Tokens (Zone:Read + Analytics:Read)',
+      defaultConfigMeta: {
+        zone_id: '',
+        zone_name: 'git-stack.org'
+      }
   }
 };
 
@@ -525,29 +525,20 @@ async function runProviderLiveProbe(
       const zoneIdDraft = (configMeta?.zone_id || '').trim();
       const zoneNameDraft = (configMeta?.zone_name || 'git-stack.org').trim().toLowerCase();
 
-      const verifyRes = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+      // User API tokens verify via /user/tokens/verify; Account API tokens (cfat_...) verify via /zones + /accounts/{id}/tokens/verify
+      const userVerifyRes = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
         headers: {
           Authorization: `Bearer ${secret}`,
           'Content-Type': 'application/json'
         }
-      });
-      if (!verifyRes.ok) {
-        const latencyMs = Date.now() - started;
-        const body = (await verifyRes.json().catch(() => ({}))) as {
-          errors?: Array<{ message?: string }>;
-        };
-        return {
-          ok: false,
-          latencyMs,
-          message:
-            body.errors?.[0]?.message ||
-            `Cloudflare token verification failed (HTTP ${verifyRes.status}).`
-        };
-      }
+      }).catch(() => null);
+      const userTokenVerified = Boolean(userVerifyRes && userVerifyRes.ok);
 
       let resolvedZoneName = zoneNameDraft;
       let resolvedZoneId = zoneIdDraft;
+      let resolvedAccountId = '';
       let planName = '';
+      let zoneErrorMsg = '';
 
       if (resolvedZoneId) {
         const zRes = await fetch(
@@ -559,20 +550,21 @@ async function runProviderLiveProbe(
             }
           }
         );
-        if (!zRes.ok) {
-          const latencyMs = Date.now() - started;
-          return {
-            ok: false,
-            latencyMs,
-            message: `Token is valid, but Cloudflare Zone "${resolvedZoneId}" returned HTTP ${zRes.status}. Verify Zone ID and Analytics:Read + Zone:Read permissions.`
-          };
-        }
         const zJson = (await zRes.json().catch(() => ({}))) as {
-          result?: { id?: string; name?: string; plan?: { name?: string } };
+          success?: boolean;
+          errors?: Array<{ message?: string }>;
+          result?: { id?: string; name?: string; plan?: { name?: string }; account?: { id?: string } };
         };
-        resolvedZoneId = zJson.result?.id || resolvedZoneId;
-        resolvedZoneName = zJson.result?.name || resolvedZoneName;
-        planName = zJson.result?.plan?.name || '';
+        if (!zRes.ok || zJson.success === false) {
+          zoneErrorMsg =
+            zJson.errors?.[0]?.message ||
+            `Cloudflare Zone "${resolvedZoneId}" returned HTTP ${zRes.status}. Verify Zone ID and Zone:Read + Analytics:Read permissions.`;
+        } else {
+          resolvedZoneId = zJson.result?.id || resolvedZoneId;
+          resolvedZoneName = zJson.result?.name || resolvedZoneName;
+          resolvedAccountId = zJson.result?.account?.id || '';
+          planName = zJson.result?.plan?.name || '';
+        }
       } else {
         const listUrl = `https://api.cloudflare.com/client/v4/zones${
           zoneNameDraft ? `?name=${encodeURIComponent(zoneNameDraft)}` : ''
@@ -583,17 +575,69 @@ async function runProviderLiveProbe(
             'Content-Type': 'application/json'
           }
         });
-        if (listRes.ok) {
-          const listJson = (await listRes.json().catch(() => ({}))) as {
-            result?: Array<{ id: string; name: string; plan?: { name?: string } }>;
-          };
+        const listJson = (await listRes.json().catch(() => ({}))) as {
+          success?: boolean;
+          errors?: Array<{ message?: string }>;
+          result?: Array<{
+            id: string;
+            name: string;
+            plan?: { name?: string };
+            account?: { id?: string };
+          }>;
+        };
+        if (!listRes.ok || listJson.success === false) {
+          zoneErrorMsg =
+            listJson.errors?.[0]?.message ||
+            `Cloudflare Zone lookup returned HTTP ${listRes.status}. Check token permissions (Zone:Read, Analytics:Read).`;
+        } else {
           const first = listJson.result?.[0];
           if (first) {
             resolvedZoneId = first.id;
             resolvedZoneName = first.name;
+            resolvedAccountId = first.account?.id || '';
             planName = first.plan?.name || '';
           }
         }
+      }
+
+      let accountTokenVerified = false;
+      if (!userTokenVerified && resolvedAccountId) {
+        const acctVerifyRes = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(resolvedAccountId)}/tokens/verify`,
+          {
+            headers: {
+              Authorization: `Bearer ${secret}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        ).catch(() => null);
+        accountTokenVerified = Boolean(acctVerifyRes && acctVerifyRes.ok);
+      }
+
+      const latencyMs = Date.now() - started;
+
+      if (!userTokenVerified && !accountTokenVerified && !resolvedZoneId) {
+        const userBody = userVerifyRes
+          ? ((await userVerifyRes.json().catch(() => ({}))) as {
+              errors?: Array<{ message?: string }>;
+            })
+          : {};
+        return {
+          ok: false,
+          latencyMs,
+          message:
+            zoneErrorMsg ||
+            userBody.errors?.[0]?.message ||
+            'Cloudflare API Token verification failed. Ensure the token is active and has Zone:Read + Analytics:Read permissions.'
+        };
+      }
+
+      if (zoneErrorMsg && !resolvedZoneId) {
+        return {
+          ok: false,
+          latencyMs,
+          message: zoneErrorMsg
+        };
       }
 
       if (configMeta) {
@@ -601,13 +645,13 @@ async function runProviderLiveProbe(
         if (resolvedZoneName) configMeta.zone_name = resolvedZoneName;
       }
 
-      const latencyMs = Date.now() - started;
+      const tokenKind = accountTokenVerified ? 'Account API Token' : 'API Token';
       return {
         ok: true,
         latencyMs,
         message: resolvedZoneId
-          ? `Cloudflare API connected for ${resolvedZoneName} (${planName || 'Active Zone'}) in ${latencyMs}ms.`
-          : `Cloudflare API token verified in ${latencyMs}ms. Enter your Zone ID for ${zoneNameDraft} to stream GraphQL metrics.`
+          ? `Cloudflare ${tokenKind} connected for ${resolvedZoneName} (${planName || 'Active Zone'}) in ${latencyMs}ms.`
+          : `Cloudflare ${tokenKind} verified in ${latencyMs}ms. Enter your Zone ID for ${zoneNameDraft} to stream GraphQL metrics.`
       };
     }
 

@@ -321,7 +321,11 @@ export async function fetchCloudflareZoneAnalytics(
     { key: 'topBrowsers', dimension: 'userAgentBrowser' },
     { key: 'topOperatingSystems', dimension: 'userAgentOS' },
     { key: 'topDeviceTypes', dimension: 'clientDeviceType' },
-    { key: 'topUserAgents', dimension: 'clientRequestUserAgent' },
+    {
+      key: 'topUserAgents',
+      dimension: 'userAgent',
+      formatLabel: (v) => (v.trim() ? v : 'None')
+    },
     { key: 'topHttpVersions', dimension: 'clientRequestHTTPProtocol' },
     {
       key: 'topStatusCodes',
@@ -386,9 +390,12 @@ export async function fetchCloudflareZoneAnalytics(
       const rows = zoneBreakdowns[spec.key];
       if (Array.isArray(rows)) {
         breakdowns[spec.key] = rows.map((r) => {
-          const raw = String(r.dimensions?.val ?? 'Unknown').trim() || 'Unknown/Others';
+          const rawVal = String(r.dimensions?.val ?? '').trim();
+          const label = spec.formatLabel
+            ? spec.formatLabel(rawVal)
+            : rawVal || 'Unknown/Others';
           return {
-            label: spec.formatLabel ? spec.formatLabel(raw) : raw,
+            label,
             count: Number(r.count) || 0,
             bytes: Number(r.sum?.edgeResponseBytes) || 0
           } satisfies CloudflareTopItem;
@@ -426,9 +433,12 @@ export async function fetchCloudflareZoneAnalytics(
         const rows = res?.data?.viewer?.zones?.[0]?.rows;
         if (Array.isArray(rows)) {
           breakdowns[spec.key] = rows.map((r) => {
-            const raw = String(r.dimensions?.val ?? 'Unknown').trim() || 'Unknown/Others';
+            const rawVal = String(r.dimensions?.val ?? '').trim();
+            const label = spec.formatLabel
+              ? spec.formatLabel(rawVal)
+              : rawVal || 'Unknown/Others';
             return {
-              label: spec.formatLabel ? spec.formatLabel(raw) : raw,
+              label,
               count: Number(r.count) || 0,
               bytes: Number(r.sum?.edgeResponseBytes) || 0
             };

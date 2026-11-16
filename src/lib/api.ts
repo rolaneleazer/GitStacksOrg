@@ -19,6 +19,8 @@ import type {
   ChatThread,
   ChatThreadStatus,
   ClientInquiry,
+  CloudflareAnalyticsResponse,
+  CloudflareWindowPreset,
   CommentStatus,
   CrmLead,
   CrmOutreachLog,
@@ -54,6 +56,17 @@ import type {
 const TOKEN_KEY = 'gitstack_studio_token';
 const DEMO_TOKEN_KEY = 'gitstack_demo_token';
 const SESSION_ID_KEY = 'gitstack_visitor_sid';
+
+export class DemoExpiredError extends Error {
+  code = 'DEMO_EXPIRED';
+  expiresAt?: string;
+
+  constructor(message: string, expiresAt?: string) {
+    super(message);
+    this.name = 'DemoExpiredError';
+    this.expiresAt = expiresAt;
+  }
+}
 
 export function getStoredToken(): string | null {
   try {
@@ -913,7 +926,16 @@ export const api = {
       token?: string;
       user?: PublicDemoUser;
       error?: string;
+      code?: string;
+      expires_at?: string;
     };
+    if (res.status === 403 && data.code === 'DEMO_EXPIRED') {
+      setStoredDemoToken(null);
+      throw new DemoExpiredError(
+        data.error || 'Your 24-hour Live Demo evaluation pass has expired.',
+        data.expires_at
+      );
+    }
     if (!res.ok || !data.token || !data.user) {
       throw new Error(data.error || `Sign in failed (HTTP ${res.status})`);
     }
@@ -927,6 +949,21 @@ export const api = {
     const res = await fetch('/api/demo/me', {
       headers: { Authorization: `Bearer ${token}` }
     });
+    if (res.status === 403) {
+      const data = (await res.json().catch(() => ({}))) as {
+        code?: string;
+        error?: string;
+        expires_at?: string;
+      };
+      setStoredDemoToken(null);
+      if (data.code === 'DEMO_EXPIRED') {
+        throw new DemoExpiredError(
+          data.error || 'Your 24-hour Live Demo evaluation pass has expired.',
+          data.expires_at
+        );
+      }
+      return null;
+    }
     if (!res.ok) {
       if (res.status === 401) setStoredDemoToken(null);
       return null;
@@ -950,6 +987,21 @@ export const api = {
       },
       body: JSON.stringify(payload)
     });
+    if (res.status === 403) {
+      const data = (await res.json().catch(() => ({}))) as {
+        code?: string;
+        error?: string;
+        expires_at?: string;
+      };
+      setStoredDemoToken(null);
+      if (data.code === 'DEMO_EXPIRED') {
+        throw new DemoExpiredError(
+          data.error || 'Your 24-hour Live Demo evaluation pass has expired.',
+          data.expires_at
+        );
+      }
+      return null;
+    }
     if (!res.ok) return null;
     const data = (await res.json().catch(() => ({}))) as { user?: PublicDemoUser };
     return data.user || null;
@@ -958,6 +1010,12 @@ export const api = {
   async getAdminDemoUsers() {
     return request<{ users: PublicDemoUser[]; summary: DemoUsersSummaryStats }>(
       '/api/admin/demo-users'
+    );
+  },
+
+  async getCloudflareAnalytics(windowPreset: CloudflareWindowPreset = '24h') {
+    return request<CloudflareAnalyticsResponse>(
+      `/api/admin/cloudflare/analytics?window=${encodeURIComponent(windowPreset)}`
     );
   }
 };

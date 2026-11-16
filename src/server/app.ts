@@ -34,6 +34,7 @@ import type {
   ChatThread,
   ChatThreadStatus,
   ClientInquiry,
+  CloudflareWindowPreset,
   CommentStatus,
   CrmFollowUpStep,
   CrmLead,
@@ -64,6 +65,7 @@ import type {
   UserStatus,
   UserWorkflowItem
 } from '../shared/types.ts';
+import { fetchCloudflareZoneAnalytics } from './cloudflare.ts';
 import {
   buildLeadsFromCsvInputs,
   enrichAndBuildApolloLeads,
@@ -125,10 +127,12 @@ import {
   getAnalyticsSummary,
   getCrmOAuthToken,
   getCrmSourcesAnalytics,
+  getDemoExpiresAtIso,
   getPostBySlug,
   getSupabaseAutomationMode,
   getSupabaseUrl,
   hashDemoPassword,
+  isDemoUserExpired,
   isSupabaseConfigured,
   issueDemoSessionToken,
   listAgentConversations,
@@ -980,6 +984,7 @@ export async function createApp(): Promise<Express> {
             brand_name: settings.brand_name || DEFAULT_BRANDING.brand_name,
             brand_logo_url: settings.brand_logo_url || '',
             brand_logo_alt: settings.brand_logo_alt || DEFAULT_BRANDING.brand_logo_alt,
+            favicon_url: settings.favicon_url || '',
             theme_preset: settings.theme_preset || DEFAULT_BRANDING.theme_preset,
             primary_color: settings.primary_color || DEFAULT_BRANDING.primary_color,
             header_surface: settings.header_surface || DEFAULT_BRANDING.header_surface,
@@ -1025,6 +1030,13 @@ export async function createApp(): Promise<Express> {
         payload.brand_logo_url.length > 1_300_000
       ) {
         return res.status(400).json({ error: 'Logo image must be under 900 KB.' });
+      }
+      if (
+        isSuperAdmin &&
+        payload.favicon_url &&
+        payload.favicon_url.length > 600_000
+      ) {
+        return res.status(400).json({ error: 'Favicon image must be under 450 KB.' });
       }
 
       const validPresets: ThemePresetId[] = ['cobalt', 'emerald', 'indigo', 'slate', 'amber', 'custom'];
@@ -1096,6 +1108,10 @@ export async function createApp(): Promise<Express> {
           isSuperAdmin && payload.brand_logo_alt !== undefined
             ? payload.brand_logo_alt.trim().slice(0, 80) || DEFAULT_BRANDING.brand_logo_alt
             : current.brand_logo_alt || DEFAULT_BRANDING.brand_logo_alt,
+        favicon_url:
+          isSuperAdmin && payload.favicon_url !== undefined
+            ? payload.favicon_url.trim()
+            : current.favicon_url || '',
         theme_preset: themePreset,
         primary_color: primaryColor,
         header_surface: headerSurface,
@@ -2033,7 +2049,8 @@ export async function createApp(): Promise<Express> {
           ...(phone !== undefined ? { phone: phone.trim().slice(0, 40) } : {}),
           ...(timezone !== undefined ? { timezone: timezone.trim().slice(0, 60) || 'UTC' } : {})
         },
-        getBearerToken(req)
+        getBearerToken(req),
+        req.editor!.email
       );
       if (!updated) return res.status(404).json({ error: 'Profile not found.' });
       res.json({ profile: updated });
@@ -3575,6 +3592,14 @@ export async function createApp(): Promise<Express> {
       if (!user || !verifyDemoPassword(password, user.password_hash)) {
         return res.status(401).json({ error: 'Invalid email or password.' });
       }
+      if (isDemoUserExpired(user)) {
+        return res.status(403).json({
+          error:
+            'Your 24-hour Live Demo evaluation pass has expired. Contact our team or explore our services to purchase a package.',
+          code: 'DEMO_EXPIRED',
+          expires_at: getDemoExpiresAtIso(user.created_at)
+        });
+      }
 
       const now = new Date().toISOString();
       const updated = await upsertDemoUser({
@@ -3600,6 +3625,14 @@ export async function createApp(): Promise<Express> {
       if (!user) {
         return res.status(401).json({ error: 'Demo account not found.' });
       }
+      if (isDemoUserExpired(user)) {
+        return res.status(403).json({
+          error:
+            'Your 24-hour Live Demo evaluation pass has expired. Contact our team or explore our services to purchase a package.',
+          code: 'DEMO_EXPIRED',
+          expires_at: getDemoExpiresAtIso(user.created_at)
+        });
+      }
       res.json({ user: toPublicDemoUser(user) });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to verify demo session' });
@@ -3615,6 +3648,14 @@ export async function createApp(): Promise<Express> {
       const user = await findDemoUserById(session.id);
       if (!user) {
         return res.status(404).json({ error: 'Demo account not found.' });
+      }
+      if (isDemoUserExpired(user)) {
+        return res.status(403).json({
+          error:
+            'Your 24-hour Live Demo evaluation pass has expired. Contact our team or explore our services to purchase a package.',
+          code: 'DEMO_EXPIRED',
+          expires_at: getDemoExpiresAtIso(user.created_at)
+        });
       }
       const { module, actionLabel, convertedInquiry } = req.body as {
         module?: string;
@@ -3651,6 +3692,24 @@ export async function createApp(): Promise<Express> {
       res.json(data);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load demo users' });
+    }
+  });
+
+  app.get('/api/admin/cloudflare/analytics', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const rawWindow = typeof req.query.window === 'string' ? req.query.window : '24h';
+      const validWindows: CloudflareWindowPreset[] = ['1h', '6h', '24h', '7d'];
+      const windowPreset: CloudflareWindowPreset = validWindows.includes(
+        rawWindow as CloudflareWindowPreset
+      )
+        ? (rawWindow as CloudflareWindowPreset)
+        : '24h';
+      const data = await fetchCloudflareZoneAnalytics(windowPreset, getBearerToken(req));
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to fetch Cloudflare analytics'
+      });
     }
   });
 

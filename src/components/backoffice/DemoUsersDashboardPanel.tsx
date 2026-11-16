@@ -33,6 +33,19 @@ const EMPTY_SUMMARY: DemoUsersSummaryStats = {
   linkedCrmLeads: 0
 };
 
+function formatDemoPassStatus(u: PublicDemoUser): { expired: boolean; label: string } {
+  const expiresIso =
+    u.expires_at ||
+    new Date(new Date(u.created_at).getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const remainingMs = new Date(expiresIso).getTime() - Date.now();
+  if (u.is_expired || remainingMs <= 0) {
+    return { expired: true, label: '24h Pass Expired' };
+  }
+  const hrs = Math.floor(remainingMs / 3_600_000);
+  const mins = Math.floor((remainingMs % 3_600_000) / 60_000);
+  return { expired: false, label: `Active · ${hrs}h ${mins}m left` };
+}
+
 export function DemoUsersDashboardPanel({ onOpenCrm }: DemoUsersDashboardPanelProps) {
   const [users, setUsers] = useState<PublicDemoUser[]>([]);
   const [summary, setSummary] = useState<DemoUsersSummaryStats>(EMPTY_SUMMARY);
@@ -250,6 +263,18 @@ export function DemoUsersDashboardPanel({ onOpenCrm }: DemoUsersDashboardPanelPr
                       <div className="mt-0.5 font-mono text-[10px] text-slate-400">
                         Joined {new Date(u.created_at).toLocaleDateString()}
                       </div>
+                      {(() => {
+                        const pass = formatDemoPassStatus(u);
+                        return (
+                          <div
+                            className={`mt-1 font-mono text-[10px] font-semibold ${
+                              pass.expired ? 'text-[#DC2626]' : 'text-[#16A34A]'
+                            }`}
+                          >
+                            {pass.label}
+                          </div>
+                        );
+                      })()}
                     </td>
 
                     <td className="px-4 py-3.5 align-top">
@@ -414,6 +439,7 @@ export function DemoUsersDashboardPanel({ onOpenCrm }: DemoUsersDashboardPanelPr
               <div className="flex items-center gap-1.5 sm:justify-end font-mono tabular-nums">
                 <Clock className="h-3.5 w-3.5 text-slate-400" />
                 <span>
+                  {formatDemoPassStatus(selectedUser).label} ·{' '}
                   {new Date(selectedUser.last_active_at || selectedUser.created_at).toLocaleString()}
                 </span>
               </div>

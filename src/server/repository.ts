@@ -477,9 +477,10 @@ async function resolveOrBootstrapUserProfile(
         const prev = byEmail[0] as UserProfile;
         const { data: migrated } = await sb
           .from('user_profiles')
-          .upsert({ ...prev, user_id: userId, updated_at: now }, { onConflict: 'user_id' })
+          .update({ user_id: userId, updated_at: now })
+          .eq('email', cleanEmail)
           .select()
-          .single();
+          .maybeSingle();
         if (prev.status === 'suspended' && !isPrimaryAdmin) return null;
         return (migrated as UserProfile) || { ...prev, user_id: userId };
       }
@@ -506,9 +507,9 @@ async function resolveOrBootstrapUserProfile(
       };
       const { data: inserted, error: insertErr } = await sb
         .from('user_profiles')
-        .upsert(newProfile, { onConflict: 'user_id' })
+        .upsert(newProfile, { onConflict: 'email' })
         .select()
-        .single();
+        .maybeSingle();
       if (!insertErr && inserted) return inserted as UserProfile;
       return newProfile;
     }
@@ -1040,6 +1041,7 @@ export async function getAdSenseSettings(): Promise<AdSenseSettings> {
         brand_name: row.brand_name || DEFAULT_ADSENSE_SETTINGS.brand_name,
         brand_logo_url: row.brand_logo_url || '',
         brand_logo_alt: row.brand_logo_alt || DEFAULT_ADSENSE_SETTINGS.brand_logo_alt,
+        favicon_url: row.favicon_url || '',
         theme_preset: row.theme_preset || DEFAULT_ADSENSE_SETTINGS.theme_preset,
         primary_color: row.primary_color || DEFAULT_ADSENSE_SETTINGS.primary_color,
         header_surface: row.header_surface === 'tinted' ? 'tinted' : 'white',
@@ -1469,25 +1471,89 @@ export async function listUserDirectory(userToken?: string): Promise<DirectoryUs
 export async function updateMyUserProfile(
   userId: string,
   updates: Partial<Pick<UserProfile, 'full_name' | 'job_title' | 'bio' | 'avatar_url' | 'phone' | 'timezone'>>,
-  userToken?: string
+  userToken?: string,
+  emailHint?: string
 ): Promise<UserProfile | null> {
   const now = new Date().toISOString();
+  const cleanEmail = emailHint?.trim().toLowerCase();
+
   if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient(userToken)
+    const sb = getSupabaseClient(userToken);
+    const { data, error } = await sb
       .from('user_profiles')
       .update({ ...updates, updated_at: now })
       .eq('user_id', userId)
       .select()
-      .single();
+      .maybeSingle();
+
     if (!error && data) return data as UserProfile;
+
+    // Self-heal when existing row has mismatched user_id (e.g. seeded primary admin email) or hasn't been inserted yet
+    if (!error && !data && cleanEmail) {
+      const { data: byEmail, error: emailUpdateErr } = await sb
+        .from('user_profiles')
+        .update({ ...updates, user_id: userId, updated_at: now })
+        .eq('email', cleanEmail)
+        .select()
+        .maybeSingle();
+      if (!emailUpdateErr && byEmail) return byEmail as UserProfile;
+
+      const isPrimaryAdmin = cleanEmail === PRIMARY_ADMIN_EMAIL;
+      const bootstrapRow: UserProfile = {
+        user_id: userId,
+        email: cleanEmail,
+        full_name: updates.full_name?.trim() || (isPrimaryAdmin ? 'GitStack Founder' : cleanEmail.split('@')[0]),
+        role: isPrimaryAdmin ? 'super_admin' : 'editor',
+        job_title: updates.job_title?.trim() || (isPrimaryAdmin ? 'Principal Architect & Founder' : 'Editorial Operator'),
+        bio: updates.bio?.trim() || '',
+        avatar_url: updates.avatar_url?.trim() || '',
+        phone: updates.phone?.trim() || '',
+        timezone: updates.timezone?.trim() || 'UTC',
+        status: 'active',
+        created_at: now,
+        updated_at: now
+      };
+      const { data: upserted, error: upsertErr } = await sb
+        .from('user_profiles')
+        .upsert(bootstrapRow, { onConflict: 'email' })
+        .select()
+        .maybeSingle();
+      if (!upsertErr && upserted) return upserted as UserProfile;
+      if (upsertErr && !isFallbackableDbError(upsertErr)) throw new Error(upsertErr.message);
+    }
+
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
   const db = await readLocalDb();
   const list = db.user_profiles || [...SEED_USER_PROFILES];
-  const idx = list.findIndex((p) => p.user_id === userId);
-  if (idx === -1) return null;
-  list[idx] = { ...list[idx], ...updates, updated_at: now };
+  let idx = list.findIndex((p) => p.user_id === userId);
+  if (idx === -1 && cleanEmail) {
+    idx = list.findIndex((p) => p.email.toLowerCase() === cleanEmail);
+  }
+  if (idx === -1) {
+    if (!cleanEmail) return null;
+    const isPrimaryAdmin = cleanEmail === PRIMARY_ADMIN_EMAIL;
+    const created: UserProfile = {
+      user_id: userId,
+      email: cleanEmail,
+      full_name: updates.full_name?.trim() || (isPrimaryAdmin ? 'GitStack Founder' : cleanEmail.split('@')[0]),
+      role: isPrimaryAdmin ? 'super_admin' : 'editor',
+      job_title: updates.job_title?.trim() || 'Principal Architect',
+      bio: updates.bio?.trim() || '',
+      avatar_url: updates.avatar_url?.trim() || '',
+      phone: updates.phone?.trim() || '',
+      timezone: updates.timezone?.trim() || 'UTC',
+      status: 'active',
+      created_at: now,
+      updated_at: now
+    };
+    list.push(created);
+    db.user_profiles = list;
+    await writeLocalDb(db);
+    return created;
+  }
+  list[idx] = { ...list[idx], ...updates, user_id: userId, updated_at: now };
   db.user_profiles = list;
   await writeLocalDb(db);
   return list[idx];
@@ -2616,9 +2682,27 @@ export async function upsertIntegrationSecretRow(
 
 // --- Customer Demo Users Auth & Telemetry + Unified Inbox Lark Email Logs ---
 
+const DEMO_LIFETIME_MS = 24 * 60 * 60 * 1000;
+
+export function getDemoExpiresAtIso(createdAt: string): string {
+  const parsed = new Date(createdAt).getTime();
+  const base = Number.isFinite(parsed) ? parsed : Date.now();
+  return new Date(base + DEMO_LIFETIME_MS).toISOString();
+}
+
+export function isDemoUserExpired(user: Pick<DemoUser, 'created_at'>): boolean {
+  const expiresMs = new Date(getDemoExpiresAtIso(user.created_at)).getTime();
+  return Date.now() >= expiresMs;
+}
+
 export function toPublicDemoUser(user: DemoUser): PublicDemoUser {
   const { password_hash: _ignored, ...rest } = user;
-  return rest;
+  const expiresAt = getDemoExpiresAtIso(user.created_at);
+  return {
+    ...rest,
+    expires_at: expiresAt,
+    is_expired: Date.now() >= new Date(expiresAt).getTime()
+  };
 }
 
 export function hashDemoPassword(password: string): string {

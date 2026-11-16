@@ -1,9 +1,11 @@
 import {
+  AlertTriangle,
   ArrowRight,
   Bot,
   Briefcase,
   Building2,
   CheckCircle2,
+  Clock,
   Database,
   Globe,
   Lock,
@@ -26,7 +28,12 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { InquiryForm } from '../components/InquiryForm.tsx';
-import { api, getStoredDemoToken, setStoredDemoToken } from '../lib/api.ts';
+import {
+  api,
+  DemoExpiredError,
+  getStoredDemoToken,
+  setStoredDemoToken
+} from '../lib/api.ts';
 import { applySeoMetadata } from '../lib/seo.ts';
 import {
   createInitialDemoAgents,
@@ -87,6 +94,13 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
   // Demo Visitor Authentication State (isolated from Admin Back Office auth)
   const [authChecked, setAuthChecked] = useState(false);
   const [demoUser, setDemoUser] = useState<PublicDemoUser | null>(null);
+  const [demoExpiredInfo, setDemoExpiredInfo] = useState<{
+    message: string;
+    expiresAt?: string;
+    email?: string;
+    company?: string;
+  } | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [authMode, setAuthMode] = useState<'register' | 'login'>('register');
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -148,6 +162,11 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
   }, []);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     const token = getStoredDemoToken();
     if (!token) {
@@ -158,12 +177,30 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
       .getDemoMe()
       .then((user) => {
         if (!active) return;
+        if (user?.is_expired) {
+          setStoredDemoToken(null);
+          setDemoUser(null);
+          setDemoExpiredInfo({
+            message:
+              'Your 24-hour Live Demo evaluation pass has expired. Contact our team or explore our services to purchase a package.',
+            expiresAt: user.expires_at,
+            email: user.email,
+            company: user.company
+          });
+          return;
+        }
         setDemoUser(user);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!active) return;
         setStoredDemoToken(null);
         setDemoUser(null);
+        if (err instanceof DemoExpiredError) {
+          setDemoExpiredInfo({
+            message: err.message,
+            expiresAt: err.expiresAt
+          });
+        }
       })
       .finally(() => {
         if (active) setAuthChecked(true);
@@ -185,7 +222,15 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
         .then((user) => {
           if (user) setDemoUser(user);
         })
-        .catch(() => {});
+        .catch((err) => {
+          if (err instanceof DemoExpiredError) {
+            setDemoUser(null);
+            setDemoExpiredInfo({
+              message: err.message,
+              expiresAt: err.expiresAt
+            });
+          }
+        });
     },
     []
   );
@@ -215,8 +260,11 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
         password: regPassword
       });
       setStoredDemoToken(res.token);
+      setDemoExpiredInfo(null);
       setDemoUser(res.user);
-      setNotice(`Welcome to the GitStack Live Demo, ${res.user.full_name}. Sandbox unlocked.`);
+      setNotice(
+        `Welcome to the GitStack Live Demo, ${res.user.full_name}. Your 24-hour sandbox pass is active.`
+      );
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : 'Unable to create your demo account.');
     } finally {
@@ -238,10 +286,20 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
         password: loginPassword
       });
       setStoredDemoToken(res.token);
+      setDemoExpiredInfo(null);
       setDemoUser(res.user);
       setNotice(`Signed back in as ${res.user.full_name} (${res.user.company}).`);
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Invalid demo email or password.');
+      if (err instanceof DemoExpiredError) {
+        setDemoUser(null);
+        setDemoExpiredInfo({
+          message: err.message,
+          expiresAt: err.expiresAt,
+          email: loginEmail.trim().toLowerCase()
+        });
+      } else {
+        setAuthError(err instanceof Error ? err.message : 'Invalid demo email or password.');
+      }
     } finally {
       setAuthSubmitting(false);
     }
@@ -250,6 +308,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
   const handleDemoSignOut = () => {
     setStoredDemoToken(null);
     setDemoUser(null);
+    setDemoExpiredInfo(null);
     setNotice(null);
   };
 
@@ -532,10 +591,94 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
 
   const activeNav = navItems.find((n) => n.id === activeTab) || navItems[0];
 
+  const demoPassTiming = useMemo(() => {
+    if (!demoUser) return { expired: false, label: '' };
+    const expiresIso =
+      demoUser.expires_at ||
+      new Date(new Date(demoUser.created_at).getTime() + 24 * 60 * 60 * 1000).toISOString();
+    const remainingMs = new Date(expiresIso).getTime() - nowMs;
+    if (demoUser.is_expired || remainingMs <= 0) {
+      return { expired: true, label: '24h Pass Expired' };
+    }
+    const hrs = Math.floor(remainingMs / 3_600_000);
+    const mins = Math.floor((remainingMs % 3_600_000) / 60_000);
+    return { expired: false, label: `${hrs}h ${mins}m remaining (24h pass)` };
+  }, [demoUser, nowMs]);
+
   if (!authChecked) {
     return (
       <div className="mx-auto max-w-md px-4 py-16 text-center text-xs text-slate-500">
         Verifying your GitStack Live Demo session...
+      </div>
+    );
+  }
+
+  if (demoExpiredInfo || (demoUser && demoPassTiming.expired)) {
+    const expiredMessage =
+      demoExpiredInfo?.message ||
+      'Your 24-hour Live Demo evaluation pass has ended. Reach out to our team or select an engineering package to launch GitStack for your business.';
+    return (
+      <div className="mx-auto max-w-2xl px-4 sm:px-6 py-12 sm:py-20">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 sm:p-10 text-center space-y-6">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-[#D97706]">
+            <AlertTriangle className="h-6 w-6" />
+          </div>
+          <div className="space-y-2">
+            <div className="font-mono text-xs font-semibold uppercase tracking-wide text-[#D97706]">
+              24-Hour Evaluation Pass Ended
+            </div>
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              Your 24-Hour Live Demo Access Has Expired
+            </h1>
+            <p className="mx-auto max-w-lg text-sm leading-relaxed text-slate-600">
+              {expiredMessage}
+            </p>
+            {(demoExpiredInfo?.email || demoUser?.email) && (
+              <p className="font-mono text-xs text-slate-500">
+                Account: {demoExpiredInfo?.email || demoUser?.email}
+                {(demoExpiredInfo?.company || demoUser?.company) &&
+                  ` · ${demoExpiredInfo?.company || demoUser?.company}`}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left text-xs text-slate-600 space-y-1.5">
+            <div className="font-semibold text-slate-900">Ready to deploy GitStack in production?</div>
+            <p className="leading-relaxed">
+              Our engineering team installs the full CRM, multi-source lead intelligence, Lark Mail
+              SMTP automation, and 7 Autonomous Agents directly on your dedicated Supabase &amp;
+              cloud environment.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={() => onNavigate('/contact')}
+              className="min-h-[44px] w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[var(--gs-primary-hover)] whitespace-nowrap"
+            >
+              <span>Contact Us to Get Started</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('/services')}
+              className="min-h-[44px] w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 whitespace-nowrap"
+            >
+              <span>Explore Services &amp; Packages</span>
+            </button>
+          </div>
+
+          <div className="border-t border-slate-200 pt-4">
+            <button
+              type="button"
+              onClick={handleDemoSignOut}
+              className="text-xs font-medium text-slate-500 hover:text-slate-900"
+            >
+              Sign in or register with a different work email
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -548,20 +691,20 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           <div className="lg:col-span-5 space-y-5">
             <div className="inline-flex items-center gap-2 text-xs font-semibold text-[var(--gs-primary)]">
               <Lock className="h-4 w-4" />
-              <span>Customer Live Demo Access</span>
+              <span>24-Hour Customer Live Demo Pass</span>
             </div>
             <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              Create Your Free Sandbox Account to Explore Live Demo
+              Create Your Free 24-Hour Sandbox Account to Explore Live Demo
             </h1>
             <p className="text-sm leading-relaxed text-slate-600">
-              Sign up in seconds—no email verification required. Unlock our interactive Apollo-style
-              B2B CRM, AI Research Assistant, Google Maps &amp; GitHub Prospect Discovery, Lark Mail
-              Outreach simulator, and 7 Autonomous Agents console.
+              Sign up in seconds—no email verification required. Get full 24-hour interactive access
+              to our Apollo-style B2B CRM, AI Research Assistant, Google Maps &amp; GitHub Prospect
+              Discovery, Lark Mail Outreach simulator, and 7 Autonomous Agents console.
             </p>
 
             <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-3">
               <div className="text-xs font-bold uppercase tracking-wide text-slate-800">
-                Included Inside the Sandbox
+                Included Inside Your 24-Hour Sandbox
               </div>
               <ul className="space-y-2.5 text-xs text-slate-600">
                 <li className="flex items-start gap-2">
@@ -577,8 +720,8 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
                   <span>7 Autonomous Operational Agents &amp; Approve-to-Send Lark Mail</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#16A34A] mt-0.5" />
-                  <span>Browser-isolated sandbox data — explore freely with zero risk</span>
+                  <Clock className="h-4 w-4 shrink-0 text-[var(--gs-primary)] mt-0.5" />
+                  <span>Active for 24 hours from registration — explore safely with zero risk</span>
                 </li>
               </ul>
             </div>
@@ -805,8 +948,9 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
             <ShieldCheck className="h-4 w-4 shrink-0" />
             <span>Interactive Customer Sandbox</span>
             <span className="text-slate-300">·</span>
-            <span className="text-slate-600 font-medium">
-              Browser-isolated sample data — explore safely without affecting live systems
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-[var(--gs-primary)] tabular-nums">
+              <Clock className="h-3.5 w-3.5 shrink-0" />
+              <span>{demoPassTiming.label}</span>
             </span>
           </div>
           <h1 className="mt-1 font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-900">

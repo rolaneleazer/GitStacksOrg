@@ -19,7 +19,8 @@ export const VALID_INTEGRATION_PROVIDERS: IntegrationProviderId[] = [
   'apollo',
   'google_maps',
   'gemini',
-  'github'
+  'github',
+  'cloudflare'
 ];
 
 interface ProviderMetaDef {
@@ -79,6 +80,17 @@ const PROVIDER_DEFS: Record<IntegrationProviderId, ProviderMetaDef> = {
       'Raises GitHub Search & Repo Maintainer scraping rate limits from 60 to 5,000 requests/hour.',
     docsHint: 'GitHub -> Settings -> Developer Settings -> Personal Access Token (public_repo read)',
     defaultConfigMeta: {}
+  },
+  cloudflare: {
+    label: 'Cloudflare Analytics',
+    category: 'Cloud & Edge',
+    description:
+      'Streams real-time edge requests, bandwidth, cache ratio, 5xx errors, and Top-N traffic breakdowns via Cloudflare GraphQL.',
+    docsHint: 'Cloudflare Dashboard -> My Profile -> API Tokens (Read Zone Analytics) + Zone ID',
+    defaultConfigMeta: {
+      zone_id: '',
+      zone_name: 'git-stack.org'
+    }
   }
 };
 
@@ -148,6 +160,8 @@ function getEnvFallbackSecret(provider: IntegrationProviderId): string {
     }
     case 'github':
       return process.env.GITHUB_TOKEN?.trim() || '';
+    case 'cloudflare':
+      return process.env.CLOUDFLARE_API_TOKEN?.trim() || '';
     default:
       return '';
   }
@@ -176,6 +190,16 @@ function mergeConfigMeta(
     merged.imap_ssl = merged.imap_ssl !== false;
     merged.email = (merged.email || '').trim().toLowerCase();
     merged.sender_name = (merged.sender_name || 'GitStack Solutions').trim();
+  }
+  if (provider === 'cloudflare') {
+    merged.zone_id = (merged.zone_id || process.env.CLOUDFLARE_ZONE_ID || '').trim();
+    merged.zone_name = (
+      merged.zone_name ||
+      process.env.CLOUDFLARE_ZONE_NAME ||
+      'git-stack.org'
+    )
+      .trim()
+      .toLowerCase();
   }
   return merged;
 }
@@ -494,6 +518,96 @@ async function runProviderLiveProbe(
         ok: true,
         latencyMs,
         message: `GitHub PAT verified (${data.rate?.remaining ?? '?'}/${data.rate?.limit ?? '?'} quota remaining) in ${latencyMs}ms.`
+      };
+    }
+
+    if (provider === 'cloudflare') {
+      const zoneIdDraft = (configMeta?.zone_id || '').trim();
+      const zoneNameDraft = (configMeta?.zone_name || 'git-stack.org').trim().toLowerCase();
+
+      const verifyRes = await fetch('https://api.cloudflare.com/client/v4/user/tokens/verify', {
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!verifyRes.ok) {
+        const latencyMs = Date.now() - started;
+        const body = (await verifyRes.json().catch(() => ({}))) as {
+          errors?: Array<{ message?: string }>;
+        };
+        return {
+          ok: false,
+          latencyMs,
+          message:
+            body.errors?.[0]?.message ||
+            `Cloudflare token verification failed (HTTP ${verifyRes.status}).`
+        };
+      }
+
+      let resolvedZoneName = zoneNameDraft;
+      let resolvedZoneId = zoneIdDraft;
+      let planName = '';
+
+      if (resolvedZoneId) {
+        const zRes = await fetch(
+          `https://api.cloudflare.com/client/v4/zones/${encodeURIComponent(resolvedZoneId)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${secret}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        if (!zRes.ok) {
+          const latencyMs = Date.now() - started;
+          return {
+            ok: false,
+            latencyMs,
+            message: `Token is valid, but Cloudflare Zone "${resolvedZoneId}" returned HTTP ${zRes.status}. Verify Zone ID and Analytics:Read + Zone:Read permissions.`
+          };
+        }
+        const zJson = (await zRes.json().catch(() => ({}))) as {
+          result?: { id?: string; name?: string; plan?: { name?: string } };
+        };
+        resolvedZoneId = zJson.result?.id || resolvedZoneId;
+        resolvedZoneName = zJson.result?.name || resolvedZoneName;
+        planName = zJson.result?.plan?.name || '';
+      } else {
+        const listUrl = `https://api.cloudflare.com/client/v4/zones${
+          zoneNameDraft ? `?name=${encodeURIComponent(zoneNameDraft)}` : ''
+        }`;
+        const listRes = await fetch(listUrl, {
+          headers: {
+            Authorization: `Bearer ${secret}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        if (listRes.ok) {
+          const listJson = (await listRes.json().catch(() => ({}))) as {
+            result?: Array<{ id: string; name: string; plan?: { name?: string } }>;
+          };
+          const first = listJson.result?.[0];
+          if (first) {
+            resolvedZoneId = first.id;
+            resolvedZoneName = first.name;
+            planName = first.plan?.name || '';
+          }
+        }
+      }
+
+      if (configMeta) {
+        if (resolvedZoneId) configMeta.zone_id = resolvedZoneId;
+        if (resolvedZoneName) configMeta.zone_name = resolvedZoneName;
+      }
+
+      const latencyMs = Date.now() - started;
+      return {
+        ok: true,
+        latencyMs,
+        message: resolvedZoneId
+          ? `Cloudflare API connected for ${resolvedZoneName} (${planName || 'Active Zone'}) in ${latencyMs}ms.`
+          : `Cloudflare API token verified in ${latencyMs}ms. Enter your Zone ID for ${zoneNameDraft} to stream GraphQL metrics.`
       };
     }
 

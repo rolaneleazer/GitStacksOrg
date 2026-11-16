@@ -98,6 +98,7 @@ export interface AdSenseSettings {
   brand_name?: string;
   brand_logo_url?: string;
   brand_logo_alt?: string;
+  favicon_url?: string;
   theme_preset?: ThemePresetId;
   primary_color?: string;
   header_surface?: HeaderSurface;
@@ -742,7 +743,8 @@ export type IntegrationProviderId =
   | 'apollo'
   | 'google_maps'
   | 'gemini'
-  | 'github';
+  | 'github'
+  | 'cloudflare';
 
 export interface IntegrationConfigMeta {
   email?: string;
@@ -754,6 +756,8 @@ export interface IntegrationConfigMeta {
   imap_port?: number;
   imap_ssl?: boolean;
   apollo_capability?: ApolloCapabilityMode;
+  zone_id?: string;
+  zone_name?: string;
 }
 
 export interface IntegrationSecretRecord {
@@ -772,7 +776,12 @@ export interface IntegrationSecretRecord {
 export interface IntegrationStatusItem {
   provider: IntegrationProviderId;
   label: string;
-  category: 'Email Outreach' | 'Lead Prospecting' | 'AI & Grounding' | 'Open-Source Scraping';
+  category:
+    | 'Email Outreach'
+    | 'Lead Prospecting'
+    | 'AI & Grounding'
+    | 'Open-Source Scraping'
+    | 'Cloud & Edge';
   description: string;
   connected: boolean;
   enabled: boolean;
@@ -806,7 +815,10 @@ export interface DemoUser {
   created_at: string;
 }
 
-export type PublicDemoUser = Omit<DemoUser, 'password_hash'>;
+export type PublicDemoUser = Omit<DemoUser, 'password_hash'> & {
+  expires_at?: string;
+  is_expired?: boolean;
+};
 
 export interface DemoUsersSummaryStats {
   totalUsers: number;
@@ -832,3 +844,78 @@ export interface InboxEmailLog {
   sent_at: string;
 }
 
+export type CloudflareWindowPreset = '1h' | '6h' | '24h' | '7d';
+
+export interface CloudflareTimeSeriesPoint {
+  timestamp: string;
+  label: string;
+  requests: number;
+  bytes: number;
+  visits: number;
+  status1xx: number;
+  status2xx: number;
+  status3xx: number;
+  status4xx: number;
+  status5xx: number;
+  cacheDynamic: number;
+  cacheNone: number;
+  cacheExpired: number;
+  cacheMiss: number;
+  cacheHit: number;
+}
+
+export interface CloudflareTopItem {
+  label: string;
+  count: number;
+  bytes?: number;
+}
+
+export interface CloudflareAnalyticsResponse {
+  connected: boolean;
+  source: 'vault' | 'env' | 'disconnected';
+  zoneId: string;
+  zoneName: string;
+  planName?: string;
+  window: CloudflareWindowPreset;
+  fetchedAt: string;
+  notice?: string;
+  summary: {
+    totalRequests: number;
+    requestsDeltaPct: number | null;
+    totalBytes: number;
+    bytesDeltaPct: number | null;
+    totalVisits: number;
+    cacheHitRate: number;
+    cacheHitRateDeltaPct: number | null;
+    error5xxRate: number;
+    error5xxDeltaPct: number | null;
+    statusTotals: {
+      s1xx: number;
+      s2xx: number;
+      s3xx: number;
+      s4xx: number;
+      s5xx: number;
+    };
+    cacheTotals: {
+      dynamic: number;
+      none: number;
+      expired: number;
+      miss: number;
+      hit: number;
+    };
+  };
+  series: CloudflareTimeSeriesPoint[];
+  breakdowns: {
+    topPaths: CloudflareTopItem[];
+    topCountries: CloudflareTopItem[];
+    topClientIps: CloudflareTopItem[];
+    topHosts: CloudflareTopItem[];
+    topBrowsers: CloudflareTopItem[];
+    topOperatingSystems: CloudflareTopItem[];
+    topDeviceTypes: CloudflareTopItem[];
+    topUserAgents: CloudflareTopItem[];
+    topHttpVersions: CloudflareTopItem[];
+    topStatusCodes: CloudflareTopItem[];
+    topDataCenters: CloudflareTopItem[];
+  };
+}

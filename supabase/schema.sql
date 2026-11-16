@@ -655,7 +655,7 @@ CREATE POLICY "Authenticated team manage crm sync runs"
 
 -- 21. Encrypted Server-Side Integrations & Mail Vault
 CREATE TABLE IF NOT EXISTS public.crm_integration_secrets (
-  provider TEXT PRIMARY KEY CHECK (provider IN ('lark_smtp', 'apollo', 'google_maps', 'gemini', 'github')),
+  provider TEXT PRIMARY KEY CHECK (provider IN ('lark_smtp', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare')),
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   encrypted_secret TEXT NOT NULL DEFAULT '',
   secret_hint TEXT NOT NULL DEFAULT '',
@@ -666,6 +666,24 @@ CREATE TABLE IF NOT EXISTS public.crm_integration_secrets (
   updated_by TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+DO $$
+DECLARE
+  constraint_rec RECORD;
+BEGIN
+  ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS favicon_url TEXT NOT NULL DEFAULT '';
+  FOR constraint_rec IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'public.crm_integration_secrets'::regclass AND contype = 'c'
+  LOOP
+    EXECUTE 'ALTER TABLE public.crm_integration_secrets DROP CONSTRAINT IF EXISTS ' || quote_ident(constraint_rec.conname);
+  END LOOP;
+  ALTER TABLE public.crm_integration_secrets
+    ADD CONSTRAINT crm_integration_secrets_provider_check
+    CHECK (provider IN ('lark_smtp', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 GRANT ALL ON public.crm_integration_secrets TO authenticated, service_role;
 

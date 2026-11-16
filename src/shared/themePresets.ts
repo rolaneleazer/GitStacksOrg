@@ -74,6 +74,7 @@ export const DEFAULT_BRANDING = {
   brand_name: 'GitStack',
   brand_logo_url: '',
   brand_logo_alt: 'GitStack logo',
+  favicon_url: '',
   theme_preset: 'cobalt' as ThemePresetId,
   primary_color: '#1E40AF',
   header_surface: 'white' as HeaderSurface,
@@ -203,6 +204,42 @@ export function resolveThemeTokens(
   };
 }
 
+export function buildDefaultMonogramFavicon(brandName = 'GitStack', color = '#1E40AF'): string {
+  const initial = ((brandName || 'G').trim().slice(0, 1) || 'G').toUpperCase();
+  const safeColor = normalizeHexColor(color, '#1E40AF');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${safeColor}"/><text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#FFFFFF" font-family="Plus Jakarta Sans,system-ui,sans-serif" font-size="34" font-weight="700">${initial}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+export function applyFaviconToDocument(
+  faviconUrl?: string,
+  brandName?: string,
+  primaryColor?: string
+): void {
+  if (typeof document === 'undefined') return;
+  const href =
+    (faviconUrl || '').trim() ||
+    buildDefaultMonogramFavicon(brandName || DEFAULT_BRANDING.brand_name, primaryColor || DEFAULT_BRANDING.primary_color);
+
+  let iconEl = document.querySelector<HTMLLinkElement>('link#site-favicon') || document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!iconEl) {
+    iconEl = document.createElement('link');
+    iconEl.id = 'site-favicon';
+    iconEl.rel = 'icon';
+    document.head.appendChild(iconEl);
+  }
+  iconEl.href = href;
+
+  let appleEl = document.querySelector<HTMLLinkElement>('link#site-apple-icon');
+  if (!appleEl) {
+    appleEl = document.createElement('link');
+    appleEl.id = 'site-apple-icon';
+    appleEl.rel = 'apple-touch-icon';
+    document.head.appendChild(appleEl);
+  }
+  appleEl.href = href;
+}
+
 export function applyThemeToDocument(settings?: Partial<AdSenseSettings> | null): void {
   if (typeof document === 'undefined') return;
   const tokens = resolveThemeTokens(settings);
@@ -213,4 +250,5 @@ export function applyThemeToDocument(settings?: Partial<AdSenseSettings> | null)
   root.style.setProperty('--gs-soft-border', tokens.softBorder);
   root.style.setProperty('--gs-canvas-bg', tokens.canvasBg);
   root.style.setProperty('--gs-header-bg', tokens.headerBg);
+  applyFaviconToDocument(settings?.favicon_url, settings?.brand_name, tokens.primaryColor);
 }

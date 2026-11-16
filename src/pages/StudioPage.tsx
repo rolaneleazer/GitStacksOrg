@@ -5,6 +5,7 @@ import {
   Bot,
   Briefcase,
   CheckCircle2,
+  Cloud,
   Copy,
   Download,
   ExternalLink,
@@ -31,6 +32,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
+import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
 import { DemoUsersDashboardPanel } from '../components/backoffice/DemoUsersDashboardPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
@@ -91,6 +93,7 @@ type StudioTab =
   | 'chat'
   | 'workflows'
   | 'analytics'
+  | 'cloudflare'
   | 'resources'
   | 'articles'
   | 'users'
@@ -108,6 +111,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'chat',
     'workflows',
     'analytics',
+    'cloudflare',
     'resources',
     'articles',
     'users',
@@ -123,6 +127,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'demo_users',
     'workflows',
     'analytics',
+    'cloudflare',
     'resources',
     'profile'
   ],
@@ -627,6 +632,7 @@ export function StudioPage({
         type: 'err',
         text: err instanceof Error ? err.message : 'Unable to update profile.'
       });
+      throw err;
     } finally {
       setSavingProfile(false);
     }
@@ -962,6 +968,7 @@ export function StudioPage({
       count: workflows.filter((w) => w.status !== 'done').length
     },
     { id: 'analytics', label: 'Google Analytics', icon: BarChart3 },
+    { id: 'cloudflare', label: 'Cloudflare Analytics', icon: Cloud },
     { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
@@ -1250,6 +1257,15 @@ export function StudioPage({
               days={analyticsDays}
               onChangeDays={handleChangeAnalyticsDays}
               onSaveGa4Settings={handleSaveGa4Settings}
+            />
+          )}
+
+          {/* PANEL 5A: CLOUDFLARE REAL-TIME EDGE & TRAFFIC ANALYTICS */}
+          {currentTab === 'cloudflare' && (
+            <CloudflareAnalyticsPanel
+              onOpenSettings={
+                currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
+              }
             />
           )}
 

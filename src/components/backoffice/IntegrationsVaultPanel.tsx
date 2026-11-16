@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  Cloud,
   Eye,
   EyeOff,
   Github,
@@ -31,7 +32,8 @@ const PROVIDER_ICON: Record<IntegrationProviderId, React.ComponentType<{ classNa
   apollo: Search,
   google_maps: MapPin,
   gemini: Sparkles,
-  github: Github
+  github: Github,
+  cloudflare: Cloud
 };
 
 export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVaultPanelProps) {
@@ -51,6 +53,10 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
     imap_host: 'imap.larksuite.com',
     imap_port: 993,
     imap_ssl: true
+  });
+  const [cloudflareMeta, setCloudflareMeta] = useState<IntegrationConfigMeta>({
+    zone_id: '',
+    zone_name: 'git-stack.org'
   });
 
   const [busyProvider, setBusyProvider] = useState<string | null>(null);
@@ -74,6 +80,13 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
           imap_ssl: lark.configMeta.imap_ssl !== false
         }));
       }
+      const cf = res.integrations.find((i) => i.provider === 'cloudflare');
+      if (cf) {
+        setCloudflareMeta((prev) => ({
+          zone_id: cf.configMeta.zone_id || prev.zone_id || '',
+          zone_name: cf.configMeta.zone_name || prev.zone_name || 'git-stack.org'
+        }));
+      }
     } catch (err) {
       setNotice({
         type: 'err',
@@ -90,6 +103,12 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
 
   const replaceItem = (updated: IntegrationStatusItem) => {
     setItems((prev) => prev.map((it) => (it.provider === updated.provider ? updated : it)));
+    if (updated.provider === 'cloudflare') {
+      setCloudflareMeta((prev) => ({
+        zone_id: updated.configMeta.zone_id || prev.zone_id || '',
+        zone_name: updated.configMeta.zone_name || prev.zone_name || 'git-stack.org'
+      }));
+    }
     onIntegrationsChanged?.();
   };
 
@@ -103,7 +122,8 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
       const secret = (secretDrafts[provider] || '').trim();
       const res = await api.saveIntegration(provider, {
         ...(options?.useEnvFallback ? { useEnvFallback: true } : { secret }),
-        ...(provider === 'lark_smtp' ? { configMeta: larkMeta } : {})
+        ...(provider === 'lark_smtp' ? { configMeta: larkMeta } : {}),
+        ...(provider === 'cloudflare' ? { configMeta: cloudflareMeta } : {})
       });
       replaceItem(res.integration);
       setSecretDrafts((prev) => ({ ...prev, [provider]: '' }));
@@ -129,7 +149,8 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
       const draftSecret = (secretDrafts[provider] || '').trim();
       const res = await api.testIntegration(provider, {
         ...(draftSecret ? { secret: draftSecret } : {}),
-        ...(provider === 'lark_smtp' ? { configMeta: larkMeta } : {})
+        ...(provider === 'lark_smtp' ? { configMeta: larkMeta } : {}),
+        ...(provider === 'cloudflare' ? { configMeta: cloudflareMeta } : {})
       });
       replaceItem(res.integration);
       setNotice({
@@ -255,15 +276,15 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
             </div>
             <p className="mt-1 text-xs text-slate-600 max-w-2xl">
               Configure, verify, connect, or disconnect Lark Mail SMTP, Apollo.io, Google Maps,
-              Gemini AI, and GitHub tokens directly from the UI. Secrets are AES-256-GCM encrypted
-              server-side in Supabase and never exposed back to the browser.
+              Gemini AI, GitHub, and Cloudflare tokens directly from the UI. Secrets are AES-256-GCM
+              encrypted server-side in Supabase and never exposed back to the browser.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <div className="border-r border-slate-200 pr-3 text-right">
               <div className="font-mono text-lg font-bold text-slate-900 tabular-nums">
-                {activeCount} / {items.length || 5}
+                {activeCount} / {items.length || 6}
               </div>
               <div className="text-[11px] font-medium text-slate-500">Active Connections</div>
             </div>
@@ -591,6 +612,39 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
                   </div>
                   <p className="mt-1.5 text-[11px] text-slate-400">{item.docsHint}</p>
                 </div>
+
+                {item.provider === 'cloudflare' && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-1">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Domain / Zone Name
+                      </label>
+                      <input
+                        type="text"
+                        value={cloudflareMeta.zone_name || 'git-stack.org'}
+                        onChange={(e) =>
+                          setCloudflareMeta((prev) => ({ ...prev, zone_name: e.target.value }))
+                        }
+                        placeholder="git-stack.org"
+                        className="mt-1 min-h-[40px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Zone ID (Optional if domain given)
+                      </label>
+                      <input
+                        type="text"
+                        value={cloudflareMeta.zone_id || ''}
+                        onChange={(e) =>
+                          setCloudflareMeta((prev) => ({ ...prev, zone_id: e.target.value }))
+                        }
+                        placeholder="32-char Cloudflare Zone ID"
+                        className="mt-1 min-h-[40px] w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-1.5 font-mono text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:bg-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-3 border-t border-slate-200 pt-3.5">

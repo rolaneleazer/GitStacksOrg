@@ -439,6 +439,7 @@ export const DEFAULT_ADSENSE_SETTINGS: AdSenseSettings = {
   brand_name: 'GitStack',
   brand_logo_url: '',
   brand_logo_alt: 'GitStack logo',
+  favicon_url: '',
   theme_preset: 'cobalt',
   primary_color: '#1E40AF',
   header_surface: 'white',

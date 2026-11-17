@@ -186,12 +186,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
       .getDemoMe()
       .then((user) => {
         if (!mounted) return;
-        if (!user) {
+        if (!user || typeof user !== 'object') {
           setAuthStatus('unauthenticated');
           return;
         }
 
-        const rem = calculateRemainingTime(user.expires_at);
+        const rem = calculateRemainingTime(user?.expires_at);
         if (rem.isExpired) {
           setAuthStatus('expired');
           setCurrentUser(user);
@@ -220,7 +220,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
     if (authStatus !== 'authenticated' || !currentUser?.expires_at) return;
 
     const tick = () => {
-      const rem = calculateRemainingTime(currentUser.expires_at);
+      const rem = calculateRemainingTime(currentUser?.expires_at);
       setRemainingTime(rem);
       if (rem.isExpired) {
         setAuthStatus('expired');
@@ -292,8 +292,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           password: password.trim()
         });
 
-        setCurrentUser(res.user);
-        const rem = calculateRemainingTime(res.user.expires_at);
+        const user = res?.user ?? null;
+        if (!user) {
+          throw new Error('Registration succeeded, but evaluation session details were missing. Please sign in.');
+        }
+        setCurrentUser(user);
+        const rem = calculateRemainingTime(user?.expires_at);
         if (rem.isExpired) {
           setAuthStatus('expired');
         } else {
@@ -310,8 +314,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           password: password.trim()
         });
 
-        setCurrentUser(res.user);
-        const rem = calculateRemainingTime(res.user.expires_at);
+        const user = res?.user ?? null;
+        if (!user) {
+          throw new Error('Unable to load your evaluation profile. Please try again.');
+        }
+        setCurrentUser(user);
+        const rem = calculateRemainingTime(user?.expires_at);
         if (rem.isExpired) {
           setAuthStatus('expired');
         } else {
@@ -330,7 +338,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
     }
   };
 
-  const activeProductMeta = DEMO_PRODUCTS.find((p) => p.key === activeProduct) || DEMO_PRODUCTS[0];
+  const activeProductMeta = DEMO_PRODUCTS.find((p) => p.key === activeProduct) ?? DEMO_PRODUCTS[0];
 
   // ==========================================
   // VIEW 1: LOADING SPINNER

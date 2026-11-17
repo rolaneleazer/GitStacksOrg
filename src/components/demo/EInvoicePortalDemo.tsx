@@ -521,7 +521,7 @@ export function EInvoicePortalDemo({ onCtaClick }: EInvoicePortalDemoProps) {
                         Official Sales Invoice
                       </span>
                       <div className="mt-1 font-mono text-sm font-bold text-slate-900">
-                        INV-2026-{invoices[0]?.invoiceNumber.split('-')[2] || '0881'}
+                        INV-2026-{(invoices[0]?.invoiceNumber || 'INV-2026-0881').split('-')[2] || '0881'}
                       </div>
                       <div className="text-[11px] text-slate-500">
                         Date: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

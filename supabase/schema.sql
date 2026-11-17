@@ -91,11 +91,24 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   brand_name TEXT NOT NULL DEFAULT 'GitStack',
   brand_logo_url TEXT NOT NULL DEFAULT '',
   brand_logo_alt TEXT NOT NULL DEFAULT 'GitStack logo',
+  favicon_url TEXT NOT NULL DEFAULT '',
   theme_preset TEXT NOT NULL DEFAULT 'cobalt',
   primary_color TEXT NOT NULL DEFAULT '#1E40AF',
   header_surface TEXT NOT NULL DEFAULT 'white',
   header_cta_label TEXT NOT NULL DEFAULT 'Book Consultation',
   header_cta_href TEXT NOT NULL DEFAULT '/contact',
+  bmc_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  bmc_handle TEXT NOT NULL DEFAULT 'ronelmol',
+  bmc_custom_url TEXT NOT NULL DEFAULT 'https://buymeacoffee.com/ronelmol',
+  bmc_button_text TEXT NOT NULL DEFAULT 'Buy me a coffee',
+  bmc_button_color TEXT NOT NULL DEFAULT '#FFDD00',
+  bmc_font_style TEXT NOT NULL DEFAULT 'Cookie',
+  bmc_header_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  bmc_footer_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  bmc_floating_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  bmc_floating_position TEXT NOT NULL DEFAULT 'Right',
+  bmc_floating_y_offset INTEGER NOT NULL DEFAULT 84,
+  bmc_support_message TEXT NOT NULL DEFAULT 'Support independent open-source tools, technical research, and live sandbox maintenance.',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -106,11 +119,24 @@ ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS ga4_track_events BOOLE
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS brand_name TEXT NOT NULL DEFAULT 'GitStack';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS brand_logo_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS brand_logo_alt TEXT NOT NULL DEFAULT 'GitStack logo';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS favicon_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS theme_preset TEXT NOT NULL DEFAULT 'cobalt';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS primary_color TEXT NOT NULL DEFAULT '#1E40AF';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS header_surface TEXT NOT NULL DEFAULT 'white';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS header_cta_label TEXT NOT NULL DEFAULT 'Book Consultation';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS header_cta_href TEXT NOT NULL DEFAULT '/contact';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_handle TEXT NOT NULL DEFAULT 'ronelmol';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_custom_url TEXT NOT NULL DEFAULT 'https://buymeacoffee.com/ronelmol';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_button_text TEXT NOT NULL DEFAULT 'Buy me a coffee';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_button_color TEXT NOT NULL DEFAULT '#FFDD00';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_font_style TEXT NOT NULL DEFAULT 'Cookie';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_header_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_footer_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_floating_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_floating_position TEXT NOT NULL DEFAULT 'Right';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_floating_y_offset INTEGER NOT NULL DEFAULT 84;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_support_message TEXT NOT NULL DEFAULT 'Support independent open-source tools, technical research, and live sandbox maintenance.';
 
 -- 6. Page Content & Media Customizer (Structured CMS Slots)
 CREATE TABLE IF NOT EXISTS public.page_contents (

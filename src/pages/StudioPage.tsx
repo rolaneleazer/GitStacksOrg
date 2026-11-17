@@ -151,8 +151,6 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'agents',
     'crm',
     'pages',
-    'branding',
-    'buymeacoffee',
     'articles',
     'notifications',
     'demo_users',
@@ -581,8 +579,9 @@ export function StudioPage({
     setAgents(agentsRes.agents);
   };
 
-  const handleSaveBmcSettings = async (patch: Partial<AdSenseSettings>) => {
+  const handleSaveBmcSettings = async (patch: Partial<AdSenseSettings>): Promise<boolean> => {
     setSavingAdSense(true);
+    setWorkspaceNotice(null);
     try {
       const res = await api.saveAdSenseSettings({
         ...adSenseForm,
@@ -590,10 +589,14 @@ export function StudioPage({
       });
       setAdSenseForm(res.settings);
       onSettingsChanged(res.settings);
+      setWorkspaceNotice({ type: 'ok', text: 'Buy Me a Coffee configuration saved and synced sitewide.' });
       const agentsRes = await api.getAgentsOverview();
       setAgents(agentsRes.agents);
+      return true;
     } catch (err) {
-      console.error('Failed to save Buy Me a Coffee settings:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to save Buy Me a Coffee settings.';
+      setWorkspaceNotice({ type: 'err', text: msg });
+      throw err;
     } finally {
       setSavingAdSense(false);
     }

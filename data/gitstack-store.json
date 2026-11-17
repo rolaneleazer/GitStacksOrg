@@ -239,6 +239,27 @@
     "ga4_measurement_id": "",
     "ga4_enabled": false,
     "ga4_track_events": true,
+    "brand_name": "GitStack",
+    "brand_logo_url": "",
+    "brand_logo_alt": "GitStack logo",
+    "favicon_url": "",
+    "theme_preset": "cobalt",
+    "primary_color": "#1E40AF",
+    "header_surface": "white",
+    "header_cta_label": "Book Consultation",
+    "header_cta_href": "/contact",
+    "bmc_enabled": true,
+    "bmc_handle": "ronelmol",
+    "bmc_custom_url": "https://buymeacoffee.com/ronelmol",
+    "bmc_button_text": "Buy me a coffee",
+    "bmc_button_color": "#FFDD00",
+    "bmc_font_style": "Cookie",
+    "bmc_header_enabled": true,
+    "bmc_footer_enabled": true,
+    "bmc_floating_enabled": true,
+    "bmc_floating_position": "Right",
+    "bmc_floating_y_offset": 84,
+    "bmc_support_message": "Support independent open-source tools, technical research, and live sandbox maintenance.",
     "updated_at": "2026-11-10T00:00:00Z"
   },
   "page_contents": {
@@ -1133,5 +1154,330 @@
       "meta": {},
       "created_at": "2026-11-14T09:39:48.879Z"
     }
-  ]
+  ],
+  "user_profiles": [
+    {
+      "user_id": "usr-primary-admin",
+      "email": "gitstackitsolution@gmail.com",
+      "full_name": "GitStack Founder",
+      "role": "super_admin",
+      "job_title": "Principal Architect & Founder",
+      "bio": "Leads enterprise AI integration, MLOps architecture, and cloud infrastructure strategy.",
+      "avatar_url": "",
+      "phone": "",
+      "timezone": "UTC",
+      "status": "active",
+      "created_at": "2026-11-01T08:00:00Z",
+      "updated_at": "2026-11-12T08:00:00Z"
+    }
+  ],
+  "user_workflow_items": [
+    {
+      "id": "wf-seed-1",
+      "user_id": "usr-primary-admin",
+      "assigned_by": "usr-primary-admin",
+      "title": "Review Veridian Supply Chain RAG architecture proposal",
+      "description": "Confirm VPC deployment constraints and pgvector ACL latency benchmarks before discovery call.",
+      "category": "project_task",
+      "priority": "high",
+      "status": "in_progress",
+      "due_date": "2026-11-20",
+      "linked_entity_type": "inquiry",
+      "linked_entity_id": "inq-1",
+      "created_at": "2026-11-10T09:00:00Z",
+      "updated_at": "2026-11-12T09:00:00Z"
+    },
+    {
+      "id": "wf-seed-2",
+      "user_id": "usr-primary-admin",
+      "assigned_by": "usr-primary-admin",
+      "title": "Customize GitStack header logo & brand color theme in Branding & Theme",
+      "description": "Upload vector/PNG mark and verify WCAG AA contrast ratio across public pages.",
+      "category": "daily_checklist",
+      "priority": "medium",
+      "status": "todo",
+      "due_date": null,
+      "linked_entity_type": "none",
+      "linked_entity_id": null,
+      "created_at": "2026-11-11T10:00:00Z",
+      "updated_at": "2026-11-12T10:00:00Z"
+    }
+  ],
+  "routing_rules": [
+    {
+      "id": "route-inq-ai",
+      "source_type": "inquiry",
+      "match_key": "AI Integration",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-inq-ml",
+      "source_type": "inquiry",
+      "match_key": "ML Automation",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-inq-custom",
+      "source_type": "inquiry",
+      "match_key": "Custom Software",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-inq-cloud",
+      "source_type": "inquiry",
+      "match_key": "Cloud Infrastructure",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-inq-consult",
+      "source_type": "inquiry",
+      "match_key": "Technical Consulting",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-inq-default",
+      "source_type": "inquiry",
+      "match_key": "default",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-chat-inquiry",
+      "source_type": "chat",
+      "match_key": "inquiry",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-chat-comment",
+      "source_type": "chat",
+      "match_key": "comment",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "route-chat-default",
+      "source_type": "chat",
+      "match_key": "default",
+      "assignee_user_id": null,
+      "enabled": true,
+      "updated_at": "2026-11-12T08:00:00Z"
+    }
+  ],
+  "agent_office_profiles": [
+    {
+      "agent_id": "ceo",
+      "display_name": "Atlas (CEO)",
+      "custom_role": "Executive Scorecard & Cross-Module Director",
+      "avatar_icon": "crown",
+      "accent_color": "#2563EB",
+      "desk_label": "CEO Command Center",
+      "desk_x": 5.8,
+      "desk_y": 1.9,
+      "work_status": "working",
+      "current_mission": "Monitor cross-agent health, SLA queues, and PostgreSQL stability",
+      "updated_at": "2026-11-15T00:00:00Z"
+    },
+    {
+      "agent_id": "marketing",
+      "display_name": "Aria (Marketing)",
+      "custom_role": "Positioning, AI/ML Messaging & Lead Capture",
+      "avatar_icon": "megaphone",
+      "accent_color": "#10B981",
+      "desk_label": "Growth & Marketing",
+      "desk_x": 5.2,
+      "desk_y": 5.1,
+      "work_status": "working",
+      "current_mission": "Audit homepage AI/ML positioning, CTA clarity, and subscriber capture",
+      "updated_at": "2026-11-15T00:00:00Z"
+    },
+    {
+      "agent_id": "traffic",
+      "display_name": "Pulse (Traffic)",
+      "custom_role": "Organic SEO, GEO Visibility & GA4 Telemetry",
+      "avatar_icon": "trending",
+      "accent_color": "#059669",
+      "desk_label": "Growth & Marketing",
+      "desk_x": 6.7,
+      "desk_y": 5.8,
+      "work_status": "idle",
+      "current_mission": "Evaluate llms.txt indexing, GA4 signals, and conversion funnel velocity",
+      "updated_at": "2026-11-15T00:00:00Z"
+    },
+    {
+      "agent_id": "cybersecurity",
+      "display_name": "Bantay (Cyber)",
+      "custom_role": "Access Boundaries, Consent & Token Hygiene",
+      "avatar_icon": "shield",
+      "accent_color": "#0891B2",
+      "desk_label": "Cyber & Cloud Lab",
+      "desk_x": 9.2,
+      "desk_y": 1.8,
+      "work_status": "working",
+      "current_mission": "Verify /obama RBAC auth, consent gating, and comment spam quarantine",
+      "updated_at": "2026-11-15T00:00:00Z"
+    },
+    {
+      "agent_id": "qa",
+      "display_name": "Vero (QA)",
+      "custom_role": "Content Integrity, Media Alt & Schema Verification",
+      "avatar_icon": "check",
+      "accent_color": "#0284C7",
+      "desk_label": "Cyber & Cloud Lab",
+      "desk_x": 10.4,
+      "desk_y": 2.7,
+      "work_status": "idle",
+      "current_mission": "Validate FAQPage JSON-LD, 800+ word floor, and zero broken media assets",
+      "updated_at": "2026-11-15T00:00:00Z"
+    },
+    {
+      "agent_id": "adsense",
+      "display_name": "Nova (AdSense)",
+      "custom_role": "Monetization Policy & Thin-Content Gatekeeper",
+      "avatar_icon": "badge",
+      "accent_color": "#7C3AED",
+      "desk_label": "AdSense & Booking Bay",
+      "desk_x": 9.1,
+      "desk_y": 5.1,
+      "work_status": "idle",
+      "current_mission": "Enforce legal trust pages, E-E-A-T citations, and ads.txt readiness",
+      "updated_at": "2026-11-15T00:00:00Z"
+    },
+    {
+      "agent_id": "booking",
+      "display_name": "Mira (Booking)",
+      "custom_role": "Discovery Call Triage & Inquiry SLA",
+      "avatar_icon": "calendar",
+      "accent_color": "#D97706",
+      "desk_label": "AdSense & Booking Bay",
+      "desk_x": 10.3,
+      "desk_y": 6.1,
+      "work_status": "working",
+      "current_mission": "Track <24h client inquiry triage SLA and Lark Mail consultation invites",
+      "updated_at": "2026-11-15T00:00:00Z"
+    }
+  ],
+  "agent_conversations": [
+    {
+      "id": "ac-seed-1",
+      "agent_id": "ceo",
+      "peer_agent_id": "adsense",
+      "sender_type": "handoff",
+      "sender_name": "Atlas (CEO)",
+      "message": "Morning shift active. Requesting AdSense & QA confirmation that all published insights pass 800+ words and primary HTTPS citations.",
+      "finding_status": "nominal",
+      "created_at": "2026-11-15T01:10:00Z"
+    },
+    {
+      "id": "ac-seed-2",
+      "agent_id": "adsense",
+      "peer_agent_id": "ceo",
+      "sender_type": "agent",
+      "sender_name": "Nova (AdSense)",
+      "message": "Legal & Trust suite is complete across all 7 required routes. Checking ads.txt Publisher ID status for domain verification.",
+      "finding_status": "attention",
+      "created_at": "2026-11-15T01:12:00Z"
+    },
+    {
+      "id": "ac-seed-3",
+      "agent_id": "cybersecurity",
+      "peer_agent_id": null,
+      "sender_type": "agent",
+      "sender_name": "Bantay (Cyber)",
+      "message": "Verified /obama noindex headers, Bearer auth enforcement across all admin APIs, and encrypted Lark SMTP secret isolation.",
+      "finding_status": "nominal",
+      "created_at": "2026-11-15T01:14:00Z"
+    },
+    {
+      "id": "ac-seed-4",
+      "agent_id": "marketing",
+      "peer_agent_id": "traffic",
+      "sender_type": "handoff",
+      "sender_name": "Aria (Marketing)",
+      "message": "Hero AI Integration & MLOps positioning verified. Passing conversion funnel telemetry check to Pulse (Traffic).",
+      "finding_status": "nominal",
+      "created_at": "2026-11-15T01:16:00Z"
+    },
+    {
+      "id": "ac-seed-5",
+      "agent_id": "booking",
+      "peer_agent_id": null,
+      "sender_type": "agent",
+      "sender_name": "Mira (Booking)",
+      "message": "Monitoring incoming consultation briefs and Lark Mail discovery invitations against the 24-hour SLA.",
+      "finding_status": "info",
+      "created_at": "2026-11-15T01:18:00Z"
+    },
+    {
+      "id": "ac-seed-6",
+      "agent_id": "qa",
+      "peer_agent_id": null,
+      "sender_type": "agent",
+      "sender_name": "Vero (QA)",
+      "message": "All customized page blocks and mirrored static assets verified with zero broken images.",
+      "finding_status": "nominal",
+      "created_at": "2026-11-15T01:20:00Z"
+    },
+    {
+      "id": "ac-seed-7",
+      "agent_id": "traffic",
+      "peer_agent_id": "marketing",
+      "sender_type": "agent",
+      "sender_name": "Pulse (Traffic)",
+      "message": "llms.txt, llms-full.txt, and sitemap.xml are live and returning HTTP 200. Watching GA4 consent activation.",
+      "finding_status": "info",
+      "created_at": "2026-11-15T01:22:00Z"
+    }
+  ],
+  "agent_report_settings": {
+    "id": "default",
+    "enabled": true,
+    "recipient_email": "gitstackitsolution@gmail.com",
+    "send_hour_utc": 8,
+    "preferred_channel": "lark_smtp",
+    "include_agents": [
+      "ceo",
+      "marketing",
+      "booking",
+      "cybersecurity",
+      "qa",
+      "adsense",
+      "traffic"
+    ],
+    "last_sent_at": null,
+    "updated_at": "2026-11-15T00:00:00Z"
+  },
+  "agent_email_reports": [],
+  "crm_leads": [],
+  "crm_outreach_logs": [],
+  "crm_oauth_tokens": [],
+  "crm_sync_runs": [],
+  "crm_integration_secrets": [],
+  "demo_users": [],
+  "inbox_email_logs": [],
+  "product_qa_settings": {
+    "id": "default",
+    "agent_enabled": true,
+    "realtime_alert_on_critical": false,
+    "eod_enabled": true,
+    "eod_hour_utc": 15,
+    "recipient_email": "",
+    "last_eod_sent_date": "2026-11-16",
+    "last_scan_at": "2026-11-17T02:04:16.784+00:00",
+    "updated_at": "2026-11-17T02:04:16.966+00:00",
+    "feature_baselines": {}
+  }
 }

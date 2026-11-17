@@ -90,7 +90,7 @@ const POST_LIST_COLUMNS = 'id, slug, title, summary_tldr, category, author_name,
 const COMMENT_COLUMNS = 'id, post_id, author_name, author_email, body, status, created_at';
 const SUBSCRIBER_COLUMNS = 'id, email, name, interest_topic, consent_given, created_at';
 const INQUIRY_COLUMNS = 'id, reference_code, full_name, company, work_email, service_interest, budget_range, timeline, project_brief, status, assigned_to, assigned_at, created_at';
-const SITE_SETTINGS_COLUMNS = 'id, adsense_publisher_id, ads_txt_content, auto_ads_enabled, ad_slots_enabled, editorial_review_note, ga4_measurement_id, ga4_enabled, ga4_track_events, brand_name, brand_logo_url, brand_logo_alt, theme_preset, primary_color, header_surface, header_cta_label, header_cta_href, updated_at';
+const SITE_SETTINGS_COLUMNS = 'id, adsense_publisher_id, ads_txt_content, auto_ads_enabled, ad_slots_enabled, editorial_review_note, ga4_measurement_id, ga4_enabled, ga4_track_events, brand_name, brand_logo_url, brand_logo_alt, favicon_url, theme_preset, primary_color, header_surface, header_cta_label, header_cta_href, bmc_enabled, bmc_handle, bmc_custom_url, bmc_button_text, bmc_button_color, bmc_font_style, bmc_header_enabled, bmc_footer_enabled, bmc_floating_enabled, bmc_floating_position, bmc_floating_y_offset, bmc_support_message, updated_at';
 const PAGE_CONTENT_COLUMNS = 'page_key, hero_kicker, hero_title, hero_subtitle, hero_cta_label, hero_image, hero_image_alt, secondary_image, secondary_image_alt, intro_heading, intro_body, contact_phone_label, contact_phone, contact_sales_label, contact_sales_email, contact_editorial_label, contact_editorial_email, contact_privacy_label, contact_privacy_email, custom_blocks, updated_at';
 const AGENT_TASK_COLUMNS = 'id, agent_id, title, priority, completed, notes, updated_at';
 const CHAT_THREAD_COLUMNS = 'id, subject, source_type, source_ref_id, requester_name, requester_email, status, assigned_to, assigned_at, last_message_at, created_at';
@@ -1158,74 +1158,89 @@ export async function assignInquiry(
 }
 
 export async function getAdSenseSettings(userToken?: string): Promise<AdSenseSettings> {
+  const db = await readLocalDb();
+  const localSettings: AdSenseSettings = { ...DEFAULT_ADSENSE_SETTINGS, ...(db.site_settings || {}) };
+
   if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient(userToken)
-      .from('site_settings')
-      .select(SITE_SETTINGS_COLUMNS)
-      .eq('id', 'default')
-      .limit(1);
-    if (!error && data && data[0]) {
-      const row = data[0] as AdSenseSettings & { id?: string };
-      return {
-        adsense_publisher_id: row.adsense_publisher_id || '',
-        ads_txt_content: row.ads_txt_content || DEFAULT_ADSENSE_SETTINGS.ads_txt_content,
-        auto_ads_enabled: Boolean(row.auto_ads_enabled),
-        ad_slots_enabled: Boolean(row.ad_slots_enabled),
-        editorial_review_note:
-          row.editorial_review_note || DEFAULT_ADSENSE_SETTINGS.editorial_review_note,
-        ga4_measurement_id: row.ga4_measurement_id || '',
-        ga4_enabled: Boolean(row.ga4_enabled),
-        ga4_track_events: row.ga4_track_events !== undefined ? Boolean(row.ga4_track_events) : true,
-        brand_name: row.brand_name || DEFAULT_ADSENSE_SETTINGS.brand_name,
-        brand_logo_url: row.brand_logo_url || '',
-        brand_logo_alt: row.brand_logo_alt || DEFAULT_ADSENSE_SETTINGS.brand_logo_alt,
-        favicon_url: row.favicon_url || '',
-        theme_preset: row.theme_preset || DEFAULT_ADSENSE_SETTINGS.theme_preset,
-        primary_color: row.primary_color || DEFAULT_ADSENSE_SETTINGS.primary_color,
-        header_surface: row.header_surface === 'tinted' ? 'tinted' : 'white',
-        header_cta_label: row.header_cta_label || DEFAULT_ADSENSE_SETTINGS.header_cta_label,
-        header_cta_href: row.header_cta_href || DEFAULT_ADSENSE_SETTINGS.header_cta_href,
-        bmc_enabled: row.bmc_enabled !== undefined ? Boolean(row.bmc_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_enabled,
-        bmc_handle: row.bmc_handle || DEFAULT_ADSENSE_SETTINGS.bmc_handle,
-        bmc_custom_url: row.bmc_custom_url || DEFAULT_ADSENSE_SETTINGS.bmc_custom_url,
-        bmc_button_text: row.bmc_button_text || DEFAULT_ADSENSE_SETTINGS.bmc_button_text,
-        bmc_button_color: row.bmc_button_color || DEFAULT_ADSENSE_SETTINGS.bmc_button_color,
-        bmc_font_style: row.bmc_font_style || DEFAULT_ADSENSE_SETTINGS.bmc_font_style,
-        bmc_header_enabled: row.bmc_header_enabled !== undefined ? Boolean(row.bmc_header_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_header_enabled,
-        bmc_footer_enabled: row.bmc_footer_enabled !== undefined ? Boolean(row.bmc_footer_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_footer_enabled,
-        bmc_floating_enabled: row.bmc_floating_enabled !== undefined ? Boolean(row.bmc_floating_enabled) : DEFAULT_ADSENSE_SETTINGS.bmc_floating_enabled,
-        bmc_floating_position: row.bmc_floating_position || DEFAULT_ADSENSE_SETTINGS.bmc_floating_position,
-        bmc_floating_y_offset: row.bmc_floating_y_offset || DEFAULT_ADSENSE_SETTINGS.bmc_floating_y_offset,
-        bmc_support_message: row.bmc_support_message || DEFAULT_ADSENSE_SETTINGS.bmc_support_message,
-        updated_at: row.updated_at || new Date().toISOString()
-      };
-    }
-    if (error && !isFallbackableDbError(error)) {
-      console.warn('Supabase settings fallback:', error.message);
+    try {
+      const { data, error } = await getSupabaseClient(userToken)
+        .from('site_settings')
+        .select(SITE_SETTINGS_COLUMNS)
+        .eq('id', 'default')
+        .limit(1);
+      if (!error && data && data[0]) {
+        const row = data[0] as AdSenseSettings & { id?: string };
+        return {
+          adsense_publisher_id: row.adsense_publisher_id || '',
+          ads_txt_content: row.ads_txt_content || DEFAULT_ADSENSE_SETTINGS.ads_txt_content,
+          auto_ads_enabled: Boolean(row.auto_ads_enabled),
+          ad_slots_enabled: Boolean(row.ad_slots_enabled),
+          editorial_review_note:
+            row.editorial_review_note || DEFAULT_ADSENSE_SETTINGS.editorial_review_note,
+          ga4_measurement_id: row.ga4_measurement_id || '',
+          ga4_enabled: Boolean(row.ga4_enabled),
+          ga4_track_events: row.ga4_track_events !== undefined ? Boolean(row.ga4_track_events) : true,
+          brand_name: row.brand_name || DEFAULT_ADSENSE_SETTINGS.brand_name,
+          brand_logo_url: row.brand_logo_url || '',
+          brand_logo_alt: row.brand_logo_alt || DEFAULT_ADSENSE_SETTINGS.brand_logo_alt,
+          favicon_url: row.favicon_url || localSettings.favicon_url || '',
+          theme_preset: row.theme_preset || DEFAULT_ADSENSE_SETTINGS.theme_preset,
+          primary_color: row.primary_color || DEFAULT_ADSENSE_SETTINGS.primary_color,
+          header_surface: row.header_surface === 'tinted' ? 'tinted' : 'white',
+          header_cta_label: row.header_cta_label || DEFAULT_ADSENSE_SETTINGS.header_cta_label,
+          header_cta_href: row.header_cta_href || DEFAULT_ADSENSE_SETTINGS.header_cta_href,
+          bmc_enabled: row.bmc_enabled !== undefined ? Boolean(row.bmc_enabled) : (localSettings.bmc_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_enabled),
+          bmc_handle: row.bmc_handle || localSettings.bmc_handle || DEFAULT_ADSENSE_SETTINGS.bmc_handle,
+          bmc_custom_url: row.bmc_custom_url || localSettings.bmc_custom_url || DEFAULT_ADSENSE_SETTINGS.bmc_custom_url,
+          bmc_button_text: row.bmc_button_text || localSettings.bmc_button_text || DEFAULT_ADSENSE_SETTINGS.bmc_button_text,
+          bmc_button_color: row.bmc_button_color || localSettings.bmc_button_color || DEFAULT_ADSENSE_SETTINGS.bmc_button_color,
+          bmc_font_style: row.bmc_font_style || localSettings.bmc_font_style || DEFAULT_ADSENSE_SETTINGS.bmc_font_style,
+          bmc_header_enabled: row.bmc_header_enabled !== undefined ? Boolean(row.bmc_header_enabled) : (localSettings.bmc_header_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_header_enabled),
+          bmc_footer_enabled: row.bmc_footer_enabled !== undefined ? Boolean(row.bmc_footer_enabled) : (localSettings.bmc_footer_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_footer_enabled),
+          bmc_floating_enabled: row.bmc_floating_enabled !== undefined ? Boolean(row.bmc_floating_enabled) : (localSettings.bmc_floating_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_floating_enabled),
+          bmc_floating_position: row.bmc_floating_position || localSettings.bmc_floating_position || DEFAULT_ADSENSE_SETTINGS.bmc_floating_position,
+          bmc_floating_y_offset: row.bmc_floating_y_offset || localSettings.bmc_floating_y_offset || DEFAULT_ADSENSE_SETTINGS.bmc_floating_y_offset,
+          bmc_support_message: row.bmc_support_message || localSettings.bmc_support_message || DEFAULT_ADSENSE_SETTINGS.bmc_support_message,
+          updated_at: row.updated_at || new Date().toISOString()
+        };
+      }
+      if (error && !isFallbackableDbError(error)) {
+        console.warn('Supabase settings fallback:', error.message);
+      }
+    } catch {
+      // ignore
     }
   }
 
-  const db = await readLocalDb();
-  return { ...DEFAULT_ADSENSE_SETTINGS, ...(db.site_settings || {}) };
+  return localSettings;
 }
 
 export async function saveAdSenseSettings(
   next: AdSenseSettings,
   userToken?: string
 ): Promise<AdSenseSettings> {
-  if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient(userToken)
-      .from('site_settings')
-      .upsert({ id: 'default', ...next }, { onConflict: 'id' })
-      .select()
-      .single();
-    if (!error && data) return data as AdSenseSettings;
-    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
-  }
-
   const db = await readLocalDb();
   db.site_settings = next;
   await writeLocalDb(db);
+
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await getSupabaseClient(userToken)
+        .from('site_settings')
+        .upsert({ id: 'default', ...next }, { onConflict: 'id' })
+        .select(SITE_SETTINGS_COLUMNS)
+        .single();
+      if (!error && data) {
+        return { ...next, ...(data as AdSenseSettings) };
+      }
+      if (error) {
+        console.warn('Supabase site_settings save fallback (persisted in localDb):', error.message);
+      }
+    } catch (err) {
+      console.warn('Supabase site_settings upsert error (persisted in localDb):', err);
+    }
+  }
+
   return next;
 }
 
@@ -2409,11 +2424,62 @@ export async function listCrmLeads(userToken?: string): Promise<CrmLead[]> {
   );
 }
 
+function normalizeCrmLeadForDb(lead: CrmLead): CrmLead {
+  const now = new Date().toISOString();
+  return {
+    id: String(lead.id || `crm-${crypto.randomUUID().slice(0, 8)}`),
+    contact_name: String(lead.contact_name || 'Unknown Contact'),
+    role_title: String(lead.role_title || ''),
+    email: String(lead.email || ''),
+    email_status:
+      lead.email_status === 'verified_mx' ||
+      lead.email_status === 'public_found' ||
+      lead.email_status === 'inferred' ||
+      lead.email_status === 'invalid'
+        ? lead.email_status
+        : 'inferred',
+    company_name: String(lead.company_name || 'Unknown Company'),
+    company_domain: String(lead.company_domain || ''),
+    website_url: String(lead.website_url || ''),
+    github_url: String(lead.github_url || ''),
+    phone: String(lead.phone ?? ''),
+    location: String(lead.location ?? ''),
+    rating: typeof lead.rating === 'number' && Number.isFinite(lead.rating) ? lead.rating : null,
+    source_detail: String(lead.source_detail ?? ''),
+    source_type: lead.source_type || 'manual',
+    source_urls: Array.isArray(lead.source_urls) ? lead.source_urls : [],
+    tech_stack: Array.isArray(lead.tech_stack) ? lead.tech_stack : [],
+    research_brief: String(lead.research_brief || ''),
+    recommended_service: lead.recommended_service || 'AI Integration',
+    fit_score: Number.isFinite(Number(lead.fit_score)) ? Math.round(Number(lead.fit_score)) : 70,
+    deal_value: Number.isFinite(Number(lead.deal_value)) ? Math.round(Number(lead.deal_value)) : 25000,
+    stage:
+      lead.stage === 'discovered' ||
+      lead.stage === 'researched' ||
+      lead.stage === 'proposed' ||
+      lead.stage === 'follow_up' ||
+      lead.stage === 'won' ||
+      lead.stage === 'lost'
+        ? lead.stage
+        : 'discovered',
+    proposal_subject: String(lead.proposal_subject || ''),
+    proposal_body: String(lead.proposal_body || ''),
+    follow_up_sequence: Array.isArray(lead.follow_up_sequence) ? lead.follow_up_sequence : [],
+    assigned_to: lead.assigned_to ?? null,
+    last_contacted_at: lead.last_contacted_at ?? null,
+    next_followup_at: lead.next_followup_at ?? null,
+    converted_inquiry_id: lead.converted_inquiry_id ?? null,
+    created_at: lead.created_at || now,
+    updated_at: lead.updated_at || now
+  };
+}
+
 export async function upsertCrmLead(lead: CrmLead, userToken?: string): Promise<CrmLead> {
+  const normalizedLead = normalizeCrmLeadForDb(lead);
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('crm_leads')
-      .upsert(lead, { onConflict: 'id' })
+      .upsert(normalizedLead, { onConflict: 'id' })
       .select()
       .single();
     if (!error && data) return data as CrmLead;
@@ -2422,12 +2488,12 @@ export async function upsertCrmLead(lead: CrmLead, userToken?: string): Promise<
 
   const db = await readLocalDb();
   const list = db.crm_leads || [];
-  const idx = list.findIndex((l) => l.id === lead.id);
-  if (idx >= 0) list[idx] = lead;
-  else list.unshift(lead);
+  const idx = list.findIndex((l) => l.id === normalizedLead.id);
+  if (idx >= 0) list[idx] = normalizedLead;
+  else list.unshift(normalizedLead);
   db.crm_leads = list;
   await writeLocalDb(db);
-  return lead;
+  return normalizedLead;
 }
 
 export async function upsertMergeCrmLeads(
@@ -2438,7 +2504,7 @@ export async function upsertMergeCrmLeads(
   mergedCount: number;
   leads: CrmLead[];
 }> {
-  if (incomingLeads.length === 0) {
+  if (!Array.isArray(incomingLeads) || incomingLeads.length === 0) {
     return {
       insertedCount: 0,
       mergedCount: 0,
@@ -2460,7 +2526,7 @@ export async function upsertMergeCrmLeads(
 
   let insertedCount = 0;
   let mergedCount = 0;
-  const toPersist: CrmLead[] = [];
+  const toPersistMap = new Map<string, CrmLead>();
   const now = new Date().toISOString();
 
   const statusRank: Record<CrmLead['email_status'], number> = {
@@ -2470,7 +2536,9 @@ export async function upsertMergeCrmLeads(
     invalid: 1
   };
 
-  for (const inc of incomingLeads) {
+  for (const rawInc of incomingLeads) {
+    if (!rawInc || typeof rawInc !== 'object') continue;
+    const inc = normalizeCrmLeadForDb(rawInc);
     const emailKey = inc.email?.trim().toLowerCase() || '';
     const domainKey = inc.company_domain?.trim().toLowerCase() || '';
     const githubKey = inc.github_url?.trim().toLowerCase() || '';
@@ -2493,7 +2561,7 @@ export async function upsertMergeCrmLeads(
         Boolean(inc.email) &&
         (!match.email || statusRank[inc.email_status] > statusRank[match.email_status]);
 
-      const merged: CrmLead = {
+      const merged: CrmLead = normalizeCrmLeadForDb({
         ...match,
         contact_name: match.contact_name || inc.contact_name,
         role_title: match.role_title || inc.role_title,
@@ -2516,16 +2584,18 @@ export async function upsertMergeCrmLeads(
         fit_score: Math.max(match.fit_score || 0, inc.fit_score || 0),
         deal_value: Math.max(match.deal_value || 0, inc.deal_value || 0),
         updated_at: now
-      };
-      toPersist.push(merged);
+      });
+      toPersistMap.set(merged.id, merged);
       indexLead(merged);
       mergedCount++;
     } else {
-      toPersist.push(inc);
+      toPersistMap.set(inc.id, inc);
       indexLead(inc);
       insertedCount++;
     }
   }
+
+  const toPersist = Array.from(toPersistMap.values());
 
   if (isSupabaseConfigured() && toPersist.length > 0) {
     const client = getSupabaseClient(userToken);
@@ -2537,7 +2607,7 @@ export async function upsertMergeCrmLeads(
       return {
         insertedCount,
         mergedCount,
-        leads: userToken ? await listCrmLeads(userToken) : toPersist
+        leads: userToken ? await listCrmLeads(userToken) : await listCrmLeads()
       };
     }
     if (!isFallbackableDbError(error)) throw new Error(error.message);

@@ -211,6 +211,24 @@ export function buildDefaultMonogramFavicon(brandName = 'GitStack', color = '#1E
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
+function resolveFaviconMimeType(href: string): string {
+  const lower = href.toLowerCase();
+  if (lower.startsWith('data:image/png') || lower.endsWith('.png')) return 'image/png';
+  if (lower.startsWith('data:image/svg+xml') || lower.endsWith('.svg')) return 'image/svg+xml';
+  if (
+    lower.startsWith('data:image/x-icon') ||
+    lower.startsWith('data:image/vnd.microsoft.icon') ||
+    lower.endsWith('.ico')
+  ) {
+    return 'image/x-icon';
+  }
+  if (lower.startsWith('data:image/webp') || lower.endsWith('.webp')) return 'image/webp';
+  if (lower.startsWith('data:image/jpeg') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+    return 'image/jpeg';
+  }
+  return '';
+}
+
 export function applyFaviconToDocument(
   faviconUrl?: string,
   brandName?: string,
@@ -220,6 +238,7 @@ export function applyFaviconToDocument(
   const href =
     (faviconUrl || '').trim() ||
     buildDefaultMonogramFavicon(brandName || DEFAULT_BRANDING.brand_name, primaryColor || DEFAULT_BRANDING.primary_color);
+  const mimeType = resolveFaviconMimeType(href);
 
   let iconEl = document.querySelector<HTMLLinkElement>('link#site-favicon') || document.querySelector<HTMLLinkElement>('link[rel="icon"]');
   if (!iconEl) {
@@ -227,6 +246,11 @@ export function applyFaviconToDocument(
     iconEl.id = 'site-favicon';
     iconEl.rel = 'icon';
     document.head.appendChild(iconEl);
+  }
+  if (mimeType) {
+    iconEl.type = mimeType;
+  } else {
+    iconEl.removeAttribute('type');
   }
   iconEl.href = href;
 

@@ -73,6 +73,7 @@ export function BuyMeACoffeeHubPanel({
   const [loadingAnalytics, setLoadingAnalytics] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [simulatingClick, setSimulatingClick] = useState<string | null>(null);
 
   // Sync when prop updates
@@ -117,9 +118,19 @@ export function BuyMeACoffeeHubPanel({
 
   const handleSave = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    await onSave(formData);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setSaveError(null);
+    setSaveSuccess(false);
+    try {
+      const result = await onSave(formData);
+      if (result === false) {
+        setSaveError('Failed to save configuration. Super Admin access is required.');
+        return;
+      }
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Unable to save Buy Me a Coffee settings.');
+    }
   };
 
   const currentTargetUrl = getBmcTargetUrl(formData as AdSenseSettings);
@@ -860,9 +871,14 @@ export function BuyMeACoffeeHubPanel({
         {/* Save Bar */}
         <div className="sticky bottom-4 z-20 flex items-center justify-between rounded-xl border border-slate-200 bg-white/95 backdrop-blur-md px-6 py-4 shadow-lg">
           <div className="flex items-center gap-2">
-            {saveSuccess ? (
+            {saveError ? (
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-rose-700">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {saveError}
+              </span>
+            ) : saveSuccess ? (
               <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
                 Settings saved &amp; synced across live application!
               </span>
             ) : (

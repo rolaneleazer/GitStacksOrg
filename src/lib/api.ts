@@ -208,6 +208,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     if (url.includes('/api/posts')) invalidateClientApiCache('/api/posts');
     if (url.includes('/api/comments')) invalidateClientApiCache('/api/comments');
     if (url.includes('/api/adsense')) invalidateClientApiCache('/api/adsense');
+    if (url.includes('/api/settings')) invalidateClientApiCache('/api/settings');
     if (url.includes('/api/pages')) invalidateClientApiCache('/api/pages');
     if (url.includes('/api/crm')) invalidateClientApiCache('/api/crm');
     if (url.includes('/api/inbox')) invalidateClientApiCache('/api/inbox');

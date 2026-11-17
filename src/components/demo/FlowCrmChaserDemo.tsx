@@ -503,7 +503,7 @@ export function FlowCrmChaserDemo({ onCtaClick }: FlowCrmChaserDemoProps) {
                 <span className="font-mono text-violet-700">{activeReminderDeal.contactMobile}</span>
               </div>
               <p className="text-slate-700 font-mono text-[11px]">
-                "Hi {activeReminderDeal.clientName.split(' ')[0]}! Quick reminder from GitStack: Invoice {activeReminderDeal.invoiceNumber} (₱{activeReminderDeal.amountPhp.toLocaleString()}) is currently overdue. Pay in 10s via GCash/Maya here: https://pay.gitstack.io/{activeReminderDeal.id}"
+                "Hi {(activeReminderDeal.clientName || 'Client').split(' ')[0]}! Quick reminder from GitStack: Invoice {activeReminderDeal.invoiceNumber} (₱{(activeReminderDeal.amountPhp ?? 0).toLocaleString()}) is currently overdue. Pay in 10s via GCash/Maya here: https://pay.gitstack.io/{activeReminderDeal.id}"
               </p>
             </div>
 

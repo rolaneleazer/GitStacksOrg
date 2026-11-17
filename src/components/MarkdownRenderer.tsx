@@ -8,8 +8,9 @@ export interface TocHeading {
   level: 2 | 3;
 }
 
-export function extractHeadings(markdown: string): TocHeading[] {
-  const lines = markdown.split('\n');
+export function extractHeadings(markdown?: string | null): TocHeading[] {
+  const safeMarkdown = typeof markdown === 'string' ? markdown : '';
+  const lines = safeMarkdown.split('\n');
   const result: TocHeading[] = [];
   let inCode = false;
   for (const line of lines) {
@@ -120,12 +121,13 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 }
 
 interface MarkdownRendererProps {
-  markdown: string;
+  markdown?: string | null;
   midArticleSlot?: React.ReactNode;
 }
 
 export function MarkdownRenderer({ markdown, midArticleSlot }: MarkdownRendererProps) {
-  const lines = markdown.split('\n');
+  const safeMarkdown = typeof markdown === 'string' ? markdown : '';
+  const lines = safeMarkdown.split('\n');
   const blocks: React.ReactNode[] = [];
   let i = 0;
   let h2RenderedCount = 0;

@@ -68,16 +68,19 @@ export function InventorySyncDemo({ onCtaClick }: InventorySyncDemoProps) {
 
   // Simulation 1: Shopee Order (-3 units)
   const handleSimulateShopeeOrder = () => {
-    const target = skus.find((s) => s.id === selectedSkuId) || skus[0];
-    const newStock = Math.max(0, target.warehouseStock - 3);
+    const target = skus.find((s) => s.id === selectedSkuId) ?? skus[0];
+    if (!target) return;
+    const newStock = Math.max(0, (target.warehouseStock ?? 0) - 3);
     const updatedSkus = skus.map((s) =>
       s.id === target.id
         ? {
             ...s,
             warehouseStock: newStock,
             channelAllocation: {
-              ...s.channelAllocation,
-              shopee: Math.max(0, s.channelAllocation.shopee - 3)
+              physicalStore: s.channelAllocation?.physicalStore ?? 0,
+              lazada: s.channelAllocation?.lazada ?? 0,
+              tiktokShop: s.channelAllocation?.tiktokShop ?? 0,
+              shopee: Math.max(0, (s.channelAllocation?.shopee ?? 0) - 3)
             },
             updatedAt: 'Just now'
           }
@@ -95,7 +98,7 @@ export function InventorySyncDemo({ onCtaClick }: InventorySyncDemoProps) {
       sku: target.sku,
       quantityChange: -3,
       newWarehouseStock: newStock,
-      type: newStock <= target.reorderPoint ? 'alert' : 'sale'
+      type: newStock <= (target.reorderPoint ?? 10) ? 'alert' : 'sale'
     };
     setLogs([newLog, ...logs]);
     showNotice(`Shopee order simulated: -3 units deducted from ${target.name}.`);
@@ -104,16 +107,19 @@ export function InventorySyncDemo({ onCtaClick }: InventorySyncDemoProps) {
   // Simulation 2: TikTok Flash Sale (-8 units)
   const handleSimulateTikTokSale = () => {
     // Pick the tumbler or canvas tote for dramatic low-stock impact
-    const target = skus.find((s) => s.id === 'sku-002') || skus[1];
-    const newStock = Math.max(0, target.warehouseStock - 8);
+    const target = skus.find((s) => s.id === 'sku-002') ?? skus[1] ?? skus[0];
+    if (!target) return;
+    const newStock = Math.max(0, (target.warehouseStock ?? 0) - 8);
     const updatedSkus = skus.map((s) =>
       s.id === target.id
         ? {
             ...s,
             warehouseStock: newStock,
             channelAllocation: {
-              ...s.channelAllocation,
-              tiktokShop: Math.max(0, s.channelAllocation.tiktokShop - 5)
+              physicalStore: s.channelAllocation?.physicalStore ?? 0,
+              shopee: s.channelAllocation?.shopee ?? 0,
+              lazada: s.channelAllocation?.lazada ?? 0,
+              tiktokShop: Math.max(0, (s.channelAllocation?.tiktokShop ?? 0) - 5)
             },
             updatedAt: 'Just now'
           }
@@ -139,18 +145,19 @@ export function InventorySyncDemo({ onCtaClick }: InventorySyncDemoProps) {
 
   // Simulation 3: Warehouse Restock (+20 units)
   const handleSimulateRestock = () => {
-    const lowItem = skus.find((s) => s.warehouseStock <= s.reorderPoint) || skus[0];
-    const newStock = lowItem.warehouseStock + 20;
+    const lowItem = skus.find((s) => s.warehouseStock <= s.reorderPoint) ?? skus[0];
+    if (!lowItem) return;
+    const newStock = (lowItem.warehouseStock ?? 0) + 20;
     const updatedSkus = skus.map((s) =>
       s.id === lowItem.id
         ? {
             ...s,
             warehouseStock: newStock,
             channelAllocation: {
-              physicalStore: s.channelAllocation.physicalStore + 5,
-              shopee: s.channelAllocation.shopee + 5,
-              lazada: s.channelAllocation.lazada + 5,
-              tiktokShop: s.channelAllocation.tiktokShop + 5
+              physicalStore: (s.channelAllocation?.physicalStore ?? 0) + 5,
+              shopee: (s.channelAllocation?.shopee ?? 0) + 5,
+              lazada: (s.channelAllocation?.lazada ?? 0) + 5,
+              tiktokShop: (s.channelAllocation?.tiktokShop ?? 0) + 5
             },
             updatedAt: 'Just now'
           }

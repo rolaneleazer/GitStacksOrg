@@ -1187,7 +1187,19 @@ export async function createApp(): Promise<Express> {
             primary_color: settings.primary_color || DEFAULT_BRANDING.primary_color,
             header_surface: settings.header_surface || DEFAULT_BRANDING.header_surface,
             header_cta_label: settings.header_cta_label || DEFAULT_BRANDING.header_cta_label,
-            header_cta_href: settings.header_cta_href || DEFAULT_BRANDING.header_cta_href
+            header_cta_href: settings.header_cta_href || DEFAULT_BRANDING.header_cta_href,
+            bmc_enabled: settings.bmc_enabled !== undefined ? Boolean(settings.bmc_enabled) : true,
+            bmc_handle: settings.bmc_handle || 'ronelmol',
+            bmc_custom_url: settings.bmc_custom_url || 'https://buymeacoffee.com/ronelmol',
+            bmc_button_text: settings.bmc_button_text || 'Buy me a coffee',
+            bmc_button_color: settings.bmc_button_color || '#FFDD00',
+            bmc_font_style: settings.bmc_font_style || 'Cookie',
+            bmc_header_enabled: settings.bmc_header_enabled !== undefined ? Boolean(settings.bmc_header_enabled) : true,
+            bmc_footer_enabled: settings.bmc_footer_enabled !== undefined ? Boolean(settings.bmc_footer_enabled) : true,
+            bmc_floating_enabled: settings.bmc_floating_enabled !== undefined ? Boolean(settings.bmc_floating_enabled) : true,
+            bmc_floating_position: settings.bmc_floating_position || 'Right',
+            bmc_floating_y_offset: settings.bmc_floating_y_offset ?? 84,
+            bmc_support_message: settings.bmc_support_message || 'Support independent open-source tools, technical research, and live sandbox maintenance.'
           }
         });
       }
@@ -1203,8 +1215,14 @@ export async function createApp(): Promise<Express> {
       const payload = req.body as Partial<AdSenseSettings>;
       const isSuperAdmin = req.editor?.role === 'super_admin';
 
+      if (!isSuperAdmin) {
+        return res.status(403).json({
+          error: 'Modifying site settings, favicon branding, and Buy Me a Coffee requires Super Admin permissions.'
+        });
+      }
+
       const pubId =
-        isSuperAdmin && payload.adsense_publisher_id !== undefined
+        payload.adsense_publisher_id !== undefined
           ? payload.adsense_publisher_id.trim()
           : current.adsense_publisher_id;
       if (pubId && !/^(ca-)?pub-\d{10,20}$/.test(pubId)) {
@@ -1222,41 +1240,33 @@ export async function createApp(): Promise<Express> {
         });
       }
 
-      if (
-        isSuperAdmin &&
-        payload.brand_logo_url &&
-        payload.brand_logo_url.length > 1_300_000
-      ) {
+      if (payload.brand_logo_url && payload.brand_logo_url.length > 1_300_000) {
         return res.status(400).json({ error: 'Logo image must be under 900 KB.' });
       }
-      if (
-        isSuperAdmin &&
-        payload.favicon_url &&
-        payload.favicon_url.length > 600_000
-      ) {
-        return res.status(400).json({ error: 'Favicon image must be under 450 KB.' });
+      if (payload.favicon_url && payload.favicon_url.length > 800_000) {
+        return res.status(400).json({ error: 'Favicon image must be under 600 KB.' });
       }
 
       const validPresets: ThemePresetId[] = ['cobalt', 'emerald', 'indigo', 'slate', 'amber', 'custom'];
       const themePreset: ThemePresetId =
-        isSuperAdmin && payload.theme_preset && validPresets.includes(payload.theme_preset)
+        payload.theme_preset && validPresets.includes(payload.theme_preset)
           ? payload.theme_preset
           : current.theme_preset || DEFAULT_BRANDING.theme_preset;
 
       const primaryColor =
-        isSuperAdmin && payload.primary_color !== undefined
+        payload.primary_color !== undefined
           ? normalizeHexColor(payload.primary_color, current.primary_color || DEFAULT_BRANDING.primary_color)
           : current.primary_color || DEFAULT_BRANDING.primary_color;
 
       const headerSurface: HeaderSurface =
-        isSuperAdmin && payload.header_surface
+        payload.header_surface
           ? payload.header_surface === 'tinted'
             ? 'tinted'
             : 'white'
           : current.header_surface || DEFAULT_BRANDING.header_surface;
 
       const ctaHrefRaw =
-        isSuperAdmin && payload.header_cta_href !== undefined
+        payload.header_cta_href !== undefined
           ? payload.header_cta_href.trim()
           : current.header_cta_href || DEFAULT_BRANDING.header_cta_href;
       const safeCtaHref =
@@ -1272,19 +1282,19 @@ export async function createApp(): Promise<Express> {
       const next: AdSenseSettings = {
         adsense_publisher_id: pubId,
         ads_txt_content:
-          isSuperAdmin && payload.ads_txt_content !== undefined
+          payload.ads_txt_content !== undefined
             ? payload.ads_txt_content.trim() || defaultAdsTxt
             : current.ads_txt_content || defaultAdsTxt,
         auto_ads_enabled:
-          isSuperAdmin && payload.auto_ads_enabled !== undefined
+          payload.auto_ads_enabled !== undefined
             ? Boolean(payload.auto_ads_enabled)
             : current.auto_ads_enabled,
         ad_slots_enabled:
-          isSuperAdmin && payload.ad_slots_enabled !== undefined
+          payload.ad_slots_enabled !== undefined
             ? Boolean(payload.ad_slots_enabled)
             : current.ad_slots_enabled,
         editorial_review_note:
-          isSuperAdmin && payload.editorial_review_note !== undefined
+          payload.editorial_review_note !== undefined
             ? payload.editorial_review_note.trim() || current.editorial_review_note
             : current.editorial_review_note,
         ga4_measurement_id: ga4Id,
@@ -1295,29 +1305,77 @@ export async function createApp(): Promise<Express> {
             ? Boolean(payload.ga4_track_events)
             : current.ga4_track_events !== false,
         brand_name:
-          isSuperAdmin && payload.brand_name !== undefined
+          payload.brand_name !== undefined
             ? payload.brand_name.trim().slice(0, 40) || DEFAULT_BRANDING.brand_name
             : current.brand_name || DEFAULT_BRANDING.brand_name,
         brand_logo_url:
-          isSuperAdmin && payload.brand_logo_url !== undefined
+          payload.brand_logo_url !== undefined
             ? payload.brand_logo_url.trim()
             : current.brand_logo_url || '',
         brand_logo_alt:
-          isSuperAdmin && payload.brand_logo_alt !== undefined
+          payload.brand_logo_alt !== undefined
             ? payload.brand_logo_alt.trim().slice(0, 80) || DEFAULT_BRANDING.brand_logo_alt
             : current.brand_logo_alt || DEFAULT_BRANDING.brand_logo_alt,
         favicon_url:
-          isSuperAdmin && payload.favicon_url !== undefined
+          payload.favicon_url !== undefined
             ? payload.favicon_url.trim()
             : current.favicon_url || '',
         theme_preset: themePreset,
         primary_color: primaryColor,
         header_surface: headerSurface,
         header_cta_label:
-          isSuperAdmin && payload.header_cta_label !== undefined
+          payload.header_cta_label !== undefined
             ? payload.header_cta_label.trim().slice(0, 32) || DEFAULT_BRANDING.header_cta_label
             : current.header_cta_label || DEFAULT_BRANDING.header_cta_label,
         header_cta_href: safeCtaHref,
+        bmc_enabled:
+          payload.bmc_enabled !== undefined
+            ? Boolean(payload.bmc_enabled)
+            : (current.bmc_enabled ?? true),
+        bmc_handle:
+          payload.bmc_handle !== undefined
+            ? payload.bmc_handle.trim() || 'ronelmol'
+            : (current.bmc_handle || 'ronelmol'),
+        bmc_custom_url:
+          payload.bmc_custom_url !== undefined
+            ? payload.bmc_custom_url.trim() || 'https://buymeacoffee.com/ronelmol'
+            : (current.bmc_custom_url || 'https://buymeacoffee.com/ronelmol'),
+        bmc_button_text:
+          payload.bmc_button_text !== undefined
+            ? payload.bmc_button_text.trim() || 'Buy me a coffee'
+            : (current.bmc_button_text || 'Buy me a coffee'),
+        bmc_button_color:
+          payload.bmc_button_color !== undefined
+            ? payload.bmc_button_color.trim() || '#FFDD00'
+            : (current.bmc_button_color || '#FFDD00'),
+        bmc_font_style:
+          payload.bmc_font_style !== undefined
+            ? payload.bmc_font_style
+            : (current.bmc_font_style || 'Cookie'),
+        bmc_header_enabled:
+          payload.bmc_header_enabled !== undefined
+            ? Boolean(payload.bmc_header_enabled)
+            : (current.bmc_header_enabled ?? true),
+        bmc_footer_enabled:
+          payload.bmc_footer_enabled !== undefined
+            ? Boolean(payload.bmc_footer_enabled)
+            : (current.bmc_footer_enabled ?? true),
+        bmc_floating_enabled:
+          payload.bmc_floating_enabled !== undefined
+            ? Boolean(payload.bmc_floating_enabled)
+            : (current.bmc_floating_enabled ?? true),
+        bmc_floating_position:
+          payload.bmc_floating_position !== undefined
+            ? payload.bmc_floating_position
+            : (current.bmc_floating_position || 'Right'),
+        bmc_floating_y_offset:
+          payload.bmc_floating_y_offset !== undefined
+            ? Number(payload.bmc_floating_y_offset)
+            : (current.bmc_floating_y_offset ?? 84),
+        bmc_support_message:
+          payload.bmc_support_message !== undefined
+            ? payload.bmc_support_message.trim() || current.bmc_support_message
+            : (current.bmc_support_message || 'Support independent open-source tools, technical research, and live sandbox maintenance.'),
         updated_at: new Date().toISOString()
       };
 
@@ -2721,11 +2779,23 @@ export async function createApp(): Promise<Express> {
   app.post('/api/crm/sync-opensource', requireRoles('super_admin', 'editor'), async (req: AuthReq, res) => {
     try {
       const token = getBearerToken(req);
-      const { track } = (req.body || {}) as { track?: OpenSourceSyncTrack };
+      const rawBody = req.body && typeof req.body === 'object' ? (req.body as { track?: unknown }) : {};
+      const rawTrack = typeof rawBody.track === 'string' ? rawBody.track.trim().toLowerCase() : 'all';
+      if (
+        rawBody.track !== undefined &&
+        rawTrack !== 'all' &&
+        rawTrack !== 'ai' &&
+        rawTrack !== 'cloud' &&
+        rawTrack !== 'devtools'
+      ) {
+        return res.status(400).json({ error: 'Invalid track filter. Expected all, ai, cloud, or devtools.' });
+      }
       const validTrack: OpenSourceSyncTrack =
-        track === 'ai' || track === 'cloud' || track === 'devtools' ? track : 'all';
+        rawTrack === 'ai' || rawTrack === 'cloud' || rawTrack === 'devtools' ? rawTrack : 'all';
+      const editorUserId = req.editor?.userId || null;
+      const editorEmail = req.editor?.email || 'system@gitstack.io';
 
-      const harvested = await harvestTrendingOpenSourceLeads(validTrack, req.editor!.userId, token);
+      const harvested = await harvestTrendingOpenSourceLeads(validTrack, editorUserId, token);
       const merged = await upsertMergeCrmLeads(harvested.leads, token);
       const mxVerifiedCount = harvested.leads.filter((l) => l.email_status === 'verified_mx').length;
 
@@ -2740,7 +2810,7 @@ export async function createApp(): Promise<Express> {
           mx_verified_count: mxVerifiedCount,
           status: 'completed',
           error_detail: '',
-          triggered_by: req.editor!.email,
+          triggered_by: editorEmail,
           created_at: new Date().toISOString()
         },
         token

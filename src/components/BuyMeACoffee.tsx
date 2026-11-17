@@ -60,12 +60,8 @@ export function BuyMeACoffeeWidget({
   yOffset: propYOffset,
   position: propPosition
 }: BuyMeACoffeeWidgetProps) {
-  // Master on/off check
-  if (settings && settings.bmc_enabled === false) {
-    return null;
-  }
-  // Floating placement on/off check
-  if (settings && settings.bmc_floating_enabled === false) {
+  // Wait until settings load and check master & floating toggles
+  if (!settings || settings.bmc_enabled === false || settings.bmc_floating_enabled === false) {
     return null;
   }
 
@@ -134,18 +130,18 @@ export function BuyMeACoffeeButton({
   className = '',
   onCustomClick
 }: BuyMeACoffeeButtonProps) {
-  // Master on/off check
-  if (settings && settings.bmc_enabled === false) {
+  // Wait until settings load and check master toggle
+  if (!settings || settings.bmc_enabled === false) {
     return null;
   }
 
   // Header placement toggle
-  if (variant === 'compact' && settings && settings.bmc_header_enabled === false) {
+  if (variant === 'compact' && settings.bmc_header_enabled === false) {
     return null;
   }
 
   // Footer placement toggle
-  if (variant === 'full' && settings && settings.bmc_footer_enabled === false) {
+  if (variant === 'full' && settings.bmc_footer_enabled === false) {
     return null;
   }
 

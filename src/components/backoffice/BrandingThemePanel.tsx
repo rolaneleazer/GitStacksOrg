@@ -33,6 +33,8 @@ function resizeFaviconToPng(file: File): Promise<string> {
       img.onerror = () => reject(new Error('Unsupported or corrupted favicon image.'));
       img.onload = () => {
         const size = 128;
+        const w = img.naturalWidth || img.width || size;
+        const h = img.naturalHeight || img.height || size;
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
@@ -42,9 +44,9 @@ function resizeFaviconToPng(file: File): Promise<string> {
           return;
         }
         ctx.clearRect(0, 0, size, size);
-        const scale = Math.min(size / img.width, size / img.height);
-        const drawW = Math.round(img.width * scale);
-        const drawH = Math.round(img.height * scale);
+        const scale = Math.min(size / w, size / h);
+        const drawW = Math.max(1, Math.round(w * scale));
+        const drawH = Math.max(1, Math.round(h * scale));
         const dx = Math.round((size - drawW) / 2);
         const dy = Math.round((size - drawH) / 2);
         ctx.drawImage(img, dx, dy, drawW, drawH);
@@ -80,6 +82,7 @@ export function BrandingThemePanel({ settings, onSave, saving }: BrandingThemePa
   );
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [faviconError, setFaviconError] = useState<string | null>(null);
+  const [savedBanner, setSavedBanner] = useState(false);
 
   const previewSettings: Partial<AdSenseSettings> = {
     brand_name: brandName,
@@ -201,6 +204,7 @@ export function BrandingThemePanel({ settings, onSave, saving }: BrandingThemePa
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setSavedBanner(false);
     const safeColor = normalizeHexColor(primaryColor, DEFAULT_BRANDING.primary_color);
     await onSave({
       brand_name: brandName.trim() || DEFAULT_BRANDING.brand_name,
@@ -213,6 +217,8 @@ export function BrandingThemePanel({ settings, onSave, saving }: BrandingThemePa
       header_cta_label: headerCtaLabel.trim() || DEFAULT_BRANDING.header_cta_label,
       header_cta_href: headerCtaHref.trim() || DEFAULT_BRANDING.header_cta_href
     });
+    setSavedBanner(true);
+    setTimeout(() => setSavedBanner(false), 3500);
   };
 
   return (
@@ -551,7 +557,12 @@ export function BrandingThemePanel({ settings, onSave, saving }: BrandingThemePa
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:justify-end gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-3">
+        {savedBanner && (
+          <span className="text-xs font-semibold text-emerald-700">
+            Brand, favicon, and theme saved sitewide.
+          </span>
+        )}
         <button
           type="submit"
           disabled={saving}

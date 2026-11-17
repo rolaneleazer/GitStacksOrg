@@ -836,7 +836,7 @@ export async function harvestTrendingOpenSourceLeads(
   const harvestedLeads: CrmLead[] = [];
 
   if (selectedEntries.length > 0) {
-    const enriched = await Promise.all(
+    const enrichedResults = await Promise.allSettled(
       selectedEntries.map(async ({ login, repo, trackKey }) => {
         const detail = await fetchGitHubJson<GitHubUserDetail>(
           `https://api.github.com/users/${encodeURIComponent(login)}`,
@@ -876,7 +876,7 @@ export async function harvestTrendingOpenSourceLeads(
         const techStack = Array.from(techSet).slice(0, 7);
         const defaultService = TRENDING_TRACK_CONFIG[trackKey].service;
         const recommendedService = inferServiceFromSignals(techStack, defaultService);
-        const starsBonus = repo.stargazers_count >= 5000 ? 12 : repo.stargazers_count >= 1000 ? 8 : 4;
+        const starsBonus = (repo.stargazers_count || 0) >= 5000 ? 12 : (repo.stargazers_count || 0) >= 1000 ? 8 : 4;
         const fitScore = Math.min(
           97,
           62 +
@@ -900,7 +900,7 @@ export async function harvestTrendingOpenSourceLeads(
           contact_name: contactName,
           role_title:
             detail?.company || chosenDomain
-              ? `Maintainer · ${repo.full_name} (${repo.stargazers_count.toLocaleString()}★)`
+              ? `Maintainer · ${repo.full_name} (${(repo.stargazers_count || 0).toLocaleString()}★)`
               : `Open-Source Maintainer (${repo.full_name})`,
           email: chosenEmail,
           email_status: chosenEmail ? emailStatus : 'invalid',
@@ -908,6 +908,10 @@ export async function harvestTrendingOpenSourceLeads(
           company_domain: chosenDomain || extractDomainFromEmail(chosenEmail),
           website_url: webSignals?.url || (chosenDomain ? `https://${chosenDomain}` : ''),
           github_url: detail?.html_url || repo.owner.html_url,
+          phone: '',
+          location: '',
+          rating: null,
+          source_detail: TRENDING_TRACK_CONFIG[trackKey].label,
           source_type: 'github',
           source_urls: Array.from(
             new Set([
@@ -919,7 +923,7 @@ export async function harvestTrendingOpenSourceLeads(
           tech_stack: techStack,
           research_brief: [
             repo.description || detail?.bio || `Active open-source project ${repo.full_name}.`,
-            `GitHub Repository: ${repo.full_name} (${repo.stargazers_count.toLocaleString()} stars)`
+            `GitHub Repository: ${repo.full_name} (${(repo.stargazers_count || 0).toLocaleString()} stars)`
           ].join('\n'),
           recommended_service: recommendedService,
           fit_score: fitScore,
@@ -938,7 +942,11 @@ export async function harvestTrendingOpenSourceLeads(
         return lead;
       })
     );
-    harvestedLeads.push(...enriched);
+    for (const item of enrichedResults) {
+      if (item.status === 'fulfilled' && item.value) {
+        harvestedLeads.push(item.value);
+      }
+    }
   }
 
   // Fallback to live website + MX scraping of curated open-source leaders if GitHub Search is rate-limited
@@ -955,7 +963,7 @@ export async function harvestTrendingOpenSourceLeads(
       sourcesSynced.push(`${TRENDING_TRACK_CONFIG[tk].label} (Direct Org Scrape)`);
     }
 
-    const fallbackResults = await Promise.all(
+    const fallbackResults = await Promise.allSettled(
       fallbackTargets.slice(0, 10).map(async (target) => {
         const webSignals = await scrapePublicWebsite(target.domain);
         const hasMx = await verifyEmailMxDomain(`contact@${target.domain}`);
@@ -983,6 +991,10 @@ export async function harvestTrendingOpenSourceLeads(
           company_domain: target.domain,
           website_url: `https://${target.domain}`,
           github_url: `https://github.com/${target.login}`,
+          phone: '',
+          location: '',
+          rating: null,
+          source_detail: `${target.trackLabel} (Direct Org Scrape)`,
           source_type: 'github' as const,
           source_urls: Array.from(
             new Set([`https://github.com/${target.login}`, ...webSignals.sourceUrls])
@@ -1007,7 +1019,11 @@ export async function harvestTrendingOpenSourceLeads(
         } satisfies CrmLead;
       })
     );
-    harvestedLeads.push(...fallbackResults);
+    for (const item of fallbackResults) {
+      if (item.status === 'fulfilled' && item.value) {
+        harvestedLeads.push(item.value);
+      }
+    }
   }
 
   return {

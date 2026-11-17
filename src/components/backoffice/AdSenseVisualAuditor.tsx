@@ -207,6 +207,7 @@ export function AdSenseVisualAuditor() {
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
               <span className="text-[11px] font-medium text-slate-400">Quick Test:</span>
               {[
+                { label: 'This App (SSR)', path: typeof window !== 'undefined' ? `${window.location.origin}/` : 'http://localhost:3000/' },
                 { label: 'Homepage', path: 'https://git-stack.org/' },
                 { label: 'Engineering Services', path: 'https://git-stack.org/services' },
                 { label: 'Contact & Office Hours', path: 'https://git-stack.org/contact' },
@@ -341,7 +342,17 @@ export function AdSenseVisualAuditor() {
 
                 {/* DOM Tech Highlights */}
                 {auditResult.htmlMetrics && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2 text-xs pt-1">
+                    <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
+                      <div className="text-slate-400 text-[10px]">Render Mode</div>
+                      <div
+                        className={`font-semibold ${
+                          auditResult.htmlMetrics.renderMode === 'ssr' ? 'text-emerald-600' : 'text-amber-600'
+                        }`}
+                      >
+                        {auditResult.htmlMetrics.renderMode === 'ssr' ? 'SSR Crawlable' : 'SPA Shell'}
+                      </div>
+                    </div>
                     <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
                       <div className="text-slate-400 text-[10px]">Word Count</div>
                       <div className="font-mono font-bold text-slate-900 tabular-nums">
@@ -350,13 +361,21 @@ export function AdSenseVisualAuditor() {
                     </div>
                     <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
                       <div className="text-slate-400 text-[10px]">HTTPS SSL</div>
-                      <div className="font-semibold text-emerald-600">
-                        {auditResult.htmlMetrics.hasHttps ? 'Secured (PASS)' : 'Insecure (FAIL)'}
+                      <div
+                        className={`font-semibold ${
+                          auditResult.htmlMetrics.hasHttps ? 'text-emerald-600' : 'text-slate-600'
+                        }`}
+                      >
+                        {auditResult.htmlMetrics.hasHttps ? 'Secured (PASS)' : 'Local HTTP'}
                       </div>
                     </div>
                     <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
                       <div className="text-slate-400 text-[10px]">Legal Links</div>
-                      <div className="font-semibold text-indigo-600">
+                      <div
+                        className={`font-semibold ${
+                          auditResult.htmlMetrics.hasPrivacyPolicy ? 'text-emerald-600' : 'text-amber-600'
+                        }`}
+                      >
                         {auditResult.htmlMetrics.hasPrivacyPolicy ? 'Privacy Linked' : 'No Privacy'}
                       </div>
                     </div>
@@ -367,7 +386,7 @@ export function AdSenseVisualAuditor() {
                           auditResult.htmlMetrics.hasAdDisclosure ? 'text-emerald-600' : 'text-amber-600'
                         }`}
                       >
-                        {auditResult.htmlMetrics.hasAdDisclosure ? 'Verified' : 'SPA / Client'}
+                        {auditResult.htmlMetrics.hasAdDisclosure ? 'Verified' : 'Missing'}
                       </div>
                     </div>
                     <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
@@ -385,6 +404,31 @@ export function AdSenseVisualAuditor() {
                       <div className="font-mono font-bold text-slate-900 tabular-nums">
                         {auditResult.htmlMetrics.imagesWithAlt}/{auditResult.htmlMetrics.totalImages}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {auditResult.verifiedRoutes && auditResult.verifiedRoutes.length > 0 && (
+                  <div className="pt-2 border-t border-slate-100">
+                    <div className="text-[11px] font-semibold text-slate-500 mb-1.5">
+                      Verified Trust &amp; Crawler Endpoints on Target Origin
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px]">
+                      {auditResult.verifiedRoutes.map((route) => (
+                        <div
+                          key={route.path}
+                          className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono"
+                        >
+                          <span className="truncate text-slate-700">{route.path}</span>
+                          <span
+                            className={`ml-1.5 shrink-0 font-semibold tabular-nums ${
+                              route.ok ? 'text-emerald-600' : 'text-amber-600'
+                            }`}
+                          >
+                            {route.statusCode || 'ERR'}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

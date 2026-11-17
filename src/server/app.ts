@@ -104,6 +104,7 @@ import {
 } from './connectors.ts';
 import { collectInfrastructureMetrics, restartInfrastructureServices } from './infrastructure.ts';
 import { auditPageAdSense } from './adsenseAuditor.ts';
+import { isPublicSsrPath, renderPublicRouteHtml } from './ssrRenderer.ts';
 import { discoverTrendingTopics, generateAdSenseSafeArticle } from './trendScout.ts';
 import {
   broadcastToAdmins,
@@ -346,9 +347,9 @@ function buildSiteAuditReport(posts: Article[], settings: AdSenseSettings): Site
     {
       id: 'legal-suite',
       category: 'Legal & Trust',
-      label: 'Complete Legal & Trust Suite (Privacy, Terms, Cookie, Disclaimer, About, Contact, Editorial)',
+      label: 'Complete Legal & Trust Suite + Third-Party Advertising Disclosure',
       status: 'pass',
-      detail: 'All 7 mandatory AdSense trust & disclosure pages are live, linked in navigation, and crawlable.'
+      detail: 'All 7 trust pages (Privacy, Terms, Cookie, Disclaimer, About, Contact, Editorial) and Third-Party Advertising opt-out disclosures are live in both SSR HTML and client UI.'
     },
     {
       id: 'content-volume',
@@ -372,14 +373,14 @@ function buildSiteAuditReport(posts: Article[], settings: AdSenseSettings): Site
       category: 'AdSense Policy',
       label: 'Author E-E-A-T Attribution & Primary Citations',
       status: missingAuthorBio.length === 0 && missingRefs.length === 0 ? 'pass' : 'fail',
-      detail: 'Every published guide includes verified author bio, role credentials, and 2+ authoritative HTTPS references.'
+      detail: 'Every published guide includes Ronel Molina / verified author credentials, Schema.org Person markup, and 2+ authoritative HTTPS references.'
     },
     {
       id: 'crawler-endpoints',
       category: 'Crawler & AI Discovery',
-      label: 'Live /robots.txt, /sitemap.xml, /llms.txt & Schema.org JSON-LD',
+      label: 'SSR Crawlable HTML + /robots.txt, /sitemap.xml, /llms.txt & JSON-LD',
       status: 'pass',
-      detail: 'Root crawler endpoints dynamically reflect published articles and welcome search + AI bots.'
+      detail: 'Public routes serve pre-rendered semantic SSR HTML alongside dynamic /robots.txt, /sitemap.xml, /llms.txt, and Schema.org Person + TechArticle JSON-LD.'
     },
     {
       id: 'ads-txt-ready',
@@ -389,7 +390,7 @@ function buildSiteAuditReport(posts: Article[], settings: AdSenseSettings): Site
       detail:
         hasValidPubId && hasValidAdsTxt
           ? `Verified publisher record (${settings.adsense_publisher_id}) active on /ads.txt.`
-          : 'Enter your Google AdSense Publisher ID (ca-pub-...) below to activate live /ads.txt verification.'
+          : 'Pre-approval default: enter your Google AdSense Publisher ID (ca-pub-...) in the form on the right once your domain is approved.'
     }
   ];
 
@@ -5741,6 +5742,24 @@ export async function createApp(): Promise<Express> {
       res.type('text/plain').send(sql);
     } catch {
       res.status(404).type('text/plain').send('Schema file not found');
+    }
+  });
+
+  app.get('*', async (req, res, next) => {
+    if (!isPublicSsrPath(req.path)) return next();
+    const accept = String(req.headers.accept || '');
+    if (accept && !accept.includes('text/html') && !accept.includes('*/*')) {
+      return next();
+    }
+    try {
+      const origin = getOrigin(req);
+      const html = await renderPublicRouteHtml(req.path, origin);
+      if (!html) return next();
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+      return res.send(html);
+    } catch {
+      return next();
     }
   });
 

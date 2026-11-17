@@ -9,6 +9,7 @@ import { startCyberSecurityLoop } from './src/server/cyberSecurity.ts';
 import { startQaMonitorLoop } from './src/server/qaMonitor.ts';
 import { attachRealtimeHub } from './src/server/realtime.ts';
 import { verifyEditorToken } from './src/server/repository.ts';
+import { setSsrDevHtmlTransformer } from './src/server/ssrRenderer.ts';
 
 async function startServer() {
   const app = await getExpressApp();
@@ -19,6 +20,7 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: 'spa'
     });
+    setSsrDevHtmlTransformer((url, html) => vite.transformIndexHtml(url, html));
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');

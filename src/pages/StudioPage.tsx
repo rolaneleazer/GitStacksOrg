@@ -2192,14 +2192,24 @@ export function StudioPage({
                         pages, and crawler endpoints.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => api.getSiteAudit().then((r) => setAuditReport(r.report))}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      <span>Re-Scan</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAdsenseSubView('auditor')}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] transition-colors"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>Live Visual &amp; SSR Audit</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => api.getSiteAudit().then((r) => setAuditReport(r.report))}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Re-Scan</span>
+                      </button>
+                    </div>
                   </div>
 
                   {auditReport && (

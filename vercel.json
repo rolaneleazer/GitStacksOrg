@@ -5,7 +5,7 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 60,
-      "includeFiles": "supabase/schema.sql"
+      "includeFiles": "{supabase/schema.sql,dist/index.html}"
     }
   },
   "crons": [
@@ -37,6 +37,54 @@
     },
     {
       "source": "/ads.txt",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/services",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/insights",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/insights/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/about",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/contact",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/privacy-policy",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/terms",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/cookie-policy",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/disclaimer",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/editorial-policy",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/demo",
       "destination": "/api/index"
     },
     {

@@ -241,7 +241,12 @@ export function buildArticleJsonLd(article: Article, origin: string) {
           '@type': 'Person',
           name: article.author_name,
           jobTitle: article.author_role,
-          description: article.author_bio
+          description: article.author_bio,
+          worksFor: {
+            '@type': 'Organization',
+            name: 'GitStack',
+            url: origin
+          }
         },
         publisher: {
           '@type': 'Organization',

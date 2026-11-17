@@ -41,6 +41,8 @@ export interface AdSenseAuditResult {
     imagesWithAlt: number;
     h1Count: number;
     externalScriptsCount: number;
+    hasAdDisclosure: boolean;
+    hasAuthorSchema: boolean;
   };
   categories: AuditCategory[];
   exactFixPlan: ExactFixItem[];
@@ -79,6 +81,10 @@ function extractHtmlMetadata(html: string, pageUrl: string) {
   const hasTerms = /terms[\s_-]?(of[\s_-]?service|conditions)/i.test(lower);
   const hasAbout = /about[\s_-]?(us)?/i.test(lower);
   const hasContact = /contact[\s_-]?(us)?/i.test(lower);
+  const hasAdDisclosure =
+    /legal-disclosure|aboutads\.info|myadcenter\.google\.com|third-party advertising/i.test(lower);
+  const hasAuthorSchema =
+    /"@type"\s*:\s*"person"|author-card|ronel\s+molina/i.test(lower);
 
   const imgMatches = html.match(/<img\b[^>]*>/gi) || [];
   const totalImages = imgMatches.length;
@@ -102,7 +108,9 @@ function extractHtmlMetadata(html: string, pageUrl: string) {
     totalImages,
     imagesWithAlt,
     h1Count: h1Matches.length,
-    externalScriptsCount: scriptMatches.length
+    externalScriptsCount: scriptMatches.length,
+    hasAdDisclosure,
+    hasAuthorSchema
   };
 }
 
@@ -215,15 +223,18 @@ Return a strictly valid JSON object matching this schema:
       parts.push({ text: promptContext });
 
       const response = await gemini.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-4-hydrogen',
         contents: parts,
         config: {
-          responseMimeType: 'application/json',
-          temperature: 0.2
+          responseMimeType: 'application/json'
         }
       });
 
-      const parsed = JSON.parse(response.text || '{}') as AdSenseAuditResult;
+      const rawText = (response.text || '{}')
+        .replace(/^```json\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
+      const parsed = JSON.parse(rawText || '{}') as AdSenseAuditResult;
       if (parsed.overallScore !== undefined && Array.isArray(parsed.categories)) {
         return {
           ...parsed,
@@ -245,10 +256,14 @@ Return a strictly valid JSON object matching this schema:
   const hasTerms = htmlMetrics?.hasTerms ?? true;
   const hasAbout = htmlMetrics?.hasAbout ?? true;
   const hasContact = htmlMetrics?.hasContact ?? true;
+  const hasAdDisclosure = htmlMetrics?.hasAdDisclosure ?? false;
+  const hasAuthorSchema = htmlMetrics?.hasAuthorSchema ?? false;
 
-  let score = 75;
+  let score = 70;
   if (isHttps) score += 5;
-  if (hasPrivacy && hasTerms && hasAbout && hasContact) score += 15;
+  if (hasPrivacy && hasTerms && hasAbout && hasContact) score += 10;
+  if (hasAdDisclosure) score += 5;
+  if (hasAuthorSchema) score += 5;
   if (wordCount >= 600) score += 5;
 
   score = Math.min(100, Math.max(25, score));
@@ -307,16 +322,19 @@ Return a strictly valid JSON object matching this schema:
       },
       {
         name: 'Mandatory Legal & Trust Pages',
-        score: hasPrivacy && hasTerms && hasAbout && hasContact ? 95 : 60,
+        score: hasPrivacy && hasTerms && hasAbout && hasContact && hasAdDisclosure ? 98 : hasPrivacy ? 78 : 55,
         weight: 20,
-        status: hasPrivacy && hasTerms && hasAbout && hasContact ? 'PASS' : 'WARNING',
+        status: hasPrivacy && hasTerms && hasAbout && hasContact && hasAdDisclosure ? 'PASS' : 'WARNING',
         findings: [
           {
             rule: 'Privacy Policy with Cookie & AdSense Disclosure',
-            status: hasPrivacy ? 'PASS' : 'CRITICAL FAIL',
-            detail: hasPrivacy
-              ? 'Privacy Policy link visible in primary navigation and footer.'
-              : 'Missing accessible link to Privacy Policy.'
+            status: hasPrivacy && hasAdDisclosure ? 'PASS' : hasPrivacy ? 'WARNING' : 'CRITICAL FAIL',
+            detail:
+              hasPrivacy && hasAdDisclosure
+                ? 'Privacy Policy and Third-Party Advertising opt-out disclosure (aboutads.info / Google Ad Center) verified.'
+                : hasPrivacy
+                  ? 'Privacy Policy found, but explicit Third-Party Advertising & Cookies opt-out links were not detected in static HTML.'
+                  : 'Missing accessible link to Privacy Policy.'
           },
           {
             rule: 'Terms of Service & Disclaimer',
@@ -332,14 +350,16 @@ Return a strictly valid JSON object matching this schema:
       },
       {
         name: 'E-E-A-T & Author Signals',
-        score: 84,
+        score: hasAuthorSchema ? 94 : 74,
         weight: 15,
-        status: 'PASS',
+        status: hasAuthorSchema ? 'PASS' : 'WARNING',
         findings: [
           {
-            rule: 'Author Credential Byline',
-            status: 'PASS',
-            detail: 'Articles feature named engineering contributors and bios.'
+            rule: 'Author Credential Byline & Person Schema',
+            status: hasAuthorSchema ? 'PASS' : 'WARNING',
+            detail: hasAuthorSchema
+              ? 'Structured Schema.org Person author markup and credential card detected.'
+              : 'No Schema.org Person markup or .author-card credentials detected in HTML.'
           },
           {
             rule: 'Publication & Revision Timestamps',
@@ -381,20 +401,28 @@ Return a strictly valid JSON object matching this schema:
       }
     ],
     exactFixPlan: [
-      {
-        title: 'Add Google AdSense & Third-Party Cookie Clause',
-        category: 'Mandatory Legal & Trust Pages',
-        description:
-          'Google AdSense requires explicit disclosure that third-party vendors use cookies to serve ads based on user prior visits.',
-        codeSnippet: `<section class="legal-disclosure">\n  <h3>Third-Party Advertising &amp; Cookies</h3>\n  <p>We use Google AdSense and third-party advertising partners to serve ads when you visit our website. These companies may use cookies, web beacons, and similar tracking technologies to collect information about your visits to provide personalized advertisements.</p>\n  <p>You may opt out of personalized advertising by visiting <a href="https://www.aboutads.info/choices/" target="_blank" rel="noopener">www.aboutads.info</a> or <a href="https://myadcenter.google.com/" target="_blank" rel="noopener">Google Ad Center</a>.</p>\n</section>`
-      },
-      {
-        title: 'Author E-E-A-T Box with Credentials & Schema',
-        category: 'E-E-A-T & Author Signals',
-        description:
-          'Include an authoritative author box with credentials and Schema.org Person markup.',
-        codeSnippet: `<div class="author-card border border-slate-200 rounded-xl p-4 bg-slate-50">\n  <div class="font-bold text-slate-900">Written by Ronel Molina</div>\n  <div class="text-xs text-slate-600">Principal Cloud Architect · 13+ Years Distributed Systems Experience</div>\n  <p class="text-xs text-slate-500 mt-1">Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.</p>\n</div>`
-      }
+      ...(!hasAdDisclosure
+        ? [
+            {
+              title: 'Add Google AdSense & Third-Party Cookie Clause',
+              category: 'Mandatory Legal & Trust Pages',
+              description:
+                'Google AdSense requires explicit disclosure that third-party vendors use cookies to serve ads based on user prior visits.',
+              codeSnippet: `<section class="legal-disclosure">\n  <h3>Third-Party Advertising &amp; Cookies</h3>\n  <p>We use Google AdSense and third-party advertising partners to serve ads when you visit our website. These companies may use cookies, web beacons, and similar tracking technologies to collect information about your visits to provide personalized advertisements.</p>\n  <p>You may opt out of personalized advertising by visiting <a href="https://www.aboutads.info/choices/" target="_blank" rel="noopener">www.aboutads.info</a> or <a href="https://myadcenter.google.com/" target="_blank" rel="noopener">Google Ad Center</a>.</p>\n</section>`
+            }
+          ]
+        : []),
+      ...(!hasAuthorSchema
+        ? [
+            {
+              title: 'Author E-E-A-T Box with Credentials & Schema',
+              category: 'E-E-A-T & Author Signals',
+              description:
+                'Include an authoritative author box with credentials and Schema.org Person markup.',
+              codeSnippet: `<div class="author-card border border-slate-200 rounded-xl p-4 bg-slate-50">\n  <div class="font-bold text-slate-900">Written by Ronel Molina</div>\n  <div class="text-xs text-slate-600">Principal Cloud Architect · 13+ Years Distributed Systems Experience</div>\n  <p class="text-xs text-slate-500 mt-1">Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.</p>\n</div>`
+            }
+          ]
+        : [])
     ]
   };
 }

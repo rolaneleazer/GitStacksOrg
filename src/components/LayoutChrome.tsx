@@ -2,6 +2,7 @@ import { Menu, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { DEFAULT_BRANDING, resolveThemeTokens } from '../shared/themePresets.ts';
 import type { AdSenseSettings } from '../shared/types.ts';
+import { LegalAdvertisingDisclosure } from './AdSenseTrustSignals.tsx';
 import { BuyMeACoffeeButton } from './BuyMeACoffee.tsx';
 
 interface HeaderProps {
@@ -326,7 +327,15 @@ export function Footer({
           </div>
         </div>
 
-        <div className="mt-10 sm:mt-12 flex flex-col items-start justify-between gap-4 border-t border-slate-200 pt-8 text-xs text-slate-500 sm:flex-row sm:items-center">
+        <div className="mt-10 sm:mt-12">
+          <LegalAdvertisingDisclosure
+            compact
+            onNavigate={onNavigate}
+            onOpenCookiePrefs={onOpenCookiePrefs}
+          />
+        </div>
+
+        <div className="mt-8 flex flex-col items-start justify-between gap-4 border-t border-slate-200 pt-8 text-xs text-slate-500 sm:flex-row sm:items-center">
           <p>© {new Date().getFullYear()} {brandName} Technologies Inc. All rights reserved.</p>
           <div className="flex flex-wrap items-center gap-4">
             <a href="/llms.txt" target="_blank" rel="noopener noreferrer" className="hover:text-slate-800">

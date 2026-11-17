@@ -1,4 +1,9 @@
 import { useEffect } from 'react';
+import {
+  AuthorEeatCard,
+  LegalAdvertisingDisclosure,
+  buildPrincipalAuthorJsonLd
+} from '../components/AdSenseTrustSignals.tsx';
 import { CustomBlocksSection } from '../components/CustomBlocksSection.tsx';
 import { InquiryForm } from '../components/InquiryForm.tsx';
 import { ResilientImage } from '../components/ResilientImage.tsx';
@@ -41,11 +46,19 @@ export function AboutPage({
   const cms = pageContent || DEFAULT_PAGE_CONTENTS.about;
 
   useEffect(() => {
+    const origin = window.location.origin;
     applySeoMetadata({
       title: 'About GitStack — Engineering Leadership & Mission',
       description:
         'Learn about GitStack Technologies Inc., our engineering team, technical credentials, and commitment to transparent AI, MLOps, cloud, and software delivery.',
-      path: '/about'
+      path: '/about',
+      jsonLd: {
+        '@context': 'https://schema.org',
+        '@type': 'AboutPage',
+        name: 'About GitStack — Engineering Leadership & Mission',
+        url: `${origin}/about`,
+        mainEntity: buildPrincipalAuthorJsonLd(origin)
+      }
     });
   }, []);
 
@@ -70,6 +83,7 @@ export function AboutPage({
         <h2 className="font-display text-xl font-bold text-slate-900 pt-2">
           Leadership &amp; Technical Standards
         </h2>
+        <AuthorEeatCard className="my-2" />
         <ul className="list-disc pl-5 space-y-2">
           <li>
             <strong>Elena Vance, Principal AI Systems Architect:</strong> Leads Retrieval-Augmented
@@ -340,15 +354,12 @@ export function PrivacyPolicyPage() {
       <h2 className="font-display text-xl font-bold text-slate-900 pt-2">
         2. Google AdSense &amp; Third-Party Advertising Cookies
       </h2>
+      <LegalAdvertisingDisclosure />
       <p>
         When Google AdSense is active on GitStack and you provide consent via our Cookie Consent
         banner, third-party vendors, including Google, use cookies to serve ads based on a
-        user&rsquo;s prior visits to this website or other websites. Google&rsquo;s use of
-        advertising cookies enables it and its partners to serve ads based on your visit to
-        GitStack and/or other sites on the Internet.
-      </p>
-      <p>
-        Users may opt out of personalized advertising by visiting{' '}
+        user&rsquo;s prior visits to this website or other websites. You may also manage preferences
+        directly in{' '}
         <a
           href="https://www.google.com/settings/ads"
           target="_blank"
@@ -357,7 +368,7 @@ export function PrivacyPolicyPage() {
         >
           Google Ads Settings
         </a>{' '}
-        or by choosing &ldquo;Essential Only&rdquo; in our Cookie Consent banner at any time.
+        or choose &ldquo;Essential Only&rdquo; in our Cookie Consent banner at any time.
       </p>
       <h2 className="font-display text-xl font-bold text-slate-900 pt-2">
         3. Data Storage, Security &amp; Retention
@@ -440,15 +451,7 @@ export function CookiePolicyPage({ onOpenCookiePrefs }: { onOpenCookiePrefs: () 
         All&rdquo; in our consent banner. If you previously accepted and wish to withdraw consent,
         update your preference below.
       </p>
-      <div className="pt-2">
-        <button
-          type="button"
-          onClick={onOpenCookiePrefs}
-          className="min-h-[44px] w-full sm:w-auto rounded-lg bg-[var(--gs-primary)] px-5 py-2.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] transition-colors"
-        >
-          Update Cookie Preferences
-        </button>
-      </div>
+      <LegalAdvertisingDisclosure onOpenCookiePrefs={onOpenCookiePrefs} />
     </LegalShell>
   );
 }

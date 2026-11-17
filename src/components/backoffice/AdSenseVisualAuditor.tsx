@@ -150,7 +150,7 @@ export function AdSenseVisualAuditor() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
             <Sparkles className="h-3.5 w-3.5" />
-            <span>Gemini 2.5 Flash Multimodal Vision · 2026 Policy Standards</span>
+            <span>Gemini 4 Hydrogen Multimodal Vision · 2026 Policy Standards</span>
           </div>
 
           <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -341,10 +341,10 @@ export function AdSenseVisualAuditor() {
 
                 {/* DOM Tech Highlights */}
                 {auditResult.htmlMetrics && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs pt-1">
                     <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
                       <div className="text-slate-400 text-[10px]">Word Count</div>
-                      <div className="font-mono font-bold text-slate-900">
+                      <div className="font-mono font-bold text-slate-900 tabular-nums">
                         {auditResult.htmlMetrics.wordCount} words
                       </div>
                     </div>
@@ -361,8 +361,28 @@ export function AdSenseVisualAuditor() {
                       </div>
                     </div>
                     <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
+                      <div className="text-slate-400 text-[10px]">Ad Disclosure</div>
+                      <div
+                        className={`font-semibold ${
+                          auditResult.htmlMetrics.hasAdDisclosure ? 'text-emerald-600' : 'text-amber-600'
+                        }`}
+                      >
+                        {auditResult.htmlMetrics.hasAdDisclosure ? 'Verified' : 'SPA / Client'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
+                      <div className="text-slate-400 text-[10px]">Author Schema</div>
+                      <div
+                        className={`font-semibold ${
+                          auditResult.htmlMetrics.hasAuthorSchema ? 'text-emerald-600' : 'text-amber-600'
+                        }`}
+                      >
+                        {auditResult.htmlMetrics.hasAuthorSchema ? 'Person JSON-LD' : 'Missing'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 p-2 text-center bg-white">
                       <div className="text-slate-400 text-[10px]">Image Alt Tags</div>
-                      <div className="font-mono font-bold text-slate-900">
+                      <div className="font-mono font-bold text-slate-900 tabular-nums">
                         {auditResult.htmlMetrics.imagesWithAlt}/{auditResult.htmlMetrics.totalImages}
                       </div>
                     </div>

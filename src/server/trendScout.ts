@@ -83,18 +83,35 @@ Return a strictly valid JSON array of exactly 6 trending topic objects matching 
 `;
 
       const response = await gemini.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-4-hydrogen',
         contents: prompt,
         config: {
           tools: [{ googleSearch: {} }],
-          responseMimeType: 'application/json',
-          temperature: 0.3
+          responseMimeType: 'application/json'
         }
       });
 
-      const parsed = JSON.parse(response.text || '[]') as TrendingTopicItem[];
+      const rawText = (response.text || '[]')
+        .replace(/^```json\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
+      const parsed = JSON.parse(rawText || '[]') as TrendingTopicItem[];
+      const groundedSources = (response.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
+        .map((chunk) => ({
+          title: chunk.web?.title || 'Google Search Source',
+          url: chunk.web?.uri || ''
+        }))
+        .filter((s) => Boolean(s.url));
+
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return { topics: parsed.slice(0, 6), niche, country };
+        const enriched = parsed.slice(0, 6).map((item) => ({
+          ...item,
+          sources:
+            Array.isArray(item.sources) && item.sources.length > 0
+              ? item.sources
+              : groundedSources.slice(0, 2)
+        }));
+        return { topics: enriched, niche, country };
       }
     } catch (err) {
       console.warn('[discoverTrendingTopics] Gemini search grounding note:', err);
@@ -275,15 +292,18 @@ Return a strictly valid JSON object:
 `;
 
       const response = await gemini.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-4-hydrogen',
         contents: prompt,
         config: {
-          responseMimeType: 'application/json',
-          temperature: 0.35
+          responseMimeType: 'application/json'
         }
       });
 
-      const parsed = JSON.parse(response.text || '{}') as GeneratedArticleDraft;
+      const rawText = (response.text || '{}')
+        .replace(/^```json\s*/i, '')
+        .replace(/```$/i, '')
+        .trim();
+      const parsed = JSON.parse(rawText || '{}') as GeneratedArticleDraft;
       if (parsed.title && parsed.content) {
         return parsed;
       }

@@ -213,10 +213,10 @@ function createEmptyDraft(): Partial<Article> {
     slug: '',
     summary_tldr: '',
     category: 'AI Integration',
-    author_name: 'Elena Vance',
-    author_role: 'Principal AI Systems Architect, GitStack',
+    author_name: 'Ronel Molina',
+    author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
-      'Elena leads AI Integration architecture at GitStack, designing retrieval pipelines and LLM governance layers for regulated enterprises.',
+      'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.',
     cover_image: COVER_PRESETS[0].url,
     cover_alt:
       'Geometric optical glass prisms refracting cobalt blue light on a white studio surface',

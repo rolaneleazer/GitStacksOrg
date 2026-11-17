@@ -1,5 +1,6 @@
 import { ArrowRight, ChevronDown, ChevronUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { AuthorEeatCard } from '../components/AdSenseTrustSignals.tsx';
 import { CustomBlocksSection } from '../components/CustomBlocksSection.tsx';
 import { InquiryForm } from '../components/InquiryForm.tsx';
 import { NewsletterCard } from '../components/NewsletterCard.tsx';
@@ -539,7 +540,15 @@ export function HomePage({ articles, pageContent, onNavigate }: HomePageProps) {
           ))}
         </div>
 
-        <div className="mt-10">
+        <div className="mt-8">
+          <AuthorEeatCard
+            prefix="Lead Principal Architect ·"
+            actionLabel="View Engineering Credentials →"
+            onAction={() => onNavigate('/about')}
+          />
+        </div>
+
+        <div className="mt-8">
           <NewsletterCard />
         </div>
       </section>

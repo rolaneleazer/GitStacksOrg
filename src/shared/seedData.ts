@@ -218,10 +218,10 @@ Next, **canary traffic shifting** routes 5%, then 25%, then 100% of requests to 
     summary_tldr:
       'Managing multi-region cloud environments safely at scale requires modular Terraform stacks, remote state locking, automated OPA policy-as-code checks in CI, and standardized FinOps cost guardrails.',
     category: 'Cloud Infrastructure',
-    author_name: 'David Morales',
-    author_role: 'Director of Cloud Engineering, GitStack',
+    author_name: 'Ronel Molina',
+    author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
-      'David directs cloud infrastructure management and DevSecOps transformations at GitStack, specializing in resilient multi-region Kubernetes and FinOps governance.',
+      'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.',
     cover_image: CLOUD_IMG,
     cover_alt: 'Cloud systems engineer reviewing infrastructure topology diagrams in a sunlit architectural office',
     meta_title: 'Multi-Region Cloud Governance with Terraform & OPA | GitStack',

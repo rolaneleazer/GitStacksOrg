@@ -1,6 +1,7 @@
 import { ArrowLeft, BookOpen, ExternalLink, MessageSquare, User } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { type ConsentPreference, PolicySafeAdSlot } from '../components/AdSenseCompliance.tsx';
+import { AuthorEeatCard } from '../components/AdSenseTrustSignals.tsx';
 import { MarkdownRenderer, extractHeadings } from '../components/MarkdownRenderer.tsx';
 import { NewsletterCard } from '../components/NewsletterCard.tsx';
 import { ResilientImage } from '../components/ResilientImage.tsx';
@@ -277,12 +278,12 @@ export function ArticlePage({
           )}
 
           {/* E-E-A-T Author Bio Box */}
-          <section className="mt-10 rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-            <div className="text-xs font-semibold text-slate-500">About the Author</div>
-            <div className="mt-1.5 font-display text-base font-bold text-slate-900">
-              {article.author_name} · {article.author_role}
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">{article.author_bio}</p>
+          <section className="mt-10" aria-label="About the Author">
+            <AuthorEeatCard
+              name={article.author_name}
+              role={article.author_role}
+              bio={article.author_bio}
+            />
           </section>
 
           {/* Newsletter Signup */}

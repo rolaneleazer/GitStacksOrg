@@ -3,6 +3,7 @@ import {
   AdSenseScriptLoader,
   CookieConsentBanner,
   GoogleAnalyticsLoader,
+  GoogleTagManagerLoader,
   useCookieConsent
 } from './components/AdSenseCompliance.tsx';
 import { FloatingLiveChat } from './components/FloatingLiveChat.tsx';
@@ -284,6 +285,7 @@ export default function App() {
       )}
       <AdSenseScriptLoader settings={adSenseSettings} consent={consent} />
       <GoogleAnalyticsLoader settings={adSenseSettings} consent={consent} route={route} />
+      <GoogleTagManagerLoader settings={adSenseSettings} consent={consent} route={route} />
       <Header currentPath={route} settings={adSenseSettings} onNavigate={navigate} />
       <main className="flex-1">{renderPage()}</main>
       <Footer settings={adSenseSettings} onNavigate={navigate} onOpenCookiePrefs={openPreferences} />

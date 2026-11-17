@@ -29,6 +29,7 @@ import {
   Shield,
   ShieldCheck,
   Sparkles,
+  Tags,
   Trash2,
   UserCheck,
   UserCog,
@@ -55,6 +56,7 @@ import { NotificationModulePanel } from '../components/backoffice/NotificationMo
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
 import { ProductQaPanel } from '../components/backoffice/ProductQaPanel.tsx';
 import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
+import { TagManagerPanel } from '../components/backoffice/TagManagerPanel.tsx';
 import { UserAccessPanel } from '../components/backoffice/UserAccessPanel.tsx';
 import { UserWorkflowsPanel } from '../components/backoffice/UserWorkflowsPanel.tsx';
 import { MarkdownRenderer } from '../components/MarkdownRenderer.tsx';
@@ -113,6 +115,7 @@ type StudioTab =
   | 'chat'
   | 'workflows'
   | 'analytics'
+  | 'tag_manager'
   | 'cloudflare'
   | 'ai_visibility'
   | 'resources'
@@ -136,6 +139,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'chat',
     'workflows',
     'analytics',
+    'tag_manager',
     'cloudflare',
     'ai_visibility',
     'resources',
@@ -156,6 +160,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'demo_users',
     'workflows',
     'analytics',
+    'tag_manager',
     'cloudflare',
     'ai_visibility',
     'resources',
@@ -1065,6 +1070,7 @@ export function StudioPage({
       count: workflows.filter((w) => w.status !== 'done').length
     },
     { id: 'analytics', label: 'Google Analytics', icon: BarChart3 },
+    { id: 'tag_manager', label: 'Tag Manager (GTM)', icon: Tags },
     { id: 'cloudflare', label: 'Cloudflare Analytics', icon: Cloud },
     { id: 'ai_visibility', label: 'AI & Search Visibility', icon: Sparkles },
     { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
@@ -1379,6 +1385,18 @@ export function StudioPage({
               days={analyticsDays}
               onChangeDays={handleChangeAnalyticsDays}
               onSaveGa4Settings={handleSaveGa4Settings}
+            />
+          )}
+
+          {/* PANEL 5-GTM: GOOGLE TAG MANAGER & DATALAYER TELEMETRY HUB */}
+          {currentTab === 'tag_manager' && (
+            <TagManagerPanel
+              key={adSenseForm.updated_at || 'gtm'}
+              settings={adSenseForm}
+              onSettingsUpdated={(next) => {
+                setAdSenseForm(next);
+                onSettingsChanged(next);
+              }}
             />
           )}
 

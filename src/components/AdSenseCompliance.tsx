@@ -1,5 +1,6 @@
 import { ShieldCheck, SlidersHorizontal, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { initOrUpdateGtmRuntime } from '../lib/tagManager.ts';
 import type { AdSenseSettings } from '../shared/types.ts';
 
 export type ConsentPreference = 'all' | 'essential' | null;
@@ -106,6 +107,22 @@ export function GoogleAnalyticsLoader({
     if (window.gtag) {
       window.gtag('config', gaId, { page_path: route });
     }
+  }, [settings, consent, route]);
+
+  return null;
+}
+
+export function GoogleTagManagerLoader({
+  settings,
+  consent,
+  route
+}: {
+  settings: AdSenseSettings | null;
+  consent: ConsentPreference;
+  route: string;
+}) {
+  useEffect(() => {
+    initOrUpdateGtmRuntime(settings, consent, route);
   }, [settings, consent, route]);
 
   return null;

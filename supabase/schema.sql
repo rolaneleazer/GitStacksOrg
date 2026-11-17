@@ -109,6 +109,12 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   bmc_floating_position TEXT NOT NULL DEFAULT 'Right',
   bmc_floating_y_offset INTEGER NOT NULL DEFAULT 84,
   bmc_support_message TEXT NOT NULL DEFAULT 'Support independent open-source tools, technical research, and live sandbox maintenance.',
+  gtm_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  gtm_container_id TEXT NOT NULL DEFAULT 'GTM-MFP3W7MS',
+  gtm_track_datalayer BOOLEAN NOT NULL DEFAULT TRUE,
+  gtm_track_conversions BOOLEAN NOT NULL DEFAULT TRUE,
+  gtm_respect_consent BOOLEAN NOT NULL DEFAULT FALSE,
+  gtm_exclude_admin BOOLEAN NOT NULL DEFAULT TRUE,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -137,6 +143,12 @@ ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_floating_enabled B
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_floating_position TEXT NOT NULL DEFAULT 'Right';
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_floating_y_offset INTEGER NOT NULL DEFAULT 84;
 ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS bmc_support_message TEXT NOT NULL DEFAULT 'Support independent open-source tools, technical research, and live sandbox maintenance.';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS gtm_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS gtm_container_id TEXT NOT NULL DEFAULT 'GTM-MFP3W7MS';
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS gtm_track_datalayer BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS gtm_track_conversions BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS gtm_respect_consent BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.site_settings ADD COLUMN IF NOT EXISTS gtm_exclude_admin BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- 6. Page Content & Media Customizer (Structured CMS Slots)
 CREATE TABLE IF NOT EXISTS public.page_contents (
@@ -698,7 +710,7 @@ CREATE POLICY "Authenticated team manage crm sync runs"
 
 -- 21. Encrypted Server-Side Integrations & Mail Vault
 CREATE TABLE IF NOT EXISTS public.crm_integration_secrets (
-  provider TEXT PRIMARY KEY CHECK (provider IN ('lark_smtp', 'google_analytics', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare')),
+  provider TEXT PRIMARY KEY CHECK (provider IN ('lark_smtp', 'google_analytics', 'google_tag_manager', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare')),
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   encrypted_secret TEXT NOT NULL DEFAULT '',
   secret_hint TEXT NOT NULL DEFAULT '',
@@ -724,7 +736,7 @@ BEGIN
   END LOOP;
   ALTER TABLE public.crm_integration_secrets
     ADD CONSTRAINT crm_integration_secrets_provider_check
-    CHECK (provider IN ('lark_smtp', 'google_analytics', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare'));
+    CHECK (provider IN ('lark_smtp', 'google_analytics', 'google_tag_manager', 'apollo', 'google_maps', 'gemini', 'github', 'cloudflare'));
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
@@ -1272,4 +1284,48 @@ CREATE INDEX IF NOT EXISTS idx_cyber_findings_status_detected ON public.cyber_se
 CREATE INDEX IF NOT EXISTS idx_workflow_items_user_updated ON public.user_workflow_items (user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_demo_users_email ON public.demo_users (email);
 CREATE INDEX IF NOT EXISTS idx_demo_users_last_active ON public.demo_users (last_active_at DESC);
+
+-- ============================================================================
+-- 38. Google Tag Manager (GTM) Live dataLayer Event Stream & Conversion Logs
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.gtm_event_logs (
+  id TEXT PRIMARY KEY,
+  container_id TEXT NOT NULL DEFAULT 'GTM-MFP3W7MS',
+  event_name TEXT NOT NULL,
+  event_category TEXT NOT NULL CHECK (event_category IN ('lifecycle', 'pageview', 'conversion', 'engagement', 'custom')) DEFAULT 'custom',
+  page_path TEXT NOT NULL DEFAULT '/',
+  page_title TEXT NOT NULL DEFAULT '',
+  session_id TEXT NOT NULL DEFAULT '',
+  is_conversion BOOLEAN NOT NULL DEFAULT FALSE,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  user_agent TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gtm_event_logs_created_at ON public.gtm_event_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gtm_event_logs_container_event ON public.gtm_event_logs (container_id, event_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_gtm_event_logs_conversion ON public.gtm_event_logs (is_conversion, created_at DESC);
+
+GRANT INSERT ON public.gtm_event_logs TO anon;
+GRANT ALL ON public.gtm_event_logs TO authenticated, service_role;
+
+ALTER TABLE public.gtm_event_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public can insert gtm event logs" ON public.gtm_event_logs;
+CREATE POLICY "Public can insert gtm event logs"
+  ON public.gtm_event_logs FOR INSERT
+  WITH CHECK (length(event_name) > 0);
+
+DROP POLICY IF EXISTS "Authenticated team read gtm event logs" ON public.gtm_event_logs;
+CREATE POLICY "Authenticated team read gtm event logs"
+  ON public.gtm_event_logs FOR SELECT
+  USING (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Authenticated team manage gtm event logs" ON public.gtm_event_logs;
+CREATE POLICY "Authenticated team manage gtm event logs"
+  ON public.gtm_event_logs FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
 

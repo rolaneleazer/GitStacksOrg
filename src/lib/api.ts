@@ -75,8 +75,13 @@ import type {
   CyberSecurityDashboardResponse,
   CyberSecurityFinding,
   CyberSecurityReport,
-  CyberSecuritySettings
+  CyberSecuritySettings,
+  GtmDashboardResponse,
+  GtmEventCategory,
+  GtmEventLog,
+  GtmSettingsConfig
 } from '../shared/types.ts';
+import { pushGtmEvent } from './tagManager.ts';
 
 const TOKEN_KEY = 'gitstack_studio_token';
 const DEMO_TOKEN_KEY = 'gitstack_demo_token';
@@ -208,7 +213,9 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     if (url.includes('/api/posts')) invalidateClientApiCache('/api/posts');
     if (url.includes('/api/comments')) invalidateClientApiCache('/api/comments');
     if (url.includes('/api/adsense')) invalidateClientApiCache('/api/adsense');
-    if (url.includes('/api/settings')) invalidateClientApiCache('/api/settings');
+    if (url.includes('/api/settings') || url.includes('/api/admin/gtm/settings')) {
+      invalidateClientApiCache('/api/settings');
+    }
     if (url.includes('/api/pages')) invalidateClientApiCache('/api/pages');
     if (url.includes('/api/crm')) invalidateClientApiCache('/api/crm');
     if (url.includes('/api/inbox')) invalidateClientApiCache('/api/inbox');
@@ -382,10 +389,12 @@ export const api = {
     author_email: string;
     body: string;
   }) {
-    return request<{ comment: ArticleComment }>('/api/comments', {
+    const res = await request<{ comment: ArticleComment }>('/api/comments', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+    pushGtmEvent('comment_submitted', { post_id: payload.post_id });
+    return res;
   },
 
   async updateCommentStatus(id: string, status: CommentStatus) {
@@ -401,13 +410,19 @@ export const api = {
     interest_topic?: string;
     consent_given: boolean;
   }) {
-    return request<{ subscriber: NewsletterSubscriber; alreadySubscribed: boolean }>(
+    const res = await request<{ subscriber: NewsletterSubscriber; alreadySubscribed: boolean }>(
       '/api/newsletter',
       {
         method: 'POST',
         body: JSON.stringify(payload)
       }
     );
+    pushGtmEvent(
+      'newsletter_subscribed',
+      { interest_topic: payload.interest_topic || 'general' },
+      { isConversion: true }
+    );
+    return res;
   },
 
   async listSubscribers() {
@@ -423,10 +438,19 @@ export const api = {
     timeline: string;
     project_brief: string;
   }) {
-    return request<{ inquiry: ClientInquiry }>('/api/inquiries', {
+    const res = await request<{ inquiry: ClientInquiry }>('/api/inquiries', {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+    pushGtmEvent(
+      'inquiry_submitted',
+      {
+        service_interest: payload.service_interest,
+        budget_range: payload.budget_range
+      },
+      { isConversion: true }
+    );
+    return res;
   },
 
   async listInquiries() {
@@ -750,6 +774,7 @@ export const api = {
   },
 
   async trackBmcClick(placement: 'header' | 'footer' | 'floating' | 'other') {
+    pushGtmEvent('buy_me_a_coffee_click', { placement }, { isConversion: true });
     return request<{ success: boolean; analytics: BmcAnalyticsData }>('/api/bmc/track-click', {
       method: 'POST',
       body: JSON.stringify({ placement })
@@ -1122,6 +1147,7 @@ export const api = {
       throw new Error(data.error || `Registration failed (HTTP ${res.status})`);
     }
     setStoredDemoToken(data.token);
+    pushGtmEvent('demo_signup', { company: payload.company }, { isConversion: true });
     return { token: data.token, user: data.user };
   },
 
@@ -1622,6 +1648,36 @@ export const api = {
   getCyberSecurityReportPdfUrl(reportId: string): string {
     const token = getStoredToken() || '';
     return `/api/admin/cybersecurity/report/${encodeURIComponent(reportId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  },
+
+  // --- Google Tag Manager (GTM) Telemetry, Settings & OAuth Vault ---
+  async getGtmDashboard(days: 1 | 7 | 14 | 30 = 7) {
+    return request<GtmDashboardResponse>(`/api/admin/gtm/dashboard?days=${days}`);
+  },
+
+  async saveGtmSettings(payload: Partial<GtmSettingsConfig>) {
+    return request<{ settings: AdSenseSettings; gtmSettings: GtmSettingsConfig }>(
+      '/api/admin/gtm/settings',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async sendGtmTestEvent(payload?: {
+    event_name?: string;
+    event_category?: GtmEventCategory;
+    is_conversion?: boolean;
+    days?: number;
+  }) {
+    return request<{
+      ok: boolean;
+      event: GtmEventLog;
+      dashboard: GtmDashboardResponse;
+    }>('/api/admin/gtm/test-event', {
+      method: 'POST',
+      body: JSON.stringify(payload || {})
+    });
   }
 };
-

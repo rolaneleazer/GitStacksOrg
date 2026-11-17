@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Tags,
   Unplug
 } from 'lucide-react';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -39,6 +40,7 @@ interface IntegrationsVaultPanelProps {
 const PROVIDER_ICON: Record<IntegrationProviderId, React.ComponentType<{ className?: string }>> = {
   lark_smtp: Mail,
   google_analytics: BarChart3,
+  google_tag_manager: Tags,
   apollo: Search,
   google_maps: MapPin,
   gemini: Sparkles,
@@ -416,7 +418,10 @@ export function IntegrationsVaultPanel({ onIntegrationsChanged }: IntegrationsVa
   const larkItem = items.find((i) => i.provider === 'lark_smtp');
   const ga4Item = items.find((i) => i.provider === 'google_analytics');
   const apiProviders = items.filter(
-    (i) => i.provider !== 'lark_smtp' && i.provider !== 'google_analytics'
+    (i) =>
+      i.provider !== 'lark_smtp' &&
+      i.provider !== 'google_analytics' &&
+      i.provider !== 'google_tag_manager'
   );
 
   const renderStatusLabel = (item: IntegrationStatusItem) => {

@@ -95,6 +95,13 @@ export interface AdSenseSettings {
   ga4_measurement_id?: string;
   ga4_enabled?: boolean;
   ga4_track_events?: boolean;
+  // Google Tag Manager (GTM) Container & dataLayer Settings
+  gtm_enabled?: boolean;
+  gtm_container_id?: string;
+  gtm_track_datalayer?: boolean;
+  gtm_track_conversions?: boolean;
+  gtm_respect_consent?: boolean;
+  gtm_exclude_admin?: boolean;
   brand_name?: string;
   brand_logo_url?: string;
   brand_logo_alt?: string;
@@ -777,6 +784,7 @@ export interface CsvImportLeadInput {
 export type IntegrationProviderId =
   | 'lark_smtp'
   | 'google_analytics'
+  | 'google_tag_manager'
   | 'apollo'
   | 'google_maps'
   | 'gemini'
@@ -826,6 +834,16 @@ export interface IntegrationConfigMeta {
   ga4_stream_uri?: string;
   ga4_properties_list?: Ga4PropertyOption[];
   ga4_cached_report?: Ga4LiveReportSummary | null;
+  gtm_account_email?: string;
+  gtm_account_name?: string;
+  gtm_account_id?: string;
+  gtm_container_id?: string;
+  gtm_container_public_id?: string;
+  gtm_container_name?: string;
+  gtm_workspace_id?: string;
+  gtm_workspace_name?: string;
+  gtm_containers_list?: GtmContainerOption[];
+  gtm_snapshot?: GtmWorkspaceSnapshot | null;
 }
 
 export interface IntegrationSecretRecord {
@@ -1490,6 +1508,118 @@ export interface CyberSecurityDashboardResponse {
   reports: CyberSecurityReport[];
   aiThreatIntel: string[];
 }
+
+// --- Google Tag Manager (GTM) Container, Telemetry & OAuth Sync ---
+
+export type GtmEventCategory =
+  | 'lifecycle'
+  | 'pageview'
+  | 'conversion'
+  | 'engagement'
+  | 'custom';
+
+export interface GtmEventLog {
+  id: string;
+  container_id: string;
+  event_name: string;
+  event_category: GtmEventCategory;
+  page_path: string;
+  page_title: string;
+  session_id: string;
+  is_conversion: boolean;
+  payload: Record<string, unknown>;
+  user_agent: string;
+  created_at: string;
+}
+
+export interface GtmTagSummary {
+  tagId: string;
+  name: string;
+  type: string;
+  paused: boolean;
+  firingTriggerId: string[];
+  tagFiringOption?: string;
+}
+
+export interface GtmTriggerSummary {
+  triggerId: string;
+  name: string;
+  type: string;
+}
+
+export interface GtmVariableSummary {
+  variableId: string;
+  name: string;
+  type: string;
+}
+
+export interface GtmContainerOption {
+  accountId: string;
+  accountName: string;
+  containerId: string;
+  publicId: string;
+  name: string;
+  usageContext: string[];
+  workspaceId: string;
+  workspaceName: string;
+}
+
+export interface GtmWorkspaceSnapshot {
+  accountId: string;
+  accountName: string;
+  containerId: string;
+  publicId: string;
+  containerName: string;
+  workspaceId: string;
+  workspaceName: string;
+  syncedAt: string;
+  tags: GtmTagSummary[];
+  triggers: GtmTriggerSummary[];
+  variables: GtmVariableSummary[];
+  note?: string;
+}
+
+export interface GtmSettingsConfig {
+  gtm_enabled: boolean;
+  gtm_container_id: string;
+  gtm_track_datalayer: boolean;
+  gtm_track_conversions: boolean;
+  gtm_respect_consent: boolean;
+  gtm_exclude_admin: boolean;
+}
+
+export interface GtmDashboardResponse {
+  days: number;
+  settings: GtmSettingsConfig;
+  summary: {
+    totalEvents: number;
+    conversionEvents: number;
+    pageViews: number;
+    uniqueSessions: number;
+    uniqueEventNames: number;
+    conversionRatePercent: number;
+    lastEventAt: string | null;
+  };
+  series: {
+    label: string;
+    events: number;
+    conversions: number;
+    pageViews: number;
+  }[];
+  topEvents: {
+    event_name: string;
+    category: GtmEventCategory;
+    count: number;
+    conversions: number;
+  }[];
+  topPages: {
+    page_path: string;
+    events: number;
+    conversions: number;
+  }[];
+  recentEvents: GtmEventLog[];
+}
+
 
 
 

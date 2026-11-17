@@ -45,6 +45,9 @@ import type {
   CsvImportLeadInput,
   DemoUser,
   GoogleMapsPlaceCandidate,
+  GtmEventCategory,
+  GtmEventLog,
+  GtmSettingsConfig,
   HeaderSurface,
   InboxEmailLog,
   InquiryStatus,
@@ -245,6 +248,8 @@ import {
   verifyEditorToken,
   getBmcAnalytics,
   recordBmcClick,
+  getGtmDashboardSummary,
+  recordGtmEventBatch,
   type EditorSession
 } from './repository.ts';
 import {
@@ -1179,6 +1184,17 @@ export async function createApp(): Promise<Express> {
             ga4_measurement_id: settings.ga4_measurement_id || '',
             ga4_enabled: Boolean(settings.ga4_enabled),
             ga4_track_events: settings.ga4_track_events !== false,
+            gtm_enabled: settings.gtm_enabled !== undefined ? Boolean(settings.gtm_enabled) : true,
+            gtm_container_id: (settings.gtm_container_id || 'GTM-MFP3W7MS').trim().toUpperCase(),
+            gtm_track_datalayer:
+              settings.gtm_track_datalayer !== undefined ? Boolean(settings.gtm_track_datalayer) : true,
+            gtm_track_conversions:
+              settings.gtm_track_conversions !== undefined
+                ? Boolean(settings.gtm_track_conversions)
+                : true,
+            gtm_respect_consent: Boolean(settings.gtm_respect_consent),
+            gtm_exclude_admin:
+              settings.gtm_exclude_admin !== undefined ? Boolean(settings.gtm_exclude_admin) : true,
             brand_name: settings.brand_name || DEFAULT_BRANDING.brand_name,
             brand_logo_url: settings.brand_logo_url || '',
             brand_logo_alt: settings.brand_logo_alt || DEFAULT_BRANDING.brand_logo_alt,
@@ -1237,6 +1253,15 @@ export async function createApp(): Promise<Express> {
       if (ga4Id && !/^G-[A-Z0-9]{4,16}$/.test(ga4Id)) {
         return res.status(400).json({
           error: 'Google Analytics Measurement ID must match format G-XXXXXXXXXX.'
+        });
+      }
+      const gtmId =
+        payload.gtm_container_id !== undefined
+          ? payload.gtm_container_id.trim().toUpperCase()
+          : current.gtm_container_id || 'GTM-MFP3W7MS';
+      if (gtmId && !/^GTM-[A-Z0-9]{4,12}$/.test(gtmId)) {
+        return res.status(400).json({
+          error: 'Google Tag Manager Container ID must match format GTM-XXXXXXX.'
         });
       }
 
@@ -1304,6 +1329,27 @@ export async function createApp(): Promise<Express> {
           payload.ga4_track_events !== undefined
             ? Boolean(payload.ga4_track_events)
             : current.ga4_track_events !== false,
+        gtm_enabled:
+          payload.gtm_enabled !== undefined
+            ? Boolean(payload.gtm_enabled)
+            : (current.gtm_enabled ?? true),
+        gtm_container_id: gtmId || 'GTM-MFP3W7MS',
+        gtm_track_datalayer:
+          payload.gtm_track_datalayer !== undefined
+            ? Boolean(payload.gtm_track_datalayer)
+            : (current.gtm_track_datalayer ?? true),
+        gtm_track_conversions:
+          payload.gtm_track_conversions !== undefined
+            ? Boolean(payload.gtm_track_conversions)
+            : (current.gtm_track_conversions ?? true),
+        gtm_respect_consent:
+          payload.gtm_respect_consent !== undefined
+            ? Boolean(payload.gtm_respect_consent)
+            : Boolean(current.gtm_respect_consent),
+        gtm_exclude_admin:
+          payload.gtm_exclude_admin !== undefined
+            ? Boolean(payload.gtm_exclude_admin)
+            : (current.gtm_exclude_admin ?? true),
         brand_name:
           payload.brand_name !== undefined
             ? payload.brand_name.trim().slice(0, 40) || DEFAULT_BRANDING.brand_name
@@ -5074,6 +5120,211 @@ export async function createApp(): Promise<Express> {
       });
     }
   });
+
+  // --- Google Tag Manager (GTM) Telemetry, Settings & Dashboard ---
+
+  app.post('/api/public/gtm/events', async (req, res) => {
+    try {
+      const body = (req.body || {}) as {
+        container_id?: string;
+        events?: Array<{
+          event_name?: string;
+          event_category?: GtmEventCategory;
+          page_path?: string;
+          page_title?: string;
+          session_id?: string;
+          is_conversion?: boolean;
+          payload?: Record<string, unknown>;
+          created_at?: string;
+        }>;
+      };
+      const rawEvents = Array.isArray(body.events) ? body.events.slice(0, 30) : [];
+      if (rawEvents.length === 0) {
+        return res.json({ accepted: 0 });
+      }
+      const validCats: GtmEventCategory[] = [
+        'lifecycle',
+        'pageview',
+        'conversion',
+        'engagement',
+        'custom'
+      ];
+      const ua = String(req.headers['user-agent'] || '').slice(0, 220);
+      const defaultContainer = String(body.container_id || 'GTM-MFP3W7MS')
+        .trim()
+        .toUpperCase()
+        .slice(0, 32);
+
+      const normalized: GtmEventLog[] = [];
+      for (const item of rawEvents) {
+        const evtName = String(item?.event_name || '').trim().slice(0, 100);
+        if (!evtName) continue;
+        const cat: GtmEventCategory = validCats.includes(item.event_category as GtmEventCategory)
+          ? (item.event_category as GtmEventCategory)
+          : 'custom';
+        const safePayload =
+          item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
+            ? item.payload
+            : {};
+        normalized.push({
+          id: `gtm-${crypto.randomUUID()}`,
+          container_id: /^GTM-[A-Z0-9]{4,12}$/.test(defaultContainer)
+            ? defaultContainer
+            : 'GTM-MFP3W7MS',
+          event_name: evtName,
+          event_category: cat,
+          page_path: String(item.page_path || '/').slice(0, 240),
+          page_title: String(item.page_title || '').slice(0, 160),
+          session_id: String(item.session_id || '').slice(0, 80),
+          is_conversion: Boolean(item.is_conversion) || cat === 'conversion',
+          payload: safePayload,
+          user_agent: ua,
+          created_at:
+            item.created_at && !Number.isNaN(Date.parse(item.created_at))
+              ? new Date(item.created_at).toISOString()
+              : new Date().toISOString()
+        });
+      }
+
+      const accepted = await recordGtmEventBatch(normalized);
+      res.status(201).json({ accepted });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to record GTM dataLayer events'
+      });
+    }
+  });
+
+  app.get(
+    '/api/admin/gtm/dashboard',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const rawDays = Number(req.query.days || 7);
+        const days = [1, 7, 14, 30].includes(rawDays) ? rawDays : 7;
+        const dashboard = await getGtmDashboardSummary(days, getBearerToken(req));
+        res.json(dashboard);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to load Tag Manager dashboard'
+        });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/gtm/settings',
+    requireRoles('super_admin', 'editor'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const current = await getAdSenseSettings(token);
+        const payload = (req.body || {}) as Partial<GtmSettingsConfig>;
+
+        const nextContainerId = (
+          payload.gtm_container_id !== undefined
+            ? String(payload.gtm_container_id)
+            : current.gtm_container_id || 'GTM-MFP3W7MS'
+        )
+          .trim()
+          .toUpperCase();
+
+        if (!nextContainerId || !/^GTM-[A-Z0-9]{4,12}$/.test(nextContainerId)) {
+          return res.status(400).json({
+            error: 'GTM Container ID must match format GTM-XXXXXXX (e.g. GTM-MFP3W7MS).'
+          });
+        }
+
+        const nextSiteSettings: AdSenseSettings = {
+          ...current,
+          gtm_enabled:
+            payload.gtm_enabled !== undefined
+              ? Boolean(payload.gtm_enabled)
+              : (current.gtm_enabled ?? true),
+          gtm_container_id: nextContainerId,
+          gtm_track_datalayer:
+            payload.gtm_track_datalayer !== undefined
+              ? Boolean(payload.gtm_track_datalayer)
+              : (current.gtm_track_datalayer ?? true),
+          gtm_track_conversions:
+            payload.gtm_track_conversions !== undefined
+              ? Boolean(payload.gtm_track_conversions)
+              : (current.gtm_track_conversions ?? true),
+          gtm_respect_consent:
+            payload.gtm_respect_consent !== undefined
+              ? Boolean(payload.gtm_respect_consent)
+              : Boolean(current.gtm_respect_consent),
+          gtm_exclude_admin:
+            payload.gtm_exclude_admin !== undefined
+              ? Boolean(payload.gtm_exclude_admin)
+              : (current.gtm_exclude_admin ?? true),
+          updated_at: new Date().toISOString()
+        };
+
+        const saved = await saveAdSenseSettings(nextSiteSettings, token);
+        const gtmSettings: GtmSettingsConfig = {
+          gtm_enabled: Boolean(saved.gtm_enabled),
+          gtm_container_id: saved.gtm_container_id || nextContainerId,
+          gtm_track_datalayer: saved.gtm_track_datalayer !== false,
+          gtm_track_conversions: saved.gtm_track_conversions !== false,
+          gtm_respect_consent: Boolean(saved.gtm_respect_consent),
+          gtm_exclude_admin: saved.gtm_exclude_admin !== false
+        };
+
+        res.json({ settings: saved, gtmSettings });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to save GTM settings'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/gtm/test-event',
+    requireRoles('super_admin', 'editor'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const current = await getAdSenseSettings(token);
+        const containerId = (current.gtm_container_id || 'GTM-MFP3W7MS').trim().toUpperCase();
+        const body = (req.body || {}) as {
+          event_name?: string;
+          event_category?: GtmEventCategory;
+          is_conversion?: boolean;
+          days?: number;
+        };
+        const evtName = String(body.event_name || 'gtm_diagnostic_ping').trim().slice(0, 80);
+        const cat: GtmEventCategory = body.event_category || 'custom';
+        const evt: GtmEventLog = {
+          id: `gtm-${crypto.randomUUID()}`,
+          container_id: containerId,
+          event_name: evtName,
+          event_category: cat,
+          page_path: '/studio/tag-manager',
+          page_title: 'GitStack Tag Manager Diagnostics',
+          session_id: `admin-${req.editor?.userId || 'studio'}`,
+          is_conversion: Boolean(body.is_conversion) || cat === 'conversion',
+          payload: {
+            event: evtName,
+            container_id: containerId,
+            triggered_by: req.editor?.email || 'studio_admin',
+            verified_at: new Date().toISOString()
+          },
+          user_agent: String(req.headers['user-agent'] || '').slice(0, 220),
+          created_at: new Date().toISOString()
+        };
+        await recordGtmEventBatch([evt]);
+        const days = [1, 7, 14, 30].includes(Number(body.days)) ? Number(body.days) : 7;
+        const dashboard = await getGtmDashboardSummary(days, token);
+        res.json({ ok: true, event: evt, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to fire GTM diagnostic event'
+        });
+      }
+    }
+  );
 
   app.get('/api/supabase-schema', async (_req, res) => {
     try {

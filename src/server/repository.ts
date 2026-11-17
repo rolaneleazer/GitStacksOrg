@@ -80,7 +80,11 @@ import type {
   AiSearchVisibilitySettings,
   CyberSecurityFinding,
   CyberSecurityReport,
-  CyberSecuritySettings
+  CyberSecuritySettings,
+  GtmDashboardResponse,
+  GtmEventCategory,
+  GtmEventLog,
+  GtmSettingsConfig
 } from '../shared/types.ts';
 
 // Explicit Supabase column projection lists to prevent SELECT * over-fetching on Supabase Free Tier
@@ -90,7 +94,7 @@ const POST_LIST_COLUMNS = 'id, slug, title, summary_tldr, category, author_name,
 const COMMENT_COLUMNS = 'id, post_id, author_name, author_email, body, status, created_at';
 const SUBSCRIBER_COLUMNS = 'id, email, name, interest_topic, consent_given, created_at';
 const INQUIRY_COLUMNS = 'id, reference_code, full_name, company, work_email, service_interest, budget_range, timeline, project_brief, status, assigned_to, assigned_at, created_at';
-const SITE_SETTINGS_COLUMNS = 'id, adsense_publisher_id, ads_txt_content, auto_ads_enabled, ad_slots_enabled, editorial_review_note, ga4_measurement_id, ga4_enabled, ga4_track_events, brand_name, brand_logo_url, brand_logo_alt, favicon_url, theme_preset, primary_color, header_surface, header_cta_label, header_cta_href, bmc_enabled, bmc_handle, bmc_custom_url, bmc_button_text, bmc_button_color, bmc_font_style, bmc_header_enabled, bmc_footer_enabled, bmc_floating_enabled, bmc_floating_position, bmc_floating_y_offset, bmc_support_message, updated_at';
+const SITE_SETTINGS_COLUMNS = 'id, adsense_publisher_id, ads_txt_content, auto_ads_enabled, ad_slots_enabled, editorial_review_note, ga4_measurement_id, ga4_enabled, ga4_track_events, gtm_enabled, gtm_container_id, gtm_track_datalayer, gtm_track_conversions, gtm_respect_consent, gtm_exclude_admin, brand_name, brand_logo_url, brand_logo_alt, favicon_url, theme_preset, primary_color, header_surface, header_cta_label, header_cta_href, bmc_enabled, bmc_handle, bmc_custom_url, bmc_button_text, bmc_button_color, bmc_font_style, bmc_header_enabled, bmc_footer_enabled, bmc_floating_enabled, bmc_floating_position, bmc_floating_y_offset, bmc_support_message, updated_at';
 const PAGE_CONTENT_COLUMNS = 'page_key, hero_kicker, hero_title, hero_subtitle, hero_cta_label, hero_image, hero_image_alt, secondary_image, secondary_image_alt, intro_heading, intro_body, contact_phone_label, contact_phone, contact_sales_label, contact_sales_email, contact_editorial_label, contact_editorial_email, contact_privacy_label, contact_privacy_email, custom_blocks, updated_at';
 const AGENT_TASK_COLUMNS = 'id, agent_id, title, priority, completed, notes, updated_at';
 const CHAT_THREAD_COLUMNS = 'id, subject, source_type, source_ref_id, requester_name, requester_email, status, assigned_to, assigned_at, last_message_at, created_at';
@@ -123,6 +127,7 @@ const AI_SEARCH_SETTINGS_COLUMNS = 'id, daily_test_enabled, daily_hour_utc, reci
 const CYBER_FINDING_COLUMNS = 'id, domain, severity, status, title, cve_or_rule, affected_module, description, ai_remediation, detected_at, updated_at';
 const CYBER_REPORT_COLUMNS = 'id, report_date, trigger_type, recipient_email, subject, posture_score, grade, critical_count, high_count, medium_count, low_count, domain_checks, executive_summary, ai_threat_intel, recommended_hardening, pdf_filename, status, provider_message_id, error_detail, created_at';
 const CYBER_SETTINGS_COLUMNS = 'id, sentinel_enabled, daily_report_enabled, daily_hour_utc, realtime_critical_alert, recipient_email, last_report_date, last_scan_at, updated_at';
+const GTM_EVENT_LOG_COLUMNS = 'id, container_id, event_name, event_category, page_path, page_title, session_id, is_conversion, payload, user_agent, created_at';
 
 interface LocalDatabase {
   posts: Article[];
@@ -162,6 +167,7 @@ interface LocalDatabase {
   cyber_security_findings?: CyberSecurityFinding[];
   cyber_security_reports?: CyberSecurityReport[];
   cyber_security_settings?: CyberSecuritySettings;
+  gtm_event_logs?: GtmEventLog[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -1180,6 +1186,31 @@ export async function getAdSenseSettings(userToken?: string): Promise<AdSenseSet
           ga4_measurement_id: row.ga4_measurement_id || '',
           ga4_enabled: Boolean(row.ga4_enabled),
           ga4_track_events: row.ga4_track_events !== undefined ? Boolean(row.ga4_track_events) : true,
+          gtm_enabled:
+            row.gtm_enabled !== undefined
+              ? Boolean(row.gtm_enabled)
+              : (localSettings.gtm_enabled ?? DEFAULT_ADSENSE_SETTINGS.gtm_enabled ?? true),
+          gtm_container_id:
+            row.gtm_container_id ||
+            localSettings.gtm_container_id ||
+            DEFAULT_ADSENSE_SETTINGS.gtm_container_id ||
+            'GTM-MFP3W7MS',
+          gtm_track_datalayer:
+            row.gtm_track_datalayer !== undefined
+              ? Boolean(row.gtm_track_datalayer)
+              : (localSettings.gtm_track_datalayer ?? true),
+          gtm_track_conversions:
+            row.gtm_track_conversions !== undefined
+              ? Boolean(row.gtm_track_conversions)
+              : (localSettings.gtm_track_conversions ?? true),
+          gtm_respect_consent:
+            row.gtm_respect_consent !== undefined
+              ? Boolean(row.gtm_respect_consent)
+              : (localSettings.gtm_respect_consent ?? false),
+          gtm_exclude_admin:
+            row.gtm_exclude_admin !== undefined
+              ? Boolean(row.gtm_exclude_admin)
+              : (localSettings.gtm_exclude_admin ?? true),
           brand_name: row.brand_name || DEFAULT_ADSENSE_SETTINGS.brand_name,
           brand_logo_url: row.brand_logo_url || '',
           brand_logo_alt: row.brand_logo_alt || DEFAULT_ADSENSE_SETTINGS.brand_logo_alt,
@@ -4154,10 +4185,188 @@ export async function saveCyberSecuritySettings(
   return saved || normalized;
 }
 
+// --- Google Tag Manager (GTM) Live dataLayer Event Stream & Aggregation ---
 
+export async function recordGtmEventBatch(events: GtmEventLog[]): Promise<number> {
+  if (!events || events.length === 0) return 0;
 
+  if (isSupabaseConfigured()) {
+    try {
+      const { error } = await getSupabaseClient().from('gtm_event_logs').insert(events);
+      if (!error) return events.length;
+      if (!isFallbackableDbError(error)) {
+        console.warn('Supabase gtm_event_logs insert warning:', error.message);
+      }
+    } catch (err) {
+      console.warn('Supabase gtm_event_logs error:', err);
+    }
+  }
 
+  const db = await readLocalDb();
+  db.gtm_event_logs = db.gtm_event_logs || [];
+  db.gtm_event_logs.push(...events);
+  if (db.gtm_event_logs.length > 5000) {
+    db.gtm_event_logs = db.gtm_event_logs.slice(-5000);
+  }
+  await writeLocalDb(db);
+  return events.length;
+}
 
+export async function listGtmEventLogs(
+  days = 7,
+  limit = 400,
+  userToken?: string
+): Promise<GtmEventLog[]> {
+  const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await getSupabaseClient(userToken)
+        .from('gtm_event_logs')
+        .select(GTM_EVENT_LOG_COLUMNS)
+        .gte('created_at', cutoffIso)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      if (!error && Array.isArray(data)) {
+        return data as GtmEventLog[];
+      }
+      if (error && !isFallbackableDbError(error)) {
+        console.warn('Supabase gtm_event_logs query warning:', error.message);
+      }
+    } catch {
+      // fall back to local db
+    }
+  }
 
+  const db = await readLocalDb();
+  const cutoffMs = new Date(cutoffIso).getTime();
+  return (db.gtm_event_logs || [])
+    .filter((e) => new Date(e.created_at).getTime() >= cutoffMs)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+}
 
+export async function getGtmDashboardSummary(
+  days = 7,
+  userToken?: string
+): Promise<GtmDashboardResponse> {
+  const safeDays = [1, 7, 14, 30].includes(days) ? days : 7;
+  const [siteSettings, events] = await Promise.all([
+    getAdSenseSettings(userToken),
+    listGtmEventLogs(safeDays, 600, userToken)
+  ]);
+
+  const gtmSettings: GtmSettingsConfig = {
+    gtm_enabled: siteSettings.gtm_enabled !== undefined ? Boolean(siteSettings.gtm_enabled) : true,
+    gtm_container_id: (siteSettings.gtm_container_id || 'GTM-MFP3W7MS').trim().toUpperCase(),
+    gtm_track_datalayer:
+      siteSettings.gtm_track_datalayer !== undefined ? Boolean(siteSettings.gtm_track_datalayer) : true,
+    gtm_track_conversions:
+      siteSettings.gtm_track_conversions !== undefined
+        ? Boolean(siteSettings.gtm_track_conversions)
+        : true,
+    gtm_respect_consent: Boolean(siteSettings.gtm_respect_consent),
+    gtm_exclude_admin:
+      siteSettings.gtm_exclude_admin !== undefined ? Boolean(siteSettings.gtm_exclude_admin) : true
+  };
+
+  const conversionEvents = events.filter((e) => e.is_conversion).length;
+  const pageViews = events.filter((e) => e.event_category === 'pageview').length;
+  const uniqueSessions = new Set(events.map((e) => e.session_id).filter(Boolean)).size;
+  const uniqueEventNames = new Set(events.map((e) => e.event_name).filter(Boolean)).size;
+  const conversionRatePercent =
+    uniqueSessions > 0 ? Number(((conversionEvents / uniqueSessions) * 100).toFixed(1)) : 0;
+
+  const bucketMap = new Map<string, { events: number; conversions: number; pageViews: number }>();
+  if (safeDays === 1) {
+    for (let i = 23; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 3600 * 1000);
+      const label = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
+      bucketMap.set(label, { events: 0, conversions: 0, pageViews: 0 });
+    }
+    for (const evt of events) {
+      const d = new Date(evt.created_at);
+      if (Number.isNaN(d.getTime())) continue;
+      const label = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
+      const bucket = bucketMap.get(label);
+      if (!bucket) continue;
+      bucket.events += 1;
+      if (evt.is_conversion) bucket.conversions += 1;
+      if (evt.event_category === 'pageview') bucket.pageViews += 1;
+    }
+  } else {
+    for (let i = safeDays - 1; i >= 0; i--) {
+      const label = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      bucketMap.set(label, { events: 0, conversions: 0, pageViews: 0 });
+    }
+    for (const evt of events) {
+      const label = (evt.created_at || '').slice(0, 10);
+      const bucket = bucketMap.get(label);
+      if (!bucket) continue;
+      bucket.events += 1;
+      if (evt.is_conversion) bucket.conversions += 1;
+      if (evt.event_category === 'pageview') bucket.pageViews += 1;
+    }
+  }
+
+  const eventStats = new Map<
+    string,
+    { category: GtmEventCategory; count: number; conversions: number }
+  >();
+  const pageStats = new Map<string, { events: number; conversions: number }>();
+
+  for (const evt of events) {
+    const existingEvt = eventStats.get(evt.event_name) || {
+      category: evt.event_category || 'custom',
+      count: 0,
+      conversions: 0
+    };
+    existingEvt.count += 1;
+    if (evt.is_conversion) existingEvt.conversions += 1;
+    eventStats.set(evt.event_name, existingEvt);
+
+    const pKey = evt.page_path || '/';
+    const existingPage = pageStats.get(pKey) || { events: 0, conversions: 0 };
+    existingPage.events += 1;
+    if (evt.is_conversion) existingPage.conversions += 1;
+    pageStats.set(pKey, existingPage);
+  }
+
+  return {
+    days: safeDays,
+    settings: gtmSettings,
+    summary: {
+      totalEvents: events.length,
+      conversionEvents,
+      pageViews,
+      uniqueSessions,
+      uniqueEventNames,
+      conversionRatePercent,
+      lastEventAt: events[0]?.created_at || null
+    },
+    series: Array.from(bucketMap.entries()).map(([label, val]) => ({
+      label,
+      events: val.events,
+      conversions: val.conversions,
+      pageViews: val.pageViews
+    })),
+    topEvents: Array.from(eventStats.entries())
+      .map(([event_name, val]) => ({
+        event_name,
+        category: val.category,
+        count: val.count,
+        conversions: val.conversions
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12),
+    topPages: Array.from(pageStats.entries())
+      .map(([page_path, val]) => ({
+        page_path,
+        events: val.events,
+        conversions: val.conversions
+      }))
+      .sort((a, b) => b.events - a.events)
+      .slice(0, 10),
+    recentEvents: events.slice(0, 150)
+  };
+}

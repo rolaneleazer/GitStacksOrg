@@ -43,6 +43,7 @@ export function AiTrendContentStudio({
   const [discovering, setDiscovering] = useState(false);
   const [trends, setTrends] = useState<TrendingTopicItem[]>([]);
   const [trendError, setTrendError] = useState<string | null>(null);
+  const [trendNotice, setTrendNotice] = useState<string | null>(null);
 
   // Step 2 & 3: Draft & Editor state
   const [selectedTopic, setSelectedTopic] = useState<TrendingTopicItem | null>(null);
@@ -65,13 +66,15 @@ export function AiTrendContentStudio({
   const handleDiscoverTrends = async () => {
     setDiscovering(true);
     setTrendError(null);
+    setTrendNotice(null);
     try {
-      const res = await api.discoverTrends({
+      const res = (await api.discoverTrends({
         niche: niche.trim(),
         country: country.trim(),
         keywords: keywords.trim()
-      });
+      })) as { topics: TrendingTopicItem[]; notice?: string };
       setTrends(res.topics);
+      if (res.notice) setTrendNotice(res.notice);
     } catch (err) {
       setTrendError(err instanceof Error ? err.message : 'Failed to discover trends.');
     } finally {
@@ -84,6 +87,7 @@ export function AiTrendContentStudio({
     setSelectedTopic(topicItem);
     setGenerating(true);
     setPublishSuccess(null);
+    setTrendNotice(null);
     setGenerationStage('research');
 
     try {
@@ -103,6 +107,7 @@ export function AiTrendContentStudio({
       setEditSummary(res.summary);
       setEditContent(res.content);
       setEditCategory('Custom Software');
+      if (res.notice) setTrendNotice(res.notice);
     } catch (err) {
       setTrendError(err instanceof Error ? err.message : 'Article generation failed.');
     } finally {
@@ -129,8 +134,7 @@ export function AiTrendContentStudio({
         author_role: editAuthorRole,
         author_bio:
           'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.',
-        cover_image:
-          'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=1200&q=80',
+        cover_image: '/src/assets/images/cloud_infra_architecture_1794645172181.jpg',
         cover_alt: editTitle,
         meta_title: `${editTitle} | GitStack Insights`,
         meta_description: editSummary.slice(0, 155),
@@ -222,6 +226,11 @@ export function AiTrendContentStudio({
         {trendError && (
           <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-800">
             {trendError}
+          </div>
+        )}
+        {trendNotice && !trendError && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-900">
+            {trendNotice}
           </div>
         )}
       </div>

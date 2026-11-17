@@ -1,4 +1,9 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import {
+  formatGeminiFallbackReason,
+  isGeminiQuotaCoolingDown,
+  markGeminiQuotaCooldownIfNeeded
+} from './geminiResilience.ts';
 import { resolveIntegrationSecret } from './vault.ts';
 
 export interface AuditCheckItem {
@@ -146,7 +151,7 @@ export async function auditPageAdSense(
     }
   }
 
-  const gemini = await getGeminiClient(userToken);
+  const gemini = isGeminiQuotaCoolingDown() ? null : await getGeminiClient(userToken);
   const nowIso = new Date().toISOString();
 
   // 2. Multimodal Gemini Inspection
@@ -245,7 +250,8 @@ Return a strictly valid JSON object matching this schema:
         };
       }
     } catch (err) {
-      console.error('[auditPageAdSense] Gemini analysis error:', err);
+      markGeminiQuotaCooldownIfNeeded(err);
+      console.info('[auditPageAdSense] Fallback active:', formatGeminiFallbackReason(err));
     }
   }
 

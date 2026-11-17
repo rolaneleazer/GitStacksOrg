@@ -1,4 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
+import {
+  formatGeminiFallbackReason,
+  isGeminiQuotaCoolingDown,
+  markGeminiQuotaCooldownIfNeeded
+} from './geminiResilience.ts';
 import { resolveIntegrationSecret } from './vault.ts';
 
 export interface TrendingTopicItem {
@@ -23,7 +28,16 @@ export interface GeneratedArticleDraft {
   policyBadge: 'AdSense Policy Safe' | 'Needs Human Attribution';
   policyNotes: string[];
   sources: { title: string; url: string }[];
+  notice?: string;
 }
+
+const trendCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    result: { topics: TrendingTopicItem[]; niche: string; country: string; notice?: string };
+  }
+>();
 
 async function getGeminiClient(userToken?: string): Promise<GoogleGenAI | null> {
   const apiKey = await resolveIntegrationSecret('gemini', userToken);
@@ -45,12 +59,24 @@ export async function discoverTrendingTopics(
     keywords?: string;
   },
   userToken?: string
-): Promise<{ topics: TrendingTopicItem[]; niche: string; country: string }> {
+): Promise<{ topics: TrendingTopicItem[]; niche: string; country: string; notice?: string }> {
   const niche = payload.niche.trim() || 'Enterprise Software Engineering & Cloud Infrastructure';
   const country = payload.country?.trim() || 'Global';
   const keywords = payload.keywords?.trim() || '';
 
-  const gemini = await getGeminiClient(userToken);
+  const cacheKey = `${niche.toLowerCase()}|${country.toLowerCase()}|${keywords.toLowerCase()}`;
+  const cached = trendCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
+  }
+
+  let fallbackNotice: string | undefined;
+  const gemini = isGeminiQuotaCoolingDown() ? null : await getGeminiClient(userToken);
+
+  if (isGeminiQuotaCoolingDown()) {
+    fallbackNotice =
+      'Gemini API quota cooldown active — showing curated high-opportunity 2026 engineering trends.';
+  }
 
   if (gemini) {
     try {
@@ -111,17 +137,30 @@ Return a strictly valid JSON array of exactly 6 trending topic objects matching 
               ? item.sources
               : groundedSources.slice(0, 2)
         }));
-        return { topics: enriched, niche, country };
+        const liveResult = { topics: enriched, niche, country };
+        trendCache.set(cacheKey, {
+          expiresAt: Date.now() + 10 * 60 * 1000,
+          result: liveResult
+        });
+        return liveResult;
       }
     } catch (err) {
-      console.warn('[discoverTrendingTopics] Gemini search grounding note:', err);
+      markGeminiQuotaCooldownIfNeeded(err);
+      fallbackNotice = formatGeminiFallbackReason(err);
+      console.info('[discoverTrendingTopics] Fallback active:', fallbackNotice);
     }
   }
 
   // High-value realistic trending topics fallback
-  return {
+  const fallbackResult: {
+    topics: TrendingTopicItem[];
+    niche: string;
+    country: string;
+    notice?: string;
+  } = {
     niche,
     country,
+    notice: fallbackNotice,
     topics: [
       {
         id: 'trend-1',
@@ -227,6 +266,7 @@ Return a strictly valid JSON array of exactly 6 trending topic objects matching 
       }
     ]
   };
+  return fallbackResult;
 }
 
 export async function generateAdSenseSafeArticle(
@@ -243,7 +283,13 @@ export async function generateAdSenseSafeArticle(
   const country = payload.country || 'Global';
   const sources = payload.sources || [];
 
-  const gemini = await getGeminiClient(userToken);
+  let draftNotice: string | undefined;
+  const gemini = isGeminiQuotaCoolingDown() ? null : await getGeminiClient(userToken);
+
+  if (isGeminiQuotaCoolingDown()) {
+    draftNotice =
+      'Gemini API quota cooldown active — generated structured AdSense-safe architecture draft.';
+  }
 
   if (gemini) {
     try {
@@ -308,7 +354,9 @@ Return a strictly valid JSON object:
         return parsed;
       }
     } catch (err) {
-      console.warn('[generateAdSenseSafeArticle] Gemini generation error:', err);
+      markGeminiQuotaCooldownIfNeeded(err);
+      draftNotice = formatGeminiFallbackReason(err);
+      console.info('[generateAdSenseSafeArticle] Fallback active:', draftNotice);
     }
   }
 
@@ -411,6 +459,7 @@ Utilize the built-in Infrastructure Monitor to track Vercel CPU, event loop lag,
     sources: sources.length > 0 ? sources : [
       { title: 'GitStack Technical Architecture Insights', url: 'https://git-stack.org/insights' },
       { title: 'Google Search Central Helpful Content Standards', url: 'https://developers.google.com/search' }
-    ]
+    ],
+    notice: draftNotice
   };
 }

@@ -878,6 +878,7 @@ export const api = {
       }>;
       niche: string;
       country: string;
+      notice?: string;
     }>('/api/discover-trends', {
       method: 'POST',
       body: JSON.stringify(payload)
@@ -902,6 +903,7 @@ export const api = {
       policyBadge: 'AdSense Policy Safe' | 'Needs Human Attribution';
       policyNotes: string[];
       sources: { title: string; url: string }[];
+      notice?: string;
     }>('/api/generate-article', {
       method: 'POST',
       body: JSON.stringify(payload)

@@ -42,6 +42,7 @@ import { AgentsWorkspace } from '../components/backoffice/AgentsWorkspace.tsx';
 import { AiSearchVisibilityPanel } from '../components/backoffice/AiSearchVisibilityPanel.tsx';
 import { AiTrendContentStudio } from '../components/backoffice/AiTrendContentStudio.tsx';
 import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.tsx';
+import type { DateRangeSelection } from '../components/backoffice/AnalyticsSharedSections.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { BuyMeACoffeeHubPanel } from '../components/backoffice/BuyMeACoffeeHubPanel.tsx';
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
@@ -274,7 +275,11 @@ export function StudioPage({
   const [agentTasks, setAgentTasks] = useState<AgentTask[]>([]);
   const [pageContents, setPageContents] = useState<PageContentConfig[]>([]);
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
-  const [analyticsDays, setAnalyticsDays] = useState<7 | 14 | 30>(14);
+  const [analyticsRange, setAnalyticsRange] = useState<DateRangeSelection>(() => {
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 13 * 86400_000).toISOString().slice(0, 10);
+    return { preset: '14d', startDate: start, endDate: end };
+  });
   const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
 
   const [teamDirectory, setTeamDirectory] = useState<DirectoryUser[]>([]);
@@ -310,7 +315,7 @@ export function StudioPage({
   }, []);
 
   const loadWorkspaceData = useCallback(
-    async (daysWindow: 7 | 14 | 30 = analyticsDays, roleOverride?: UserRole) => {
+    async (targetRange: DateRangeSelection = analyticsRange, roleOverride?: UserRole) => {
       const effectiveRole = roleOverride || currentUserRole;
       setLoadingWorkspace(true);
       try {
@@ -345,7 +350,11 @@ export function StudioPage({
           api.listWorkflows(),
           api.listRoutingRules(),
           effectiveRole === 'super_admin' || effectiveRole === 'editor'
-            ? api.getAnalyticsSummary(daysWindow)
+            ? api.getAnalyticsSummary({
+                preset: targetRange.preset,
+                startDate: targetRange.startDate,
+                endDate: targetRange.endDate
+              })
             : Promise.resolve({ summary: null }),
           effectiveRole === 'super_admin'
             ? api.listUsers()
@@ -374,7 +383,7 @@ export function StudioPage({
         setLoadingWorkspace(false);
       }
     },
-    [analyticsDays, currentUserRole, onSettingsChanged]
+    [analyticsRange, currentUserRole, onSettingsChanged]
   );
 
   useEffect(() => {
@@ -397,7 +406,7 @@ export function StudioPage({
           setActiveTab((prev) =>
             ROLE_TABS[res.editor!.role].includes(prev) ? prev : ROLE_TABS[res.editor!.role][0]
           );
-          loadWorkspaceData(14, res.editor.role);
+          loadWorkspaceData(analyticsRange, res.editor.role);
         }
       })
       .catch(() => setAuthenticated(false))
@@ -448,7 +457,7 @@ export function StudioPage({
       setSupabaseTablesReady(res.supabaseTablesReady);
       setSupabaseAutomationMode(res.supabaseAutomationMode || 'manual');
       setActiveTab(ROLE_TABS[res.editor.role][0]);
-      await loadWorkspaceData(analyticsDays, res.editor.role);
+      await loadWorkspaceData(analyticsRange, res.editor.role);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Sign in failed.');
     } finally {
@@ -521,7 +530,7 @@ export function StudioPage({
             ? 'Article published! Sitemap, llms.txt, and JSON-LD endpoints updated.'
             : 'Draft saved.'
       });
-      await loadWorkspaceData(analyticsDays);
+      await loadWorkspaceData(analyticsRange);
       onArticlesChanged();
     } catch (err) {
       setPostMessage({
@@ -537,7 +546,7 @@ export function StudioPage({
     try {
       await api.deletePost(id);
       if (draft.id === id) setDraft(createEmptyDraft());
-      await loadWorkspaceData(analyticsDays);
+      await loadWorkspaceData(analyticsRange);
       onArticlesChanged();
     } catch (err) {
       setPostMessage({
@@ -607,9 +616,22 @@ export function StudioPage({
     }
   };
 
-  const handleChangeAnalyticsDays = async (nextDays: 7 | 14 | 30) => {
-    setAnalyticsDays(nextDays);
-    const res = await api.getAnalyticsSummary(nextDays);
+  const handleChangeAnalyticsRange = async (nextRange: DateRangeSelection) => {
+    setAnalyticsRange(nextRange);
+    const res = await api.getAnalyticsSummary({
+      preset: nextRange.preset,
+      startDate: nextRange.startDate,
+      endDate: nextRange.endDate
+    });
+    setAnalyticsSummary(res.summary);
+  };
+
+  const handleRefreshAnalyticsSummary = async () => {
+    const res = await api.getAnalyticsSummary({
+      preset: analyticsRange.preset,
+      startDate: analyticsRange.startDate,
+      endDate: analyticsRange.endDate
+    });
     setAnalyticsSummary(res.summary);
   };
 
@@ -1249,7 +1271,7 @@ export function StudioPage({
               agents={agents}
               tasks={agentTasks}
               loading={loadingWorkspace}
-              onRefresh={() => loadWorkspaceData(analyticsDays)}
+              onRefresh={() => loadWorkspaceData(analyticsRange)}
               onJumpToSection={handleJumpToSection}
               onCreateTask={handleCreateAgentTask}
               onToggleTask={handleToggleAgentTask}
@@ -1382,8 +1404,9 @@ export function StudioPage({
               key={adSenseForm.updated_at || 'ga4'}
               settings={adSenseForm}
               summary={analyticsSummary}
-              days={analyticsDays}
-              onChangeDays={handleChangeAnalyticsDays}
+              range={analyticsRange}
+              onChangeRange={handleChangeAnalyticsRange}
+              onRefreshSummary={handleRefreshAnalyticsSummary}
               onSaveGa4Settings={handleSaveGa4Settings}
             />
           )}
@@ -1415,7 +1438,7 @@ export function StudioPage({
               currentUserRole={currentUserRole}
               onPagesBoosted={() => {
                 onPagesChanged();
-                loadWorkspaceData(analyticsDays);
+                loadWorkspaceData(analyticsRange);
               }}
             />
           )}
@@ -1503,7 +1526,7 @@ export function StudioPage({
               {articlesSubView === 'trend_studio' ? (
                 <AiTrendContentStudio
                   onPostPublished={() => {
-                    loadWorkspaceData(analyticsDays);
+                    loadWorkspaceData(analyticsRange);
                     onArticlesChanged();
                   }}
                   onNavigateToInsights={() => onNavigate('/insights')}
@@ -2400,7 +2423,7 @@ export function StudioPage({
                             setSupabaseTablesReady(res.supabaseTablesReady);
                             setSeedMessage(res.message);
                             if (res.executed) {
-                              await loadWorkspaceData(analyticsDays);
+                              await loadWorkspaceData(analyticsRange);
                               onArticlesChanged();
                               onPagesChanged();
                             }
@@ -2455,7 +2478,7 @@ export function StudioPage({
                             setSeedMessage(
                               `Synced ${res.seededPosts} starter guides to Supabase.`
                             );
-                            await loadWorkspaceData(analyticsDays);
+                            await loadWorkspaceData(analyticsRange);
                             onArticlesChanged();
                           } catch (err) {
                             setSeedMessage(

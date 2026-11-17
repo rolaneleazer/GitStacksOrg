@@ -10,9 +10,19 @@ import {
   composeDailyAgentDigest,
   DEFAULT_AGENT_OFFICE_PROFILES
 } from '../shared/agentOfficeDefaults.ts';
+import { resolveDateRangeBounds } from '../shared/dateRanges.ts';
 import { validatePageContentForAdSense } from '../shared/pageDefaults.ts';
 import { evaluateArticleQuality, slugify } from '../shared/qualityGate.ts';
 import { DEFAULT_BRANDING, normalizeHexColor } from '../shared/themePresets.ts';
+import {
+  classifyAcquisitionChannel,
+  discoverGa4PropertiesWithToken,
+  fetchGa4FullReport,
+  GA4_READONLY_SCOPE,
+  isServiceAccountJsonString,
+  mintGoogleAccessTokenFromServiceAccount,
+  resolveEdgeGeoFromRequest
+} from './googleAnalyticsService.ts';
 import type {
   AdSenseSettings,
   AgentAvatarIcon,
@@ -2272,15 +2282,54 @@ export async function createApp(): Promise<Express> {
         'comment_submitted'
       ];
       const safeType = event_type && allowed.includes(event_type) ? event_type : 'pageview';
+      const safeMeta: Record<string, string> = {};
+      if (meta && typeof meta === 'object') {
+        for (const [k, v] of Object.entries(meta)) {
+          if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+            safeMeta[k.slice(0, 60)] = String(v).slice(0, 240);
+          }
+        }
+      }
+
+      const geo = resolveEdgeGeoFromRequest(req, safeMeta.timezone);
+      const safeReferrer = (referrer || 'direct').slice(0, 180);
+      const channelGroup = classifyAcquisitionChannel(safeReferrer, pagePath);
+      const enrichedMeta: Record<string, string> = {
+        ...safeMeta,
+        country: safeMeta.country || geo.country,
+        country_code: safeMeta.country_code || geo.countryCode,
+        city: safeMeta.city || geo.city,
+        channel_group: safeMeta.channel_group || channelGroup
+      };
+
+      const safeSessionId = (session_id || '').slice(0, 80);
       await recordAnalyticsEvent({
         id: `evt-${crypto.randomUUID().slice(0, 8)}`,
         event_type: safeType,
         path: pagePath.slice(0, 180),
-        referrer: (referrer || 'direct').slice(0, 180),
-        session_id: (session_id || '').slice(0, 80),
-        meta: meta || {},
+        referrer: safeReferrer,
+        session_id: safeSessionId,
+        meta: enrichedMeta,
         created_at: new Date().toISOString()
       });
+
+      if (safeSessionId) {
+        recordVisitorPresence({
+          session_id: safeSessionId,
+          visitor_id: enrichedMeta.visitor_id || safeSessionId,
+          path: pagePath.slice(0, 140),
+          page_title: enrichedMeta.page_title || '',
+          device_type: enrichedMeta.device_type,
+          referrer: safeReferrer,
+          channel_group: enrichedMeta.channel_group,
+          country: enrichedMeta.country,
+          country_code: enrichedMeta.country_code,
+          city: enrichedMeta.city,
+          is_returning: enrichedMeta.is_returning === 'true',
+          engagement_seconds: Number(enrichedMeta.engagement_seconds || 0) || 0
+        });
+      }
+
       res.status(201).json({ ok: true });
     } catch {
       res.status(200).json({ ok: false });
@@ -2289,13 +2338,277 @@ export async function createApp(): Promise<Express> {
 
   app.get('/api/analytics/summary', requireRoles('super_admin', 'editor'), async (req, res) => {
     try {
-      const days = Number(req.query.days || 14);
-      const summary = await getAnalyticsSummary(days, getBearerToken(req));
+      const preset = typeof req.query.preset === 'string' ? req.query.preset : undefined;
+      const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+      const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+      const days = req.query.days ? Number(req.query.days) : undefined;
+      const summary = await getAnalyticsSummary(
+        { preset, startDate, endDate, days },
+        getBearerToken(req)
+      );
       res.json({ summary });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load analytics' });
     }
   });
+
+  app.get('/api/analytics/realtime', requireRoles('super_admin', 'editor'), async (req, res) => {
+    try {
+      const token = getBearerToken(req);
+      const summary = await getAnalyticsSummary({ preset: 'realtime' }, token);
+      let ga4Realtime = null;
+      let ga4Note: string | undefined;
+
+      try {
+        const gaConfig = await resolveIntegrationConfig('google_analytics', token);
+        const propId = gaConfig.configMeta?.ga4_property_id;
+        if (gaConfig.secret && propId && isServiceAccountJsonString(gaConfig.secret)) {
+          const { accessToken } = await mintGoogleAccessTokenFromServiceAccount(gaConfig.secret, [
+            GA4_READONLY_SCOPE
+          ]);
+          const full = await fetchGa4FullReport({
+            accessToken,
+            propertyOption: {
+              property_id: propId,
+              property_name: gaConfig.configMeta.ga4_property_name || 'GA4 Property',
+              account_name: gaConfig.configMeta.ga4_account_name || 'Service Account',
+              measurement_id: gaConfig.configMeta.ga4_measurement_id || '',
+              stream_uri: gaConfig.configMeta.ga4_stream_uri || 'https://git-stack.org'
+            },
+            range: resolveDateRangeBounds('realtime'),
+            authMode: 'service_account',
+            firstPartySummary: summary
+          });
+          ga4Realtime = full.realtime || null;
+        }
+      } catch (err) {
+        ga4Note = err instanceof Error ? err.message : 'GA4 realtime sync unavailable';
+      }
+
+      res.json({
+        realtime: summary.realtime,
+        ga4Realtime,
+        ga4Note
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to load realtime telemetry'
+      });
+    }
+  });
+
+  app.post(
+    '/api/admin/analytics/service-account',
+    requireRoles('super_admin', 'editor'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const body = (req.body || {}) as {
+          serviceAccountJson?: string;
+          propertyId?: string;
+          measurementId?: string;
+        };
+        const currentConfig = await resolveIntegrationConfig('google_analytics', token);
+        const rawJson = (body.serviceAccountJson || '').trim() || currentConfig.secret;
+        if (!rawJson || !isServiceAccountJsonString(rawJson)) {
+          return res.status(400).json({
+            error:
+              'Paste a valid Google Cloud Service Account JSON key containing client_email and private_key.'
+          });
+        }
+
+        const { accessToken, serviceAccount } = await mintGoogleAccessTokenFromServiceAccount(
+          rawJson,
+          [GA4_READONLY_SCOPE]
+        );
+        const properties = await discoverGa4PropertiesWithToken(
+          accessToken,
+          serviceAccount.client_email
+        );
+
+        let requestedPropId = (body.propertyId || '').trim();
+        if (requestedPropId && !requestedPropId.startsWith('properties/')) {
+          requestedPropId = `properties/${requestedPropId.replace(/^properties\//i, '')}`;
+        }
+
+        let selectedProp =
+          properties.find((p) => p.property_id === requestedPropId) ||
+          properties.find((p) => p.property_id === currentConfig.configMeta.ga4_property_id) ||
+          properties[0];
+
+        if (!selectedProp && requestedPropId) {
+          selectedProp = {
+            property_id: requestedPropId,
+            property_name: `GA4 ${requestedPropId}`,
+            account_name: serviceAccount.project_id || 'Google Analytics',
+            measurement_id: (body.measurementId || '').trim().toUpperCase(),
+            stream_uri: 'https://git-stack.org'
+          };
+        }
+
+        const firstParty = await getAnalyticsSummary({ preset: '14d' }, token);
+        let liveReport = null;
+        let reportNote: string | undefined;
+        if (selectedProp) {
+          try {
+            liveReport = await fetchGa4FullReport({
+              accessToken,
+              propertyOption: selectedProp,
+              range: resolveDateRangeBounds('14d'),
+              authMode: 'service_account',
+              firstPartySummary: firstParty
+            });
+          } catch (err) {
+            reportNote =
+              err instanceof Error ? err.message : 'Unable to pull GA4 report yet.';
+          }
+        }
+
+        const saved = await saveAndVerifyIntegration(
+          'google_analytics',
+          {
+            secret: rawJson,
+            configMeta: {
+              ga4_auth_mode: 'service_account',
+              ga4_service_account_email: serviceAccount.client_email.toLowerCase(),
+              ga4_account_email: serviceAccount.client_email.toLowerCase(),
+              ga4_account_name: `Service Account (${serviceAccount.project_id || 'GCP'})`,
+              ga4_property_id: selectedProp?.property_id || '',
+              ga4_property_name: selectedProp?.property_name || '',
+              ga4_measurement_id:
+                (body.measurementId || selectedProp?.measurement_id || '').trim().toUpperCase(),
+              ga4_stream_uri: selectedProp?.stream_uri || 'https://git-stack.org',
+              ga4_properties_list: properties,
+              ga4_cached_report: liveReport
+            }
+          },
+          req.editor!.email,
+          token
+        );
+
+        res.json({
+          integration: saved.integration,
+          testResult: saved.testResult,
+          properties,
+          report: liveReport,
+          reportNote
+        });
+      } catch (err) {
+        res.status(400).json({
+          error:
+            err instanceof Error ? err.message : 'Failed to connect Google Service Account.'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/analytics/sync',
+    requireRoles('super_admin', 'editor'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const body = (req.body || {}) as {
+          preset?: string;
+          startDate?: string;
+          endDate?: string;
+          days?: number;
+          propertyId?: string;
+          accessToken?: string;
+        };
+
+        const range = resolveDateRangeBounds(
+          body.preset,
+          body.startDate,
+          body.endDate,
+          body.days
+        );
+        const firstParty = await getAnalyticsSummary(
+          { preset: range.preset, startDate: range.startDate, endDate: range.endDate },
+          token
+        );
+
+        const gaConfig = await resolveIntegrationConfig('google_analytics', token);
+        const propsList = gaConfig.configMeta?.ga4_properties_list || [];
+        let requestedPropId = (body.propertyId || gaConfig.configMeta?.ga4_property_id || '').trim();
+        if (requestedPropId && !requestedPropId.startsWith('properties/')) {
+          requestedPropId = `properties/${requestedPropId}`;
+        }
+
+        const chosenProp =
+          propsList.find((p) => p.property_id === requestedPropId) ||
+          (requestedPropId
+            ? {
+                property_id: requestedPropId,
+                property_name: gaConfig.configMeta?.ga4_property_name || requestedPropId,
+                account_name: gaConfig.configMeta?.ga4_account_name || 'Google Analytics',
+                measurement_id: gaConfig.configMeta?.ga4_measurement_id || '',
+                stream_uri: gaConfig.configMeta?.ga4_stream_uri || 'https://git-stack.org'
+              }
+            : propsList[0]);
+
+        let accessToken = (body.accessToken || '').trim();
+        let authMode: 'service_account' | 'oauth' = 'oauth';
+
+        if (gaConfig.secret && isServiceAccountJsonString(gaConfig.secret)) {
+          const minted = await mintGoogleAccessTokenFromServiceAccount(gaConfig.secret, [
+            GA4_READONLY_SCOPE
+          ]);
+          accessToken = minted.accessToken;
+          authMode = 'service_account';
+        } else if (!accessToken && gaConfig.secret && gaConfig.secret !== 'oauth_session') {
+          accessToken = gaConfig.secret;
+        }
+
+        if (!accessToken || !chosenProp?.property_id) {
+          return res.json({
+            summary: firstParty,
+            report: null,
+            integration: null,
+            note: !chosenProp?.property_id
+              ? 'First-party telemetry synced. Select or enter a GA4 Property ID with a Service Account JSON key to merge GA4 historical rows.'
+              : 'First-party telemetry synced. Add a Google Service Account JSON key for automated server-side GA4 Data API sync.'
+          });
+        }
+
+        const report = await fetchGa4FullReport({
+          accessToken,
+          propertyOption: chosenProp,
+          range,
+          authMode,
+          firstPartySummary: firstParty
+        });
+
+        const saved = await saveAndVerifyIntegration(
+          'google_analytics',
+          {
+            configMeta: {
+              ...gaConfig.configMeta,
+              ga4_auth_mode: authMode,
+              ga4_property_id: chosenProp.property_id,
+              ga4_property_name: chosenProp.property_name,
+              ga4_measurement_id: chosenProp.measurement_id,
+              ga4_stream_uri: chosenProp.stream_uri,
+              ga4_cached_report: report
+            },
+            skipVerify: true
+          },
+          req.editor!.email,
+          token
+        );
+
+        res.json({
+          summary: firstParty,
+          report,
+          integration: saved.integration
+        });
+      } catch (err) {
+        res.status(400).json({
+          error: err instanceof Error ? err.message : 'Failed to sync GA4 report'
+        });
+      }
+    }
+  );
 
   // --- Team Profile, User Access Management, Per-User Workflows & Routing ---
 
@@ -4109,20 +4422,46 @@ export async function createApp(): Promise<Express> {
 
   app.post('/api/public/presence', (req, res) => {
     try {
-      const { session_id, path: pagePath, device_type, referrer } = (req.body || {}) as {
+      const {
+        session_id,
+        visitor_id,
+        path: pagePath,
+        page_title,
+        device_type,
+        referrer,
+        timezone,
+        is_returning,
+        engagement_seconds
+      } = (req.body || {}) as {
         session_id?: string;
+        visitor_id?: string;
         path?: string;
+        page_title?: string;
         device_type?: string;
         referrer?: string;
+        timezone?: string;
+        is_returning?: boolean;
+        engagement_seconds?: number;
       };
       if (!session_id || !session_id.trim()) {
         return res.status(400).json({ error: 'session_id required' });
       }
+      const geo = resolveEdgeGeoFromRequest(req, timezone);
+      const safeRef = (referrer || 'direct').slice(0, 180);
+      const channel = classifyAcquisitionChannel(safeRef, pagePath || '/');
       const visitors = recordVisitorPresence({
         session_id: session_id.trim(),
+        visitor_id: visitor_id?.trim(),
         path: pagePath || '/',
+        page_title,
         device_type,
-        referrer
+        referrer: safeRef,
+        channel_group: channel,
+        country: geo.country,
+        country_code: geo.countryCode,
+        city: geo.city,
+        is_returning,
+        engagement_seconds
       });
       res.json({ ok: true, activeVisitorsCount: visitors.length });
     } catch {
@@ -5162,10 +5501,33 @@ export async function createApp(): Promise<Express> {
         const cat: GtmEventCategory = validCats.includes(item.event_category as GtmEventCategory)
           ? (item.event_category as GtmEventCategory)
           : 'custom';
-        const safePayload =
+        const rawPayload =
           item.payload && typeof item.payload === 'object' && !Array.isArray(item.payload)
             ? item.payload
             : {};
+        const tzHint =
+          typeof rawPayload.timezone === 'string' ? rawPayload.timezone : undefined;
+        const geo = resolveEdgeGeoFromRequest(req, tzHint);
+        const refStr =
+          typeof rawPayload.referrer === 'string' && rawPayload.referrer.trim()
+            ? rawPayload.referrer.trim()
+            : 'direct';
+        const channelGroup =
+          typeof rawPayload.channel_group === 'string' && rawPayload.channel_group.trim()
+            ? rawPayload.channel_group.trim()
+            : classifyAcquisitionChannel(refStr, String(item.page_path || '/'));
+
+        const safePayload: Record<string, unknown> = {
+          ...rawPayload,
+          country: rawPayload.country || geo.country,
+          country_code: rawPayload.country_code || geo.countryCode,
+          city: rawPayload.city || geo.city,
+          channel_group: channelGroup,
+          referrer: refStr
+        };
+        const pagePathStr = String(item.page_path || '/').slice(0, 240);
+        const sessionIdStr = String(item.session_id || '').slice(0, 80);
+
         normalized.push({
           id: `gtm-${crypto.randomUUID()}`,
           container_id: /^GTM-[A-Z0-9]{4,12}$/.test(defaultContainer)
@@ -5173,9 +5535,9 @@ export async function createApp(): Promise<Express> {
             : 'GTM-MFP3W7MS',
           event_name: evtName,
           event_category: cat,
-          page_path: String(item.page_path || '/').slice(0, 240),
+          page_path: pagePathStr,
           page_title: String(item.page_title || '').slice(0, 160),
-          session_id: String(item.session_id || '').slice(0, 80),
+          session_id: sessionIdStr,
           is_conversion: Boolean(item.is_conversion) || cat === 'conversion',
           payload: safePayload,
           user_agent: ua,
@@ -5184,6 +5546,32 @@ export async function createApp(): Promise<Express> {
               ? new Date(item.created_at).toISOString()
               : new Date().toISOString()
         });
+
+        if (
+          sessionIdStr &&
+          !pagePathStr.startsWith('/obama') &&
+          !pagePathStr.startsWith('/studio')
+        ) {
+          recordVisitorPresence({
+            session_id: sessionIdStr,
+            visitor_id:
+              typeof safePayload.visitor_id === 'string'
+                ? safePayload.visitor_id
+                : sessionIdStr,
+            path: pagePathStr,
+            page_title: String(item.page_title || ''),
+            device_type:
+              typeof safePayload.device_type === 'string' ? safePayload.device_type : undefined,
+            referrer: refStr,
+            channel_group: channelGroup,
+            country: String(safePayload.country),
+            country_code: String(safePayload.country_code),
+            city: String(safePayload.city),
+            is_returning:
+              safePayload.is_returning === true || safePayload.is_returning === 'true',
+            engagement_seconds: Number(safePayload.engagement_seconds || 0) || 0
+          });
+        }
       }
 
       const accepted = await recordGtmEventBatch(normalized);
@@ -5200,9 +5588,14 @@ export async function createApp(): Promise<Express> {
     requireRoles('super_admin', 'editor'),
     async (req, res) => {
       try {
-        const rawDays = Number(req.query.days || 7);
-        const days = [1, 7, 14, 30].includes(rawDays) ? rawDays : 7;
-        const dashboard = await getGtmDashboardSummary(days, getBearerToken(req));
+        const preset = typeof req.query.preset === 'string' ? req.query.preset : undefined;
+        const startDate = typeof req.query.startDate === 'string' ? req.query.startDate : undefined;
+        const endDate = typeof req.query.endDate === 'string' ? req.query.endDate : undefined;
+        const rawDays = req.query.days ? Number(req.query.days) : undefined;
+        const dashboard = await getGtmDashboardSummary(
+          { preset, startDate, endDate, days: rawDays },
+          getBearerToken(req)
+        );
         res.json(dashboard);
       } catch (err) {
         res.status(500).json({
@@ -5293,9 +5686,13 @@ export async function createApp(): Promise<Express> {
           event_category?: GtmEventCategory;
           is_conversion?: boolean;
           days?: number;
+          preset?: string;
+          startDate?: string;
+          endDate?: string;
         };
         const evtName = String(body.event_name || 'gtm_diagnostic_ping').trim().slice(0, 80);
         const cat: GtmEventCategory = body.event_category || 'custom';
+        const geo = resolveEdgeGeoFromRequest(req);
         const evt: GtmEventLog = {
           id: `gtm-${crypto.randomUUID()}`,
           container_id: containerId,
@@ -5309,14 +5706,25 @@ export async function createApp(): Promise<Express> {
             event: evtName,
             container_id: containerId,
             triggered_by: req.editor?.email || 'studio_admin',
+            country: geo.country,
+            country_code: geo.countryCode,
+            city: geo.city,
+            channel_group: 'Direct',
             verified_at: new Date().toISOString()
           },
           user_agent: String(req.headers['user-agent'] || '').slice(0, 220),
           created_at: new Date().toISOString()
         };
         await recordGtmEventBatch([evt]);
-        const days = [1, 7, 14, 30].includes(Number(body.days)) ? Number(body.days) : 7;
-        const dashboard = await getGtmDashboardSummary(days, token);
+        const dashboard = await getGtmDashboardSummary(
+          {
+            preset: body.preset,
+            startDate: body.startDate,
+            endDate: body.endDate,
+            days: body.days ?? 7
+          },
+          token
+        );
         res.json({ ok: true, event: evt, dashboard });
       } catch (err) {
         res.status(500).json({

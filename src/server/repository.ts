@@ -81,11 +81,24 @@ import type {
   CyberSecurityFinding,
   CyberSecurityReport,
   CyberSecuritySettings,
+  AnalyticsCohortRow,
+  AnalyticsChannelItem,
+  AnalyticsDevicePlatformItem,
+  AnalyticsEventCountItem,
+  AnalyticsGeoCityItem,
+  AnalyticsGeoCountryItem,
+  AnalyticsLandingPageItem,
+  AnalyticsPageTitleItem,
+  LiveWebsiteVisitor,
+  RealtimeActiveVisitorSummary,
   GtmDashboardResponse,
   GtmEventCategory,
   GtmEventLog,
   GtmSettingsConfig
 } from '../shared/types.ts';
+import { resolveDateRangeBounds, type ResolvedDateRange } from '../shared/dateRanges.ts';
+import { classifyAcquisitionChannel } from './googleAnalyticsService.ts';
+import { listLiveVisitors, listRecent30mVisitors } from './realtime.ts';
 
 // Explicit Supabase column projection lists to prevent SELECT * over-fetching on Supabase Free Tier
 const USER_PROFILE_COLUMNS = 'user_id, email, full_name, role, job_title, bio, avatar_url, phone, timezone, status, created_at, updated_at';
@@ -1601,55 +1614,755 @@ export async function recordAnalyticsEvent(evt: AnalyticsEvent): Promise<void> {
   await writeLocalDb(db);
 }
 
-export async function getAnalyticsSummary(
-  days = 14,
-  userToken?: string
-): Promise<AnalyticsSummary> {
-  const safeDays = [7, 14, 30].includes(days) ? days : 14;
-  const cutoffMs = Date.now() - safeDays * 24 * 60 * 60 * 1000;
-  let events: AnalyticsEvent[] = [];
+export interface AnalyticsRangeInput {
+  preset?: string;
+  startDate?: string;
+  endDate?: string;
+  days?: number;
+}
 
+interface NormalizedTelemetryRecord {
+  id: string;
+  eventName: string;
+  isConversion: boolean;
+  isPageview: boolean;
+  path: string;
+  pageTitle: string;
+  landingPage: string;
+  referrer: string;
+  channel: string;
+  country: string;
+  countryCode: string;
+  city: string;
+  device: 'desktop' | 'tablet' | 'mobile';
+  sessionId: string;
+  visitorId: string;
+  isReturning: boolean;
+  engagementSeconds: number;
+  createdAt: string;
+  createdMs: number;
+}
+
+function buildTimeBuckets(
+  range: ResolvedDateRange
+): Array<{ key: string; label: string }> {
+  if (range.bucketMode === 'minute') {
+    const out: Array<{ key: string; label: string }> = [];
+    const now = Date.now();
+    for (let m = 29; m >= 0; m--) {
+      const t = new Date(now - m * 60_000);
+      const key = t.toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm
+      out.push({ key, label: m === 0 ? 'Now' : `-${m}m` });
+    }
+    return out;
+  }
+
+  if (range.bucketMode === 'hour') {
+    const out: Array<{ key: string; label: string }> = [];
+    for (let h = 0; h < 24; h++) {
+      const hh = String(h).padStart(2, '0');
+      out.push({ key: `${range.startDate}T${hh}`, label: `${hh}:00` });
+    }
+    return out;
+  }
+
+  if (range.bucketMode === 'month') {
+    const out: Array<{ key: string; label: string }> = [];
+    const s = new Date(`${range.startDate}T00:00:00.000Z`);
+    const e = new Date(`${range.endDate}T00:00:00.000Z`);
+    let cur = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), 1));
+    const endMonth = new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), 1));
+    while (cur <= endMonth && out.length < 24) {
+      const key = cur.toISOString().slice(0, 7);
+      const label = cur.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+      out.push({ key, label });
+      cur = new Date(Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth() + 1, 1));
+    }
+    return out;
+  }
+
+  const out: Array<{ key: string; label: string }> = [];
+  const start = new Date(`${range.startDate}T00:00:00.000Z`);
+  const end = new Date(`${range.endDate}T00:00:00.000Z`);
+  let cur = start;
+  while (cur <= end && out.length < 95) {
+    const key = cur.toISOString().slice(0, 10);
+    out.push({ key, label: key });
+    cur = new Date(cur.getTime() + 24 * 60 * 60 * 1000);
+  }
+  return out;
+}
+
+function getRecordBucketKey(iso: string, mode: ResolvedDateRange['bucketMode']): string {
+  if (!iso) return '';
+  if (mode === 'minute') return iso.slice(0, 16);
+  if (mode === 'hour') return iso.slice(0, 13);
+  if (mode === 'month') return iso.slice(0, 7);
+  return iso.slice(0, 10);
+}
+
+function buildCohortMatrix(records: NormalizedTelemetryRecord[]): AnalyticsCohortRow[] {
+  const now = Date.now();
+  const sixWeeksAgo = now - 42 * 24 * 60 * 60 * 1000;
+  const recent = records.filter((r) => r.createdMs >= sixWeeksAgo);
+  if (recent.length === 0) return [];
+
+  const getWeekStartMs = (ms: number) => {
+    const d = new Date(ms);
+    const utcDay = d.getUTCDay();
+    const startOfDay = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    return startOfDay - utcDay * 24 * 60 * 60 * 1000;
+  };
+
+  const visitorFirstWeek = new Map<string, number>();
+  const visitorWeeks = new Map<string, Set<number>>();
+
+  for (const rec of recent) {
+    const vid = rec.visitorId || rec.sessionId;
+    if (!vid) continue;
+    const wk = getWeekStartMs(rec.createdMs);
+    const prevFirst = visitorFirstWeek.get(vid);
+    if (prevFirst === undefined || wk < prevFirst) {
+      visitorFirstWeek.set(vid, wk);
+    }
+    let set = visitorWeeks.get(vid);
+    if (!set) {
+      set = new Set<number>();
+      visitorWeeks.set(vid, set);
+    }
+    set.add(wk);
+  }
+
+  const currentWeekMs = getWeekStartMs(now);
+  const rows: AnalyticsCohortRow[] = [];
+
+  for (let wIdx = 5; wIdx >= 0; wIdx--) {
+    const cohortWeekMs = currentWeekMs - wIdx * 7 * 24 * 60 * 60 * 1000;
+    const cohortEndMs = cohortWeekMs + 6 * 24 * 60 * 60 * 1000;
+    const cohortVisitors: string[] = [];
+    for (const [vid, firstWk] of visitorFirstWeek.entries()) {
+      if (firstWk === cohortWeekMs) cohortVisitors.push(vid);
+    }
+    const startLabel = new Date(cohortWeekMs).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC'
+    });
+    const endLabel = new Date(cohortEndMs).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC'
+    });
+
+    const maxFutureWeeks = 5 - wIdx;
+    const retentionByWeek: number[] = [];
+    for (let offset = 0; offset <= maxFutureWeeks; offset++) {
+      if (offset === 0) {
+        retentionByWeek.push(cohortVisitors.length > 0 ? 100 : 0);
+      } else if (cohortVisitors.length === 0) {
+        retentionByWeek.push(0);
+      } else {
+        const targetWk = cohortWeekMs + offset * 7 * 24 * 60 * 60 * 1000;
+        let activeCount = 0;
+        for (const vid of cohortVisitors) {
+          if (visitorWeeks.get(vid)?.has(targetWk)) activeCount += 1;
+        }
+        retentionByWeek.push(Math.round((activeCount / cohortVisitors.length) * 100));
+      }
+    }
+
+    rows.push({
+      cohortLabel: `${startLabel} – ${endLabel}`,
+      cohortSize: cohortVisitors.length,
+      retentionByWeek
+    });
+  }
+
+  return rows;
+}
+
+function buildRealtimeSummary(
+  recentRecords: NormalizedTelemetryRecord[]
+): RealtimeActiveVisitorSummary {
+  const now = Date.now();
+  const cutoff30m = now - 30 * 60 * 1000;
+  const cutoff5m = now - 5 * 60 * 1000;
+  const liveMemory = listRecent30mVisitors();
+  const veryLiveMemory = listLiveVisitors();
+
+  const records30m = recentRecords.filter((r) => r.createdMs >= cutoff30m);
+  const visitors30m = new Set<string>();
+  const visitors5m = new Set<string>();
+
+  const countryVisitors = new Map<string, { code: string; visitors: Set<string> }>();
+  const cityVisitors = new Map<string, { country: string; visitors: Set<string> }>();
+  const channelVisitors = new Map<string, Set<string>>();
+  const pageStats = new Map<string, { title: string; visitors: Set<string>; views: number }>();
+
+  for (const r of records30m) {
+    const vid = r.visitorId || r.sessionId;
+    if (vid) {
+      visitors30m.add(vid);
+      if (r.createdMs >= cutoff5m) visitors5m.add(vid);
+    }
+
+    const cKey = r.country || 'Local Development';
+    const cEntry = countryVisitors.get(cKey) || { code: r.countryCode || '', visitors: new Set() };
+    if (vid) cEntry.visitors.add(vid);
+    countryVisitors.set(cKey, cEntry);
+
+    const cityKey = `${r.city || 'Localhost'}|${cKey}`;
+    const cityEntry = cityVisitors.get(cityKey) || { country: cKey, visitors: new Set() };
+    if (vid) cityEntry.visitors.add(vid);
+    cityVisitors.set(cityKey, cityEntry);
+
+    const chEntry = channelVisitors.get(r.channel) || new Set<string>();
+    if (vid) chEntry.add(vid);
+    channelVisitors.set(r.channel, chEntry);
+
+    const pg = pageStats.get(r.path) || {
+      title: r.pageTitle || r.path,
+      visitors: new Set<string>(),
+      views: 0
+    };
+    if (vid) pg.visitors.add(vid);
+    if (r.isPageview) pg.views += 1;
+    pageStats.set(r.path, pg);
+  }
+
+  for (const v of liveMemory) {
+    const vid = v.visitor_id || v.session_id;
+    const seenMs = Date.parse(v.last_seen_at) || now;
+    if (vid) {
+      visitors30m.add(vid);
+      if (seenMs >= cutoff5m) visitors5m.add(vid);
+    }
+    const cKey = v.country || 'Local Development';
+    const cEntry = countryVisitors.get(cKey) || { code: v.country_code || '', visitors: new Set() };
+    if (vid) cEntry.visitors.add(vid);
+    countryVisitors.set(cKey, cEntry);
+
+    const cityKey = `${v.city || 'Localhost'}|${cKey}`;
+    const cityEntry = cityVisitors.get(cityKey) || { country: cKey, visitors: new Set() };
+    if (vid) cityEntry.visitors.add(vid);
+    cityVisitors.set(cityKey, cityEntry);
+  }
+
+  const perMinute: RealtimeActiveVisitorSummary['perMinute'] = [];
+  for (let m = 29; m >= 0; m--) {
+    const bucketStart = now - (m + 1) * 60_000;
+    const bucketEnd = now - m * 60_000;
+    const activeSet = new Set<string>();
+    let evts = 0;
+    for (const r of records30m) {
+      if (r.createdMs >= bucketStart && r.createdMs <= bucketEnd) {
+        evts += 1;
+        if (r.visitorId || r.sessionId) activeSet.add(r.visitorId || r.sessionId);
+      }
+    }
+    for (const v of liveMemory) {
+      const seenMs = Date.parse(v.last_seen_at) || 0;
+      if (seenMs >= bucketStart && seenMs <= bucketEnd) {
+        activeSet.add(v.visitor_id || v.session_id);
+      }
+    }
+    perMinute.push({
+      minuteLabel: m === 0 ? 'Now' : `-${m}m`,
+      activeUsers: activeSet.size,
+      events: evts
+    });
+  }
+
+  const recentBySession = new Map<string, LiveWebsiteVisitor>();
+  for (const v of [...veryLiveMemory, ...liveMemory]) {
+    recentBySession.set(v.session_id, v);
+  }
+  for (let i = records30m.length - 1; i >= 0; i--) {
+    const r = records30m[i];
+    if (recentBySession.has(r.sessionId)) continue;
+    recentBySession.set(r.sessionId, {
+      session_id: r.sessionId,
+      visitor_id: r.visitorId,
+      current_path: r.path,
+      page_title: r.pageTitle,
+      zone_id: 'lounge',
+      zone_label: r.path,
+      device_type: r.device,
+      referrer: r.referrer,
+      channel_group: r.channel,
+      country: r.country,
+      country_code: r.countryCode,
+      city: r.city,
+      is_returning: r.isReturning,
+      engagement_seconds: r.engagementSeconds,
+      started_at: r.createdAt,
+      last_seen_at: r.createdAt,
+      target_x: 0,
+      target_y: 0
+    });
+    if (recentBySession.size >= 25) break;
+  }
+
+  return {
+    activeUsers30m: visitors30m.size,
+    activeUsers5m: Math.max(visitors5m.size, veryLiveMemory.length),
+    events30m: records30m.length,
+    conversions30m: records30m.filter((r) => r.isConversion).length,
+    perMinute,
+    activePages: Array.from(pageStats.entries())
+      .map(([p, val]) => ({
+        path: p,
+        title: val.title,
+        activeUsers: val.visitors.size,
+        views: Math.max(val.views, val.visitors.size)
+      }))
+      .sort((a, b) => b.activeUsers - a.activeUsers || b.views - a.views)
+      .slice(0, 10),
+    activeCountries: Array.from(countryVisitors.entries())
+      .map(([country, val]) => ({
+        country,
+        countryCode: val.code,
+        activeUsers: val.visitors.size
+      }))
+      .sort((a, b) => b.activeUsers - a.activeUsers)
+      .slice(0, 10),
+    activeCities: Array.from(cityVisitors.entries())
+      .map(([key, val]) => ({
+        city: key.split('|')[0],
+        country: val.country,
+        activeUsers: val.visitors.size
+      }))
+      .sort((a, b) => b.activeUsers - a.activeUsers)
+      .slice(0, 10),
+    activeChannels: Array.from(channelVisitors.entries())
+      .map(([channel, set]) => ({
+        channel,
+        activeUsers: set.size
+      }))
+      .sort((a, b) => b.activeUsers - a.activeUsers),
+    recentVisitors: Array.from(recentBySession.values())
+      .sort((a, b) => Date.parse(b.last_seen_at) - Date.parse(a.last_seen_at))
+      .slice(0, 20),
+    sampledAt: new Date(now).toISOString()
+  };
+}
+
+function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
+  const visitorSet = new Set<string>();
+  const newVisitorSet = new Set<string>();
+  const returningVisitorSet = new Set<string>();
+
+  const countryMap = new Map<
+    string,
+    { countryCode: string; visitors: Set<string>; sessions: Set<string> }
+  >();
+  const cityMap = new Map<string, { country: string; visitors: Set<string> }>();
+  const channelMap = new Map<
+    string,
+    { visitors: Set<string>; newVisitors: Set<string>; sessions: Set<string> }
+  >();
+  const pageTitleMap = new Map<string, { title: string; path: string; views: number; visitors: Set<string> }>();
+  const eventCountMap = new Map<string, { count: number; conversions: number }>();
+  const deviceMap = new Map<string, Set<string>>();
+
+  interface SessionAccum {
+    sessionId: string;
+    visitorId: string;
+    landingPage: string;
+    isNew: boolean;
+    firstMs: number;
+    lastMs: number;
+    maxEngagementSec: number;
+    keyEvents: number;
+  }
+  const sessionMap = new Map<string, SessionAccum>();
+
+  for (const r of records) {
+    const vid = r.visitorId || r.sessionId;
+    const sid = r.sessionId || vid;
+    if (vid) {
+      visitorSet.add(vid);
+      if (r.isReturning) returningVisitorSet.add(vid);
+      else newVisitorSet.add(vid);
+    }
+
+    const cKey = r.country || 'Local Development';
+    const cEntry = countryMap.get(cKey) || {
+      countryCode: r.countryCode || '',
+      visitors: new Set<string>(),
+      sessions: new Set<string>()
+    };
+    if (vid) cEntry.visitors.add(vid);
+    if (sid) cEntry.sessions.add(sid);
+    countryMap.set(cKey, cEntry);
+
+    const cityKey = `${r.city || 'Localhost'}|${cKey}`;
+    const cityEntry = cityMap.get(cityKey) || { country: cKey, visitors: new Set<string>() };
+    if (vid) cityEntry.visitors.add(vid);
+    cityMap.set(cityKey, cityEntry);
+
+    const chEntry = channelMap.get(r.channel) || {
+      visitors: new Set<string>(),
+      newVisitors: new Set<string>(),
+      sessions: new Set<string>()
+    };
+    if (vid) {
+      chEntry.visitors.add(vid);
+      if (!r.isReturning) chEntry.newVisitors.add(vid);
+    }
+    if (sid) chEntry.sessions.add(sid);
+    channelMap.set(r.channel, chEntry);
+
+    if (r.isPageview) {
+      const ptKey = `${r.pageTitle || r.path}|${r.path}`;
+      const ptEntry = pageTitleMap.get(ptKey) || {
+        title: r.pageTitle || r.path,
+        path: r.path,
+        views: 0,
+        visitors: new Set<string>()
+      };
+      ptEntry.views += 1;
+      if (vid) ptEntry.visitors.add(vid);
+      pageTitleMap.set(ptKey, ptEntry);
+    }
+
+    const evEntry = eventCountMap.get(r.eventName) || { count: 0, conversions: 0 };
+    evEntry.count += 1;
+    if (r.isConversion) evEntry.conversions += 1;
+    eventCountMap.set(r.eventName, evEntry);
+
+    const devLabel =
+      r.device === 'mobile' ? 'Mobile' : r.device === 'tablet' ? 'Tablet' : 'Desktop';
+    const devSet = deviceMap.get(devLabel) || new Set<string>();
+    if (vid) devSet.add(vid);
+    deviceMap.set(devLabel, devSet);
+
+    if (sid) {
+      const existing = sessionMap.get(sid);
+      if (!existing) {
+        sessionMap.set(sid, {
+          sessionId: sid,
+          visitorId: vid,
+          landingPage: r.landingPage || r.path || '/',
+          isNew: !r.isReturning,
+          firstMs: r.createdMs,
+          lastMs: r.createdMs,
+          maxEngagementSec: r.engagementSeconds,
+          keyEvents: r.isConversion ? 1 : 0
+        });
+      } else {
+        if (r.createdMs < existing.firstMs) {
+          existing.firstMs = r.createdMs;
+          if (!r.landingPage && r.path) existing.landingPage = r.path;
+        }
+        if (r.createdMs > existing.lastMs) existing.lastMs = r.createdMs;
+        if (r.engagementSeconds > existing.maxEngagementSec) {
+          existing.maxEngagementSec = r.engagementSeconds;
+        }
+        if (r.isConversion) existing.keyEvents += 1;
+      }
+    }
+  }
+
+  // Average engagement across sessions
+  let totalSessEngagement = 0;
+  let sessWithEngagement = 0;
+
+  const lpMap = new Map<
+    string,
+    {
+      sessions: number;
+      visitors: Set<string>;
+      newVisitors: Set<string>;
+      engagementSum: number;
+      keyEvents: number;
+      convertingSessions: number;
+    }
+  >();
+
+  for (const s of sessionMap.values()) {
+    const derivedSec =
+      s.maxEngagementSec > 0
+        ? s.maxEngagementSec
+        : Math.min(600, Math.max(0, Math.round((s.lastMs - s.firstMs) / 1000)));
+    if (derivedSec > 0) {
+      totalSessEngagement += derivedSec;
+      sessWithEngagement += 1;
+    }
+
+    const lpEntry = lpMap.get(s.landingPage) || {
+      sessions: 0,
+      visitors: new Set<string>(),
+      newVisitors: new Set<string>(),
+      engagementSum: 0,
+      keyEvents: 0,
+      convertingSessions: 0
+    };
+    lpEntry.sessions += 1;
+    if (s.visitorId) {
+      lpEntry.visitors.add(s.visitorId);
+      if (s.isNew) lpEntry.newVisitors.add(s.visitorId);
+    }
+    lpEntry.engagementSum += derivedSec;
+    lpEntry.keyEvents += s.keyEvents;
+    if (s.keyEvents > 0) lpEntry.convertingSessions += 1;
+    lpMap.set(s.landingPage, lpEntry);
+  }
+
+  const avgEngagementSeconds =
+    sessWithEngagement > 0 ? Math.round(totalSessEngagement / sessWithEngagement) : 0;
+
+  const totalDevUsers =
+    Array.from(deviceMap.values()).reduce((sum, s) => sum + s.size, 0) || 1;
+
+  // Ensure returning visitors aren't double-counted in newUsers if a visitor returned in window
+  for (const rv of returningVisitorSet) {
+    newVisitorSet.delete(rv);
+  }
+
+  return {
+    activeUsers: visitorSet.size,
+    newUsers: newVisitorSet.size,
+    returningUsers: returningVisitorSet.size,
+    avgEngagementSeconds,
+    countries: Array.from(countryMap.entries())
+      .map(([country, val]): AnalyticsGeoCountryItem => ({
+        country,
+        countryCode: val.countryCode,
+        activeUsers: val.visitors.size,
+        sessions: val.sessions.size
+      }))
+      .sort((a, b) => b.activeUsers - a.activeUsers)
+      .slice(0, 15),
+    cities: Array.from(cityMap.entries())
+      .map(([key, val]): AnalyticsGeoCityItem => ({
+        city: key.split('|')[0],
+        country: val.country,
+        activeUsers: val.visitors.size
+      }))
+      .sort((a, b) => b.activeUsers - a.activeUsers)
+      .slice(0, 15),
+    channels: Array.from(channelMap.entries())
+      .map(([channel, val]): AnalyticsChannelItem => ({
+        channel,
+        activeUsers: val.visitors.size,
+        newUsers: val.newVisitors.size,
+        sessions: val.sessions.size
+      }))
+      .sort((a, b) => b.activeUsers - a.activeUsers || b.sessions - a.sessions),
+    landingPages: Array.from(lpMap.entries())
+      .map(([landingPage, val]): AnalyticsLandingPageItem => ({
+        landingPage,
+        sessions: val.sessions,
+        activeUsers: val.visitors.size,
+        newUsers: val.newVisitors.size,
+        avgEngagementSeconds: val.sessions > 0 ? Math.round(val.engagementSum / val.sessions) : 0,
+        keyEvents: val.keyEvents,
+        keyEventRatePercent:
+          val.sessions > 0 ? Number(((val.convertingSessions / val.sessions) * 100).toFixed(1)) : 0
+      }))
+      .sort((a, b) => b.sessions - a.sessions)
+      .slice(0, 20),
+    pageTitles: Array.from(pageTitleMap.values())
+      .map((val): AnalyticsPageTitleItem => ({
+        title: val.title,
+        path: val.path,
+        views: val.views,
+        activeUsers: val.visitors.size
+      }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 12),
+    eventCounts: Array.from(eventCountMap.entries())
+      .map(([eventName, val]): AnalyticsEventCountItem => ({
+        eventName,
+        count: val.count,
+        conversions: val.conversions
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12),
+    devices: Array.from(deviceMap.entries())
+      .map(([device, set]): AnalyticsDevicePlatformItem => ({
+        device,
+        platform: 'Web',
+        users: set.size,
+        percent: Number(((set.size / totalDevUsers) * 100).toFixed(1))
+      }))
+      .sort((a, b) => b.users - a.users)
+  };
+}
+
+function normalizeAnalyticsEvent(evt: AnalyticsEvent): NormalizedTelemetryRecord {
+  const meta = (evt.meta || {}) as Record<string, string>;
+  const deviceRaw = (meta.device_type || '').toLowerCase();
+  const device: 'desktop' | 'tablet' | 'mobile' =
+    deviceRaw === 'mobile' ? 'mobile' : deviceRaw === 'tablet' ? 'tablet' : 'desktop';
+  const referrer = evt.referrer?.trim() || 'direct';
+  const channel =
+    meta.channel_group?.trim() || classifyAcquisitionChannel(referrer, evt.path);
+  return {
+    id: evt.id,
+    eventName: evt.event_type === 'pageview' ? 'page_view' : evt.event_type,
+    isConversion: evt.event_type === 'inquiry_submitted' || evt.event_type === 'newsletter_subscribed',
+    isPageview: evt.event_type === 'pageview',
+    path: evt.path || '/',
+    pageTitle: meta.page_title || evt.path || 'GitStack',
+    landingPage: meta.landing_page || evt.path || '/',
+    referrer,
+    channel,
+    country: meta.country || 'Local Development',
+    countryCode: meta.country_code || 'LOCAL',
+    city: meta.city || 'Localhost',
+    device,
+    sessionId: evt.session_id || '',
+    visitorId: meta.visitor_id || evt.session_id || '',
+    isReturning: meta.is_returning === 'true',
+    engagementSeconds: Math.max(0, Number(meta.engagement_seconds || 0) || 0),
+    createdAt: evt.created_at,
+    createdMs: Date.parse(evt.created_at) || 0
+  };
+}
+
+function normalizeGtmEvent(evt: GtmEventLog): NormalizedTelemetryRecord {
+  const payload = (evt.payload || {}) as Record<string, unknown>;
+  const str = (key: string) => (typeof payload[key] === 'string' ? String(payload[key]) : '');
+  const deviceRaw = str('device_type').toLowerCase();
+  const device: 'desktop' | 'tablet' | 'mobile' =
+    deviceRaw === 'mobile' ? 'mobile' : deviceRaw === 'tablet' ? 'tablet' : 'desktop';
+  const referrer = str('referrer') || 'direct';
+  const channel =
+    str('channel_group') || classifyAcquisitionChannel(referrer, evt.page_path);
+  return {
+    id: evt.id,
+    eventName: evt.event_name,
+    isConversion: Boolean(evt.is_conversion),
+    isPageview: evt.event_category === 'pageview' || evt.event_name === 'page_view',
+    path: evt.page_path || '/',
+    pageTitle: evt.page_title || str('page_title') || evt.page_path || 'GitStack',
+    landingPage: str('landing_page') || evt.page_path || '/',
+    referrer,
+    channel,
+    country: str('country') || 'Local Development',
+    countryCode: str('country_code') || 'LOCAL',
+    city: str('city') || 'Localhost',
+    device,
+    sessionId: evt.session_id || '',
+    visitorId: str('visitor_id') || evt.session_id || '',
+    isReturning: payload.is_returning === true || payload.is_returning === 'true',
+    engagementSeconds: Math.max(0, Number(payload.engagement_seconds || 0) || 0),
+    createdAt: evt.created_at,
+    createdMs: Date.parse(evt.created_at) || 0
+  };
+}
+
+async function fetchAnalyticsEventsBetween(
+  sinceIso: string,
+  untilIso?: string,
+  userToken?: string
+): Promise<AnalyticsEvent[]> {
   if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient(userToken)
+    let query = getSupabaseClient(userToken)
       .from('analytics_events')
       .select(ANALYTICS_EVENT_COLUMNS)
-      .gte('created_at', new Date(cutoffMs).toISOString())
-      .order('created_at', { ascending: true })
-      .limit(500);
-    if (!error && Array.isArray(data)) {
-      events = data as AnalyticsEvent[];
-    } else if (error && !isFallbackableDbError(error)) {
-      throw new Error(error.message);
-    } else {
-      const db = await readLocalDb();
-      events = (db.analytics_events || []).filter(
-        (e) => new Date(e.created_at).getTime() >= cutoffMs
-      );
+      .gte('created_at', sinceIso);
+    if (untilIso) {
+      query = query.lte('created_at', untilIso);
     }
-  } else {
-    const db = await readLocalDb();
-    events = (db.analytics_events || []).filter(
-      (e) => new Date(e.created_at).getTime() >= cutoffMs
-    );
+    const { data, error } = await query.order('created_at', { ascending: true }).limit(4000);
+    if (!error && Array.isArray(data)) {
+      return data as AnalyticsEvent[];
+    }
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
   }
 
-  const pageviews = events.filter((e) => e.event_type === 'pageview');
-  const inquiryConversions = events.filter((e) => e.event_type === 'inquiry_submitted').length;
-  const newsletterConversions = events.filter((e) => e.event_type === 'newsletter_subscribed').length;
-  const commentSubmissions = events.filter((e) => e.event_type === 'comment_submitted').length;
-  const sessions = new Set(events.map((e) => e.session_id).filter(Boolean));
+  const db = await readLocalDb();
+  const sinceMs = Date.parse(sinceIso) || 0;
+  const untilMs = untilIso ? Date.parse(untilIso) || Date.now() : Date.now() + 60_000;
+  return (db.analytics_events || []).filter((e) => {
+    const ms = Date.parse(e.created_at) || 0;
+    return ms >= sinceMs && ms <= untilMs;
+  });
+}
 
-  const dayMap = new Map<string, { pageviews: number; conversions: number }>();
-  for (let i = safeDays - 1; i >= 0; i--) {
-    const key = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    dayMap.set(key, { pageviews: 0, conversions: 0 });
+export async function getAnalyticsSummary(
+  rangeInput: number | AnalyticsRangeInput = 14,
+  userToken?: string
+): Promise<AnalyticsSummary> {
+  const inputObj: AnalyticsRangeInput =
+    typeof rangeInput === 'number' ? { days: rangeInput } : rangeInput || {};
+  const range = resolveDateRangeBounds(
+    inputObj.preset,
+    inputObj.startDate,
+    inputObj.endDate,
+    inputObj.days
+  );
+
+  // Fetch both range events and 42-day cohort/realtime horizon in parallel when needed
+  const sixWeeksAgoIso = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
+  const fetchSinceIso = range.startIso < sixWeeksAgoIso ? range.startIso : sixWeeksAgoIso;
+
+  const allFetched = await fetchAnalyticsEventsBetween(fetchSinceIso, undefined, userToken);
+  const startMs = Date.parse(range.startIso);
+  const endMs = Date.parse(range.endIso);
+
+  const normalizedAll = allFetched.map(normalizeAnalyticsEvent);
+  const eventsInRange = allFetched.filter((e) => {
+    const ms = Date.parse(e.created_at) || 0;
+    return ms >= startMs && ms <= endMs;
+  });
+  const recordsInRange = normalizedAll.filter((r) => r.createdMs >= startMs && r.createdMs <= endMs);
+
+  const pageviews = eventsInRange.filter((e) => e.event_type === 'pageview');
+  const inquiryConversions = eventsInRange.filter((e) => e.event_type === 'inquiry_submitted').length;
+  const newsletterConversions = eventsInRange.filter(
+    (e) => e.event_type === 'newsletter_subscribed'
+  ).length;
+  const commentSubmissions = eventsInRange.filter(
+    (e) => e.event_type === 'comment_submitted'
+  ).length;
+  const sessions = new Set(eventsInRange.map((e) => e.session_id).filter(Boolean));
+
+  const buckets = buildTimeBuckets(range);
+  const bucketMap = new Map<
+    string,
+    {
+      label: string;
+      pageviews: number;
+      conversions: number;
+      visitors: Set<string>;
+      newVisitors: Set<string>;
+      engSum: number;
+      engCount: number;
+    }
+  >();
+  for (const b of buckets) {
+    bucketMap.set(b.key, {
+      label: b.label,
+      pageviews: 0,
+      conversions: 0,
+      visitors: new Set<string>(),
+      newVisitors: new Set<string>(),
+      engSum: 0,
+      engCount: 0
+    });
   }
-  for (const evt of events) {
-    const dayKey = evt.created_at.slice(0, 10);
-    const bucket = dayMap.get(dayKey);
+
+  for (const r of recordsInRange) {
+    const bKey = getRecordBucketKey(r.createdAt, range.bucketMode);
+    const bucket = bucketMap.get(bKey);
     if (!bucket) continue;
-    if (evt.event_type === 'pageview') bucket.pageviews += 1;
+    if (r.isPageview) bucket.pageviews += 1;
     else bucket.conversions += 1;
+    const vid = r.visitorId || r.sessionId;
+    if (vid) {
+      bucket.visitors.add(vid);
+      if (!r.isReturning) bucket.newVisitors.add(vid);
+    }
+    if (r.engagementSeconds > 0) {
+      bucket.engSum += r.engagementSeconds;
+      bucket.engCount += 1;
+    }
   }
 
   const pageCount = new Map<string, number>();
@@ -1665,18 +2378,35 @@ export async function getAnalyticsSummary(
   const conversionRatePercent =
     uniqueSessions > 0 ? Number(((totalConversions / uniqueSessions) * 100).toFixed(1)) : 0;
 
+  const breakdowns = aggregateBreakdowns(recordsInRange);
+  const cohorts = buildCohortMatrix(normalizedAll);
+  const realtime = buildRealtimeSummary(normalizedAll);
+
   return {
-    days: safeDays,
+    days: range.daysSpan,
+    preset: range.preset,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    bucketMode: range.bucketMode,
     totalPageviews: pageviews.length,
     uniqueSessions,
+    activeUsers: breakdowns.activeUsers,
+    newUsers: breakdowns.newUsers,
+    returningUsers: breakdowns.returningUsers,
+    avgEngagementSeconds: breakdowns.avgEngagementSeconds,
+    qualifiedLeads: totalConversions,
     inquiryConversions,
     newsletterConversions,
     commentSubmissions,
     conversionRatePercent,
-    dailySeries: Array.from(dayMap.entries()).map(([date, val]) => ({
-      date,
+    dailySeries: Array.from(bucketMap.entries()).map(([key, val]) => ({
+      date: key,
+      label: val.label,
       pageviews: val.pageviews,
-      conversions: val.conversions
+      conversions: val.conversions,
+      activeUsers: val.visitors.size,
+      newUsers: val.newVisitors.size,
+      avgEngagementSeconds: val.engCount > 0 ? Math.round(val.engSum / val.engCount) : 0
     })),
     topPages: Array.from(pageCount.entries())
       .map(([p, views]) => ({ path: p, views }))
@@ -1685,7 +2415,16 @@ export async function getAnalyticsSummary(
     topReferrers: Array.from(refCount.entries())
       .map(([referrer, visits]) => ({ referrer, visits }))
       .sort((a, b) => b.visits - a.visits)
-      .slice(0, 6)
+      .slice(0, 6),
+    countries: breakdowns.countries,
+    cities: breakdowns.cities,
+    channels: breakdowns.channels,
+    landingPages: breakdowns.landingPages,
+    pageTitles: breakdowns.pageTitles,
+    eventCounts: breakdowns.eventCounts,
+    devices: breakdowns.devices,
+    cohorts,
+    realtime
   };
 }
 
@@ -4212,19 +4951,17 @@ export async function recordGtmEventBatch(events: GtmEventLog[]): Promise<number
   return events.length;
 }
 
-export async function listGtmEventLogs(
-  days = 7,
-  limit = 400,
+export async function listGtmEventLogsSince(
+  sinceIso: string,
+  limit = 1500,
   userToken?: string
 ): Promise<GtmEventLog[]> {
-  const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-
   if (isSupabaseConfigured()) {
     try {
       const { data, error } = await getSupabaseClient(userToken)
         .from('gtm_event_logs')
         .select(GTM_EVENT_LOG_COLUMNS)
-        .gte('created_at', cutoffIso)
+        .gte('created_at', sinceIso)
         .order('created_at', { ascending: false })
         .limit(limit);
       if (!error && Array.isArray(data)) {
@@ -4239,21 +4976,41 @@ export async function listGtmEventLogs(
   }
 
   const db = await readLocalDb();
-  const cutoffMs = new Date(cutoffIso).getTime();
+  const cutoffMs = Date.parse(sinceIso) || 0;
   return (db.gtm_event_logs || [])
-    .filter((e) => new Date(e.created_at).getTime() >= cutoffMs)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .filter((e) => (Date.parse(e.created_at) || 0) >= cutoffMs)
+    .sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))
     .slice(0, limit);
 }
 
-export async function getGtmDashboardSummary(
+export async function listGtmEventLogs(
   days = 7,
+  limit = 400,
+  userToken?: string
+): Promise<GtmEventLog[]> {
+  const cutoffIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  return listGtmEventLogsSince(cutoffIso, limit, userToken);
+}
+
+export async function getGtmDashboardSummary(
+  rangeInput: number | AnalyticsRangeInput = 7,
   userToken?: string
 ): Promise<GtmDashboardResponse> {
-  const safeDays = [1, 7, 14, 30].includes(days) ? days : 7;
-  const [siteSettings, events] = await Promise.all([
+  const inputObj: AnalyticsRangeInput =
+    typeof rangeInput === 'number' ? { days: rangeInput } : rangeInput || {};
+  const range = resolveDateRangeBounds(
+    inputObj.preset,
+    inputObj.startDate,
+    inputObj.endDate,
+    inputObj.days ?? 7
+  );
+
+  const sixWeeksAgoIso = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
+  const fetchSinceIso = range.startIso < sixWeeksAgoIso ? range.startIso : sixWeeksAgoIso;
+
+  const [siteSettings, allFetched] = await Promise.all([
     getAdSenseSettings(userToken),
-    listGtmEventLogs(safeDays, 600, userToken)
+    listGtmEventLogsSince(fetchSinceIso, 3000, userToken)
   ]);
 
   const gtmSettings: GtmSettingsConfig = {
@@ -4270,6 +5027,16 @@ export async function getGtmDashboardSummary(
       siteSettings.gtm_exclude_admin !== undefined ? Boolean(siteSettings.gtm_exclude_admin) : true
   };
 
+  const startMs = Date.parse(range.startIso);
+  const endMs = Date.parse(range.endIso);
+  const normalizedAll = allFetched.map(normalizeGtmEvent);
+
+  const events = allFetched.filter((e) => {
+    const ms = Date.parse(e.created_at) || 0;
+    return ms >= startMs && ms <= endMs;
+  });
+  const recordsInRange = normalizedAll.filter((r) => r.createdMs >= startMs && r.createdMs <= endMs);
+
   const conversionEvents = events.filter((e) => e.is_conversion).length;
   const pageViews = events.filter((e) => e.event_category === 'pageview').length;
   const uniqueSessions = new Set(events.map((e) => e.session_id).filter(Boolean)).size;
@@ -4277,35 +5044,40 @@ export async function getGtmDashboardSummary(
   const conversionRatePercent =
     uniqueSessions > 0 ? Number(((conversionEvents / uniqueSessions) * 100).toFixed(1)) : 0;
 
-  const bucketMap = new Map<string, { events: number; conversions: number; pageViews: number }>();
-  if (safeDays === 1) {
-    for (let i = 23; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 3600 * 1000);
-      const label = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
-      bucketMap.set(label, { events: 0, conversions: 0, pageViews: 0 });
+  const buckets = buildTimeBuckets(range);
+  const bucketMap = new Map<
+    string,
+    {
+      label: string;
+      events: number;
+      conversions: number;
+      pageViews: number;
+      visitors: Set<string>;
+      newVisitors: Set<string>;
     }
-    for (const evt of events) {
-      const d = new Date(evt.created_at);
-      if (Number.isNaN(d.getTime())) continue;
-      const label = `${String(d.getUTCHours()).padStart(2, '0')}:00`;
-      const bucket = bucketMap.get(label);
-      if (!bucket) continue;
-      bucket.events += 1;
-      if (evt.is_conversion) bucket.conversions += 1;
-      if (evt.event_category === 'pageview') bucket.pageViews += 1;
-    }
-  } else {
-    for (let i = safeDays - 1; i >= 0; i--) {
-      const label = new Date(Date.now() - i * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      bucketMap.set(label, { events: 0, conversions: 0, pageViews: 0 });
-    }
-    for (const evt of events) {
-      const label = (evt.created_at || '').slice(0, 10);
-      const bucket = bucketMap.get(label);
-      if (!bucket) continue;
-      bucket.events += 1;
-      if (evt.is_conversion) bucket.conversions += 1;
-      if (evt.event_category === 'pageview') bucket.pageViews += 1;
+  >();
+  for (const b of buckets) {
+    bucketMap.set(b.key, {
+      label: b.label,
+      events: 0,
+      conversions: 0,
+      pageViews: 0,
+      visitors: new Set<string>(),
+      newVisitors: new Set<string>()
+    });
+  }
+
+  for (const r of recordsInRange) {
+    const bKey = getRecordBucketKey(r.createdAt, range.bucketMode);
+    const bucket = bucketMap.get(bKey);
+    if (!bucket) continue;
+    bucket.events += 1;
+    if (r.isConversion) bucket.conversions += 1;
+    if (r.isPageview) bucket.pageViews += 1;
+    const vid = r.visitorId || r.sessionId;
+    if (vid) {
+      bucket.visitors.add(vid);
+      if (!r.isReturning) bucket.newVisitors.add(vid);
     }
   }
 
@@ -4332,23 +5104,37 @@ export async function getGtmDashboardSummary(
     pageStats.set(pKey, existingPage);
   }
 
+  const breakdowns = aggregateBreakdowns(recordsInRange);
+  const cohorts = buildCohortMatrix(normalizedAll);
+  const realtime = buildRealtimeSummary(normalizedAll);
+
   return {
-    days: safeDays,
+    days: range.daysSpan,
+    preset: range.preset,
+    startDate: range.startDate,
+    endDate: range.endDate,
+    bucketMode: range.bucketMode,
     settings: gtmSettings,
     summary: {
       totalEvents: events.length,
       conversionEvents,
       pageViews,
       uniqueSessions,
+      activeUsers: breakdowns.activeUsers,
+      newUsers: breakdowns.newUsers,
+      returningUsers: breakdowns.returningUsers,
+      avgEngagementSeconds: breakdowns.avgEngagementSeconds,
       uniqueEventNames,
       conversionRatePercent,
       lastEventAt: events[0]?.created_at || null
     },
-    series: Array.from(bucketMap.entries()).map(([label, val]) => ({
-      label,
+    series: Array.from(bucketMap.values()).map((val) => ({
+      label: val.label,
       events: val.events,
       conversions: val.conversions,
-      pageViews: val.pageViews
+      pageViews: val.pageViews,
+      activeUsers: val.visitors.size,
+      newUsers: val.newVisitors.size
     })),
     topEvents: Array.from(eventStats.entries())
       .map(([event_name, val]) => ({
@@ -4367,6 +5153,14 @@ export async function getGtmDashboardSummary(
       }))
       .sort((a, b) => b.events - a.events)
       .slice(0, 10),
+    countries: breakdowns.countries,
+    cities: breakdowns.cities,
+    channels: breakdowns.channels,
+    landingPages: breakdowns.landingPages,
+    pageTitles: breakdowns.pageTitles,
+    devices: breakdowns.devices,
+    cohorts,
+    realtime,
     recentEvents: events.slice(0, 150)
   };
 }

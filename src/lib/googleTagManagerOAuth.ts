@@ -219,7 +219,21 @@ export async function signInWithGoogleTagManagerPopup(preferredPublicId = 'GTM-M
   snapshot: GtmWorkspaceSnapshot | null;
   apiNote?: string;
 }> {
-  const result = await signInWithPopup(auth, gtmProvider);
+  let result;
+  try {
+    result = await signInWithPopup(auth, gtmProvider);
+  } catch (err) {
+    const code = (err as { code?: string })?.code || '';
+    const msg = err instanceof Error ? err.message : String(err);
+    if (code === 'auth/unauthorized-domain' || msg.includes('auth/unauthorized-domain')) {
+      const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+      throw new Error(
+        `Domain "${host}" is not authorized in Firebase Authentication for browser popups. Live first-party dataLayer tracking & Realtime telemetry remain active; to enable GTM Workspace OAuth on "${host}", add "${host}" in Firebase Console -> Authentication -> Settings -> Authorized domains.`
+      );
+    }
+    throw err;
+  }
+
   const credential = GoogleAuthProvider.credentialFromResult(result);
   const token = credential?.accessToken || '';
   if (!token) {

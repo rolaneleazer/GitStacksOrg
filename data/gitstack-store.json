@@ -239,6 +239,12 @@
     "ga4_measurement_id": "",
     "ga4_enabled": false,
     "ga4_track_events": true,
+    "gtm_enabled": true,
+    "gtm_container_id": "GTM-MFP3W7MS",
+    "gtm_track_datalayer": true,
+    "gtm_track_conversions": true,
+    "gtm_respect_consent": false,
+    "gtm_exclude_admin": true,
     "brand_name": "GitStack",
     "brand_logo_url": "",
     "brand_logo_alt": "GitStack logo",
@@ -1153,6 +1159,21 @@
       "session_id": "smoke-1",
       "meta": {},
       "created_at": "2026-11-14T09:39:48.879Z"
+    },
+    {
+      "event_type": "pageview",
+      "path": "/about",
+      "referrer": "https://google.com",
+      "session_id": "vis-unit-1",
+      "meta": {
+        "visitor_id": "uid-unit-1",
+        "country": "Philippines",
+        "country_code": "PH",
+        "city": "Paranaque",
+        "channel_group": "Organic Search",
+        "device_type": "desktop",
+        "engagement_seconds": "14"
+      }
     }
   ],
   "user_profiles": [
@@ -1467,17 +1488,5 @@
   "crm_sync_runs": [],
   "crm_integration_secrets": [],
   "demo_users": [],
-  "inbox_email_logs": [],
-  "product_qa_settings": {
-    "id": "default",
-    "agent_enabled": true,
-    "realtime_alert_on_critical": false,
-    "eod_enabled": true,
-    "eod_hour_utc": 15,
-    "recipient_email": "",
-    "last_eod_sent_date": "2026-11-16",
-    "last_scan_at": "2026-11-17T02:04:16.784+00:00",
-    "updated_at": "2026-11-17T02:04:16.966+00:00",
-    "feature_baselines": {}
-  }
+  "inbox_email_logs": []
 }

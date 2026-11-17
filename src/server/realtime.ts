@@ -7,9 +7,11 @@ interface StoredVisitor extends LiveWebsiteVisitor {
 }
 
 const VISITOR_TTL_MS = 65_000;
+const VISITOR_30M_TTL_MS = 30 * 60_000;
 const ADMIN_ONLINE_TTL_MS = 95_000;
 
 const visitorPresenceMap = new Map<string, StoredVisitor>();
+const recent30mVisitorMap = new Map<string, StoredVisitor>();
 const adminSockets = new Set<WebSocket>();
 const visitorChatSockets = new Map<string, Set<WebSocket>>();
 
@@ -86,25 +88,40 @@ export function mapRouteToOfficeZone(
 }
 
 export function pruneStaleVisitors(): void {
-  const cutoff = Date.now() - VISITOR_TTL_MS;
+  const now = Date.now();
+  const cutoff = now - VISITOR_TTL_MS;
+  const cutoff30m = now - VISITOR_30M_TTL_MS;
   for (const [id, v] of visitorPresenceMap.entries()) {
     if (v.lastSeenMs < cutoff) {
       visitorPresenceMap.delete(id);
+    }
+  }
+  for (const [id, v] of recent30mVisitorMap.entries()) {
+    if (v.lastSeenMs < cutoff30m) {
+      recent30mVisitorMap.delete(id);
     }
   }
 }
 
 export function recordVisitorPresence(input: {
   session_id: string;
+  visitor_id?: string;
   path: string;
+  page_title?: string;
   device_type?: string;
   referrer?: string;
+  channel_group?: string;
+  country?: string;
+  country_code?: string;
+  city?: string;
+  is_returning?: boolean;
+  engagement_seconds?: number;
 }): LiveWebsiteVisitor[] {
   pruneStaleVisitors();
   const cleanId = (input.session_id || '').trim().slice(0, 80);
   if (!cleanId) return listLiveVisitors();
 
-  const existing = visitorPresenceMap.get(cleanId);
+  const existing = visitorPresenceMap.get(cleanId) || recent30mVisitorMap.get(cleanId);
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
   const zone = mapRouteToOfficeZone(input.path, cleanId);
@@ -113,15 +130,27 @@ export function recordVisitorPresence(input: {
       ? 'mobile'
       : input.device_type === 'tablet'
         ? 'tablet'
-        : 'desktop';
+        : existing?.device_type || 'desktop';
 
   const next: StoredVisitor = {
     session_id: cleanId,
+    visitor_id: (input.visitor_id || existing?.visitor_id || cleanId).slice(0, 80),
     current_path: (input.path || '/').slice(0, 140),
+    page_title: (input.page_title || existing?.page_title || '').slice(0, 160),
     zone_id: zone.zone_id,
     zone_label: zone.zone_label,
     device_type: dev,
-    referrer: (input.referrer || existing?.referrer || '').slice(0, 180),
+    referrer: (input.referrer || existing?.referrer || 'direct').slice(0, 180),
+    channel_group: (input.channel_group || existing?.channel_group || 'Direct').slice(0, 60),
+    country: (input.country || existing?.country || 'Local Development').slice(0, 80),
+    country_code: (input.country_code || existing?.country_code || 'LOCAL').slice(0, 12),
+    city: (input.city || existing?.city || 'Localhost').slice(0, 80),
+    is_returning:
+      input.is_returning !== undefined ? Boolean(input.is_returning) : existing?.is_returning,
+    engagement_seconds:
+      input.engagement_seconds !== undefined
+        ? Number(input.engagement_seconds) || 0
+        : existing?.engagement_seconds,
     started_at: existing?.started_at || nowIso,
     last_seen_at: nowIso,
     target_x: zone.target_x,
@@ -129,6 +158,7 @@ export function recordVisitorPresence(input: {
     lastSeenMs: nowMs
   };
   visitorPresenceMap.set(cleanId, next);
+  recent30mVisitorMap.set(cleanId, next);
 
   const list = listLiveVisitors();
   broadcastToAdmins('office:visitors', { visitors: list });
@@ -138,6 +168,13 @@ export function recordVisitorPresence(input: {
 export function listLiveVisitors(): LiveWebsiteVisitor[] {
   pruneStaleVisitors();
   return Array.from(visitorPresenceMap.values())
+    .sort((a, b) => b.lastSeenMs - a.lastSeenMs)
+    .map(({ lastSeenMs: _ignored, ...rest }) => rest);
+}
+
+export function listRecent30mVisitors(): LiveWebsiteVisitor[] {
+  pruneStaleVisitors();
+  return Array.from(recent30mVisitorMap.values())
     .sort((a, b) => b.lastSeenMs - a.lastSeenMs)
     .map(({ lastSeenMs: _ignored, ...rest }) => rest);
 }

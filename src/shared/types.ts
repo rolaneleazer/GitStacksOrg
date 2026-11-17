@@ -305,17 +305,125 @@ export interface AnalyticsEvent {
   created_at: string;
 }
 
+export type AnalyticsDatePreset =
+  | 'realtime'
+  | 'today'
+  | 'yesterday'
+  | '7d'
+  | '14d'
+  | '28d'
+  | 'this_month'
+  | 'last_month'
+  | 'this_year'
+  | 'custom';
+
+export interface AnalyticsGeoCountryItem {
+  country: string;
+  countryCode?: string;
+  activeUsers: number;
+  sessions: number;
+}
+
+export interface AnalyticsGeoCityItem {
+  city: string;
+  country: string;
+  activeUsers: number;
+}
+
+export interface AnalyticsChannelItem {
+  channel: string;
+  activeUsers: number;
+  newUsers: number;
+  sessions: number;
+}
+
+export interface AnalyticsLandingPageItem {
+  landingPage: string;
+  sessions: number;
+  activeUsers: number;
+  newUsers: number;
+  avgEngagementSeconds: number;
+  keyEvents: number;
+  keyEventRatePercent: number;
+}
+
+export interface AnalyticsPageTitleItem {
+  title: string;
+  path: string;
+  views: number;
+  activeUsers: number;
+}
+
+export interface AnalyticsEventCountItem {
+  eventName: string;
+  count: number;
+  conversions: number;
+}
+
+export interface AnalyticsDevicePlatformItem {
+  device: string;
+  platform: string;
+  users: number;
+  percent: number;
+}
+
+export interface AnalyticsCohortRow {
+  cohortLabel: string;
+  cohortSize: number;
+  retentionByWeek: number[]; // Week 0 .. Week 5 percentages
+}
+
+export interface RealtimeActiveVisitorSummary {
+  activeUsers30m: number;
+  activeUsers5m: number;
+  events30m: number;
+  conversions30m: number;
+  perMinute: { minuteLabel: string; activeUsers: number; events: number }[];
+  activePages: { path: string; title: string; activeUsers: number; views: number }[];
+  activeCountries: { country: string; countryCode?: string; activeUsers: number }[];
+  activeCities: { city: string; country: string; activeUsers: number }[];
+  activeChannels: { channel: string; activeUsers: number }[];
+  recentVisitors: LiveWebsiteVisitor[];
+  sampledAt: string;
+}
+
 export interface AnalyticsSummary {
   days: number;
+  preset?: AnalyticsDatePreset;
+  startDate?: string;
+  endDate?: string;
+  bucketMode?: 'minute' | 'hour' | 'day' | 'month';
   totalPageviews: number;
   uniqueSessions: number;
+  activeUsers?: number;
+  newUsers?: number;
+  returningUsers?: number;
+  avgEngagementSeconds?: number;
+  qualifiedLeads?: number;
   inquiryConversions: number;
   newsletterConversions: number;
   commentSubmissions: number;
   conversionRatePercent: number;
-  dailySeries: { date: string; pageviews: number; conversions: number }[];
+  dailySeries: {
+    date: string;
+    label?: string;
+    pageviews: number;
+    conversions: number;
+    activeUsers?: number;
+    newUsers?: number;
+    avgEngagementSeconds?: number;
+  }[];
   topPages: { path: string; views: number }[];
   topReferrers: { referrer: string; visits: number }[];
+  countries?: AnalyticsGeoCountryItem[];
+  cities?: AnalyticsGeoCityItem[];
+  channels?: AnalyticsChannelItem[];
+  landingPages?: AnalyticsLandingPageItem[];
+  pageTitles?: AnalyticsPageTitleItem[];
+  eventCounts?: AnalyticsEventCountItem[];
+  devices?: AnalyticsDevicePlatformItem[];
+  cohorts?: AnalyticsCohortRow[];
+  realtime?: RealtimeActiveVisitorSummary;
 }
 
 // --- Team RBAC, Profiles & Per-User Workflows ---
@@ -804,14 +912,37 @@ export interface Ga4LiveReportSummary {
   property_name: string;
   measurement_id: string;
   days: number;
+  preset?: AnalyticsDatePreset;
+  startDate?: string;
+  endDate?: string;
+  authMode?: 'service_account' | 'oauth' | 'first_party';
   synced_at: string;
   activeUsers: number;
+  newUsers?: number;
+  returningUsers?: number;
   totalSessions: number;
   screenPageViews: number;
   conversions: number;
-  dailySeries: { date: string; pageviews: number; conversions: number; activeUsers?: number }[];
+  avgEngagementSeconds?: number;
+  dailySeries: {
+    date: string;
+    label?: string;
+    pageviews: number;
+    conversions: number;
+    activeUsers?: number;
+    newUsers?: number;
+    avgEngagementSeconds?: number;
+  }[];
   topPages: { path: string; views: number }[];
   topReferrers: { referrer: string; visits: number }[];
+  countries?: AnalyticsGeoCountryItem[];
+  cities?: AnalyticsGeoCityItem[];
+  channels?: AnalyticsChannelItem[];
+  landingPages?: AnalyticsLandingPageItem[];
+  pageTitles?: AnalyticsPageTitleItem[];
+  eventCounts?: AnalyticsEventCountItem[];
+  devices?: AnalyticsDevicePlatformItem[];
+  realtime?: RealtimeActiveVisitorSummary;
 }
 
 export interface IntegrationConfigMeta {
@@ -828,6 +959,8 @@ export interface IntegrationConfigMeta {
   zone_name?: string;
   ga4_account_email?: string;
   ga4_account_name?: string;
+  ga4_auth_mode?: 'service_account' | 'oauth';
+  ga4_service_account_email?: string;
   ga4_property_id?: string;
   ga4_property_name?: string;
   ga4_measurement_id?: string;
@@ -1125,11 +1258,19 @@ export interface CloudflareHistoryAnalysisResponse {
 
 export interface LiveWebsiteVisitor {
   session_id: string;
+  visitor_id?: string;
   current_path: string;
+  page_title?: string;
   zone_id: string;
   zone_label: string;
   device_type: 'desktop' | 'tablet' | 'mobile';
   referrer: string;
+  channel_group?: string;
+  country?: string;
+  country_code?: string;
+  city?: string;
+  is_returning?: boolean;
+  engagement_seconds?: number;
   started_at: string;
   last_seen_at: string;
   target_x: number;
@@ -1590,12 +1731,20 @@ export interface GtmSettingsConfig {
 
 export interface GtmDashboardResponse {
   days: number;
+  preset?: AnalyticsDatePreset;
+  startDate?: string;
+  endDate?: string;
+  bucketMode?: 'minute' | 'hour' | 'day' | 'month';
   settings: GtmSettingsConfig;
   summary: {
     totalEvents: number;
     conversionEvents: number;
     pageViews: number;
     uniqueSessions: number;
+    activeUsers?: number;
+    newUsers?: number;
+    returningUsers?: number;
+    avgEngagementSeconds?: number;
     uniqueEventNames: number;
     conversionRatePercent: number;
     lastEventAt: string | null;
@@ -1605,6 +1754,8 @@ export interface GtmDashboardResponse {
     events: number;
     conversions: number;
     pageViews: number;
+    activeUsers?: number;
+    newUsers?: number;
   }[];
   topEvents: {
     event_name: string;
@@ -1617,6 +1768,14 @@ export interface GtmDashboardResponse {
     events: number;
     conversions: number;
   }[];
+  countries?: AnalyticsGeoCountryItem[];
+  cities?: AnalyticsGeoCityItem[];
+  channels?: AnalyticsChannelItem[];
+  landingPages?: AnalyticsLandingPageItem[];
+  pageTitles?: AnalyticsPageTitleItem[];
+  devices?: AnalyticsDevicePlatformItem[];
+  cohorts?: AnalyticsCohortRow[];
+  realtime?: RealtimeActiveVisitorSummary;
   recentEvents: GtmEventLog[];
 }
 

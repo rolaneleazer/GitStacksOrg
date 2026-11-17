@@ -9,12 +9,16 @@ import type {
   AgentReportSettings,
   AgentSnapshotItem,
   AgentTask,
+  AnalyticsDatePreset,
   AnalyticsEventType,
   AnalyticsSummary,
   ApolloCandidate,
   ApolloSearchFilters,
   BmcAnalyticsData,
   BmcClickEvent,
+  Ga4LiveReportSummary,
+  Ga4PropertyOption,
+  RealtimeActiveVisitorSummary,
   ApolloStatusResponse,
   Article,
   ArticleComment,
@@ -152,6 +156,69 @@ function getVisitorSessionId(): string {
   } catch {
     return 'vis-anon';
   }
+}
+
+export function getVisitorTelemetryContext(): {
+  session_id: string;
+  visitor_id: string;
+  is_returning: boolean;
+  landing_page: string;
+  device_type: 'desktop' | 'tablet' | 'mobile';
+  timezone: string;
+  page_title: string;
+} {
+  const session_id = getVisitorSessionId();
+  let visitor_id = session_id;
+  let is_returning = false;
+  let landing_page = typeof window !== 'undefined' ? window.location.pathname || '/' : '/';
+
+  if (typeof window !== 'undefined') {
+    try {
+      const existingVid = window.localStorage.getItem('gitstack_visitor_uid');
+      const firstSeenStr = window.localStorage.getItem('gitstack_visitor_first_seen');
+      if (existingVid) {
+        visitor_id = existingVid;
+        const firstSeenMs = Number(firstSeenStr || 0);
+        if (firstSeenMs > 0 && Date.now() - firstSeenMs > 30 * 60 * 1000) {
+          is_returning = true;
+        }
+      } else {
+        visitor_id = `uid-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+        window.localStorage.setItem('gitstack_visitor_uid', visitor_id);
+        window.localStorage.setItem('gitstack_visitor_first_seen', String(Date.now()));
+      }
+
+      const savedLanding = window.sessionStorage.getItem('gitstack_landing_page');
+      if (savedLanding) {
+        landing_page = savedLanding;
+      } else {
+        window.sessionStorage.setItem('gitstack_landing_page', landing_page);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  const width = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const device_type: 'desktop' | 'tablet' | 'mobile' =
+    width < 640 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop';
+  let timezone = 'UTC';
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    timezone = 'UTC';
+  }
+  const page_title = typeof document !== 'undefined' ? (document.title || 'GitStack').slice(0, 160) : 'GitStack';
+
+  return {
+    session_id,
+    visitor_id,
+    is_returning,
+    landing_page,
+    device_type,
+    timezone,
+    page_title
+  };
 }
 
 export function getRealtimeWsUrl(): string {
@@ -568,21 +635,93 @@ export const api = {
     meta: Record<string, string> = {}
   ) {
     if (path.startsWith('/obama') || path.startsWith('/studio')) return;
+    const ctx = getVisitorTelemetryContext();
     fetch('/api/analytics/event', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
       body: JSON.stringify({
         event_type: eventType,
         path,
-        referrer: document.referrer || 'direct',
-        session_id: getVisitorSessionId(),
-        meta
+        referrer: (typeof document !== 'undefined' ? document.referrer : '') || 'direct',
+        session_id: ctx.session_id,
+        meta: {
+          visitor_id: ctx.visitor_id,
+          is_returning: String(ctx.is_returning),
+          landing_page: ctx.landing_page,
+          device_type: ctx.device_type,
+          timezone: ctx.timezone,
+          page_title: ctx.page_title,
+          ...meta
+        }
       })
     }).catch(() => {});
   },
 
-  async getAnalyticsSummary(days: 7 | 14 | 30 = 14) {
-    return request<{ summary: AnalyticsSummary }>(`/api/analytics/summary?days=${days}`);
+  async getAnalyticsSummary(
+    input:
+      | number
+      | {
+          preset?: AnalyticsDatePreset;
+          startDate?: string;
+          endDate?: string;
+          days?: number;
+        } = 14
+  ) {
+    const params = new URLSearchParams();
+    if (typeof input === 'number') {
+      params.set('days', String(input));
+    } else {
+      if (input.preset) params.set('preset', input.preset);
+      if (input.startDate) params.set('startDate', input.startDate);
+      if (input.endDate) params.set('endDate', input.endDate);
+      if (input.days) params.set('days', String(input.days));
+    }
+    return request<{ summary: AnalyticsSummary }>(`/api/analytics/summary?${params.toString()}`);
+  },
+
+  async getRealtimeAnalytics() {
+    return request<{
+      realtime: RealtimeActiveVisitorSummary;
+      ga4Realtime: RealtimeActiveVisitorSummary | null;
+      ga4Note?: string;
+    }>('/api/analytics/realtime');
+  },
+
+  async connectGa4ServiceAccount(payload: {
+    serviceAccountJson?: string;
+    propertyId?: string;
+    measurementId?: string;
+  }) {
+    return request<{
+      integration: IntegrationStatusItem;
+      testResult: { ok: boolean; latencyMs: number; message: string };
+      properties: Ga4PropertyOption[];
+      report: Ga4LiveReportSummary | null;
+      reportNote?: string;
+    }>('/api/admin/analytics/service-account', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async syncGa4ReportServer(payload: {
+    preset?: AnalyticsDatePreset;
+    startDate?: string;
+    endDate?: string;
+    days?: number;
+    propertyId?: string;
+    accessToken?: string;
+  }) {
+    return request<{
+      summary: AnalyticsSummary;
+      report: Ga4LiveReportSummary | null;
+      integration: IntegrationStatusItem | null;
+      note?: string;
+    }>('/api/admin/analytics/sync', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   },
 
   // --- Profile, Team Access, Workflows & Routing ---
@@ -1287,15 +1426,24 @@ export const api = {
   },
 
   // --- Live Website Presence & Virtual Office HUD ---
-  async sendPublicPresence(pagePath: string) {
-    const sid = getVisitorSessionId();
-    const width = typeof window !== 'undefined' ? window.innerWidth : 1280;
-    const device_type = width < 640 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop';
-    const referrer = typeof document !== 'undefined' ? document.referrer || '' : '';
+  async sendPublicPresence(pagePath: string, engagementSeconds?: number) {
+    const ctx = getVisitorTelemetryContext();
+    const referrer = typeof document !== 'undefined' ? document.referrer || 'direct' : 'direct';
     const res = await fetch('/api/public/presence', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sid, path: pagePath || '/', device_type, referrer })
+      keepalive: true,
+      body: JSON.stringify({
+        session_id: ctx.session_id,
+        visitor_id: ctx.visitor_id,
+        path: pagePath || '/',
+        page_title: ctx.page_title,
+        device_type: ctx.device_type,
+        referrer,
+        timezone: ctx.timezone,
+        is_returning: ctx.is_returning,
+        engagement_seconds: engagementSeconds
+      })
     });
     if (!res.ok) return null;
     return (await res.json().catch(() => null)) as { ok: boolean; activeVisitorsCount: number } | null;
@@ -1651,8 +1799,26 @@ export const api = {
   },
 
   // --- Google Tag Manager (GTM) Telemetry, Settings & OAuth Vault ---
-  async getGtmDashboard(days: 1 | 7 | 14 | 30 = 7) {
-    return request<GtmDashboardResponse>(`/api/admin/gtm/dashboard?days=${days}`);
+  async getGtmDashboard(
+    input:
+      | number
+      | {
+          preset?: AnalyticsDatePreset;
+          startDate?: string;
+          endDate?: string;
+          days?: number;
+        } = 7
+  ) {
+    const params = new URLSearchParams();
+    if (typeof input === 'number') {
+      params.set('days', String(input));
+    } else {
+      if (input.preset) params.set('preset', input.preset);
+      if (input.startDate) params.set('startDate', input.startDate);
+      if (input.endDate) params.set('endDate', input.endDate);
+      if (input.days) params.set('days', String(input.days));
+    }
+    return request<GtmDashboardResponse>(`/api/admin/gtm/dashboard?${params.toString()}`);
   },
 
   async saveGtmSettings(payload: Partial<GtmSettingsConfig>) {
@@ -1670,6 +1836,9 @@ export const api = {
     event_category?: GtmEventCategory;
     is_conversion?: boolean;
     days?: number;
+    preset?: AnalyticsDatePreset;
+    startDate?: string;
+    endDate?: string;
   }) {
     return request<{
       ok: boolean;

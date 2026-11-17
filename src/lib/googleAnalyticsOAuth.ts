@@ -331,6 +331,16 @@ export async function signInWithGoogleAnalyticsPopup(): Promise<{
       accessToken: token,
       properties
     };
+  } catch (err) {
+    const code = (err as { code?: string })?.code || '';
+    const msg = err instanceof Error ? err.message : String(err);
+    if (code === 'auth/unauthorized-domain' || msg.includes('auth/unauthorized-domain')) {
+      const host = typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+      throw new Error(
+        `Domain "${host}" is not authorized in Firebase Authentication for browser popups. Use the recommended Server-Side Service Account JSON connection above (works in production with zero domain restrictions), or add "${host}" in Firebase Console -> Authentication -> Settings -> Authorized domains.`
+      );
+    }
+    throw err;
   } finally {
     isSigningIn = false;
   }

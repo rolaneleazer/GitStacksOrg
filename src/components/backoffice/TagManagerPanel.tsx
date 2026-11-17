@@ -4,16 +4,18 @@ import {
   Code2,
   Copy,
   Download,
+  FileText,
   Filter,
   FolderGit2,
+  Globe2,
   Layers,
   Link2,
-  Play,
   RefreshCw,
   Search,
   Sliders,
   Sparkles,
   Tags,
+  TrendingUp,
   Unplug
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -29,8 +31,10 @@ import {
   getGtmSnippetString,
   getRecentClientDataLayerEvents
 } from '../../lib/tagManager.ts';
+import { resolveDateRangeBounds } from '../../shared/dateRanges.ts';
 import type {
   AdSenseSettings,
+  AnalyticsEventCountItem,
   GtmContainerOption,
   GtmDashboardResponse,
   GtmEventCategory,
@@ -39,13 +43,31 @@ import type {
   GtmWorkspaceSnapshot,
   IntegrationStatusItem
 } from '../../shared/types.ts';
+import {
+  AnalyticsDateFilterBar,
+  ChannelAndPlatformCards,
+  type DateRangeSelection,
+  formatDurationSeconds,
+  LandingPagesAndEventsView,
+  RealtimeMonitorView,
+  RetentionCohortsView
+} from './AnalyticsSharedSections.tsx';
+import { GeoWorldMap } from './GeoWorldMap.tsx';
 
 interface TagManagerPanelProps {
   settings: AdSenseSettings;
   onSettingsUpdated: (next: AdSenseSettings) => void;
 }
 
-type GtmSubTab = 'overview' | 'stream' | 'oauth' | 'config';
+type GtmSubTab =
+  | 'realtime'
+  | 'overview'
+  | 'demographics'
+  | 'pages'
+  | 'retention'
+  | 'stream'
+  | 'oauth'
+  | 'config';
 type GtmInspectTab = 'tags' | 'triggers' | 'variables';
 
 const CATEGORY_OPTIONS: Array<{ value: 'all' | GtmEventCategory; label: string }> = [
@@ -74,8 +96,16 @@ function formatShortTimestamp(iso: string): string {
 
 export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanelProps) {
   const [subTab, setSubTab] = useState<GtmSubTab>('overview');
-  const [days, setDays] = useState<1 | 7 | 14 | 30>(7);
+  const [range, setRange] = useState<DateRangeSelection>(() => {
+    const end = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 6 * 86400_000).toISOString().slice(0, 10);
+    return { preset: '7d', startDate: start, endDate: end };
+  });
   const [dashboard, setDashboard] = useState<GtmDashboardResponse | null>(null);
+  const [realtimeSnapshot, setRealtimeSnapshot] = useState<GtmDashboardResponse['realtime'] | null>(
+    null
+  );
+  const [autoPoll, setAutoPoll] = useState(true);
   const [gtmIntegration, setGtmIntegration] = useState<IntegrationStatusItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -108,16 +138,26 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
   });
   const [copiedSnippet, setCopiedSnippet] = useState(false);
 
+  const rangeMeta = useMemo(
+    () => resolveDateRangeBounds(range.preset, range.startDate, range.endDate),
+    [range.endDate, range.preset, range.startDate]
+  );
+
   const loadData = useCallback(
-    async (targetDays: 1 | 7 | 14 | 30, silent = false) => {
+    async (targetRange: DateRangeSelection, silent = false) => {
       if (silent) setRefreshing(true);
       else setLoading(true);
       try {
         const [dashRes, intRes] = await Promise.all([
-          api.getGtmDashboard(targetDays),
+          api.getGtmDashboard({
+            preset: targetRange.preset,
+            startDate: targetRange.startDate,
+            endDate: targetRange.endDate
+          }),
           api.listIntegrations().catch(() => ({ integrations: [] as IntegrationStatusItem[] }))
         ]);
         setDashboard(dashRes);
+        if (dashRes.realtime) setRealtimeSnapshot(dashRes.realtime);
         setConfigDraft(dashRes.settings);
         const found = intRes.integrations.find((i) => i.provider === 'google_tag_manager') || null;
         setGtmIntegration(found);
@@ -140,30 +180,64 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
     []
   );
 
-  useEffect(() => {
-    loadData(days);
-  }, [days, loadData]);
+  const pollRealtimeGtm = useCallback(async () => {
+    try {
+      const rtDash = await api.getGtmDashboard({ preset: 'realtime' });
+      if (rtDash.realtime) setRealtimeSnapshot(rtDash.realtime);
+      if (range.preset === 'realtime') {
+        setDashboard(rtDash);
+      }
+    } catch {
+      // ignore transient poll failures
+    }
+  }, [range.preset]);
 
-  const handleSendDiagnosticEvent = async () => {
+  useEffect(() => {
+    loadData(range);
+  }, [loadData, range]);
+
+  useEffect(() => {
+    if (!autoPoll) return;
+    if (subTab !== 'realtime' && range.preset !== 'realtime') return;
+    const timer = window.setInterval(() => {
+      pollRealtimeGtm();
+    }, 8000);
+    return () => window.clearInterval(timer);
+  }, [autoPoll, pollRealtimeGtm, range.preset, subTab]);
+
+  const handleRangeChange = (next: DateRangeSelection) => {
+    setRange(next);
+    if (next.preset === 'realtime') {
+      setSubTab('realtime');
+    } else if (subTab === 'realtime') {
+      setSubTab('overview');
+    }
+  };
+
+  const handleSendLiveTestVisit = async () => {
     setTestingPing(true);
     setNotice(null);
     try {
+      await api.sendPublicPresence('/?test_visit=1', 6);
       const res = await api.sendGtmTestEvent({
-        event_name: 'gtm_diagnostic_ping',
-        event_category: 'custom',
+        event_name: 'gtm_live_visit_test',
+        event_category: 'pageview',
         is_conversion: false,
-        days
+        preset: range.preset,
+        startDate: range.startDate,
+        endDate: range.endDate
       });
       setDashboard(res.dashboard);
+      if (res.dashboard.realtime) setRealtimeSnapshot(res.dashboard.realtime);
       setSelectedEvent(res.event);
       setNotice({
         type: 'ok',
-        text: `Diagnostic event pushed for ${configDraft.gtm_container_id} and logged cleanly.`
+        text: `Live test ping dispatched for ${configDraft.gtm_container_id}. Verified in Realtime & dataLayer stream.`
       });
     } catch (err) {
       setNotice({
         type: 'err',
-        text: err instanceof Error ? err.message : 'Failed to send diagnostic ping.'
+        text: err instanceof Error ? err.message : 'Failed to send live test ping.'
       });
     } finally {
       setTestingPing(false);
@@ -229,7 +303,10 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
     } catch (err) {
       setNotice({
         type: 'err',
-        text: err instanceof Error ? err.message : 'Google Tag Manager OAuth was cancelled or blocked.'
+        text:
+          err instanceof Error
+            ? err.message
+            : 'Google Tag Manager OAuth was cancelled or blocked.'
       });
     } finally {
       setOauthBusy(false);
@@ -318,7 +395,15 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
 
   const handleExportStreamCsv = () => {
     const rows = filteredStream;
-    const header = ['created_at', 'container_id', 'event_name', 'category', 'is_conversion', 'page_path', 'session_id'];
+    const header = [
+      'created_at',
+      'container_id',
+      'event_name',
+      'category',
+      'is_conversion',
+      'page_path',
+      'session_id'
+    ];
     const csvLines = [
       header.join(','),
       ...rows.map((r) =>
@@ -354,8 +439,7 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
     }
   };
 
-  const snapshot: GtmWorkspaceSnapshot | null =
-    gtmIntegration?.configMeta?.gtm_snapshot || null;
+  const snapshot: GtmWorkspaceSnapshot | null = gtmIntegration?.configMeta?.gtm_snapshot || null;
   const oauthContainers: GtmContainerOption[] =
     gtmIntegration?.configMeta?.gtm_containers_list || [];
 
@@ -380,18 +464,39 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
     return Math.max(1, ...vals);
   }, [dashboard?.series]);
 
+  const gtmEventCounts: AnalyticsEventCountItem[] = useMemo(
+    () =>
+      (dashboard?.topEvents || []).map((e) => ({
+        eventName: e.event_name,
+        count: e.count,
+        conversions: e.conversions
+      })),
+    [dashboard?.topEvents]
+  );
+
+  const retentionSeries = useMemo(
+    () =>
+      (dashboard?.series || []).map((b) => ({
+        label: b.label,
+        activeUsers: b.activeUsers ?? b.events,
+        newUsers: b.newUsers ?? 0
+      })),
+    [dashboard?.series]
+  );
+
   const clientLocalCount =
     typeof window !== 'undefined' ? getRecentClientDataLayerEvents().length : 0;
   const browserDataLayerLen =
     typeof window !== 'undefined' && Array.isArray(window.dataLayer)
       ? window.dataLayer.length
       : 0;
+  const liveActiveRightNow = (realtimeSnapshot || dashboard?.realtime)?.activeUsers5m ?? 0;
 
   return (
     <div className="space-y-6">
       {/* Header Control Bar */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span className="font-semibold text-[var(--gs-primary)]">Google Tag Manager</span>
@@ -407,6 +512,13 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
               >
                 {configDraft.gtm_enabled ? 'Container Active' : 'Container Paused'}
               </span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono text-slate-600">{rangeMeta.label}</span>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1.5 font-mono text-emerald-700 font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {liveActiveRightNow} live
+              </span>
               {gtmIntegration?.connected && (
                 <>
                   <span aria-hidden="true">·</span>
@@ -421,56 +533,30 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
             </h2>
             <p className="mt-0.5 text-xs text-slate-600">
               Real-time <code className="font-mono text-slate-800">window.dataLayer</code> &amp;{' '}
-              <code className="font-mono text-slate-800">gtag()</code> ingestion, conversion attribution,
-              and Google Tag Manager API v2 workspace inspection.
+              <code className="font-mono text-slate-800">gtag()</code> ingestion, Edge Geo demographics,
+              landing pages, retention cohorts, and GTM API v2 workspace inspection.
             </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-              {([1, 7, 14, 30] as const).map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => setDays(d)}
-                  className={`whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-mono font-semibold transition-colors ${
-                    days === d
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {d === 1 ? '24h' : `${d}d`}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSendDiagnosticEvent}
-              disabled={testingPing}
-              className="whitespace-nowrap shrink-0 min-h-[36px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              <Play className="h-3.5 w-3.5 text-[var(--gs-primary)]" />
-              <span>{testingPing ? 'Sending Ping...' : 'Send Test Event'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => loadData(days, true)}
-              disabled={refreshing}
-              className="whitespace-nowrap shrink-0 min-h-[36px] inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
           </div>
         </div>
 
+        <AnalyticsDateFilterBar
+          value={range}
+          onChange={handleRangeChange}
+          onRefresh={() => loadData(range, true)}
+          onSendLiveTestVisit={handleSendLiveTestVisit}
+          refreshing={refreshing}
+          testingVisit={testingPing}
+        />
+
         {/* Sub-navigation Tabs */}
-        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4">
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
           {(
             [
-              { id: 'overview', label: 'Overview & Conversions', icon: Activity },
+              { id: 'realtime', label: `Realtime (${liveActiveRightNow})`, icon: Activity },
+              { id: 'overview', label: 'Overview & Acquisition', icon: Tags },
+              { id: 'demographics', label: 'Demographics', icon: Globe2 },
+              { id: 'pages', label: 'Landing Pages & Pages', icon: FileText },
+              { id: 'retention', label: 'Retention & Cohorts', icon: TrendingUp },
               { id: 'stream', label: 'Live dataLayer Stream', icon: Layers },
               { id: 'oauth', label: 'Container & OAuth Sync', icon: Link2 },
               { id: 'config', label: 'Configuration & Snippet', icon: Sliders }
@@ -483,7 +569,7 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                 key={t.id}
                 type="button"
                 onClick={() => setSubTab(t.id)}
-                className={`whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors ${
+                className={`whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
                   active
                     ? 'bg-[var(--gs-primary)] text-white'
                     : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
@@ -515,11 +601,22 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
         </div>
       ) : (
         <>
-          {/* SUB-TAB 1: OVERVIEW & CONVERSIONS */}
+          {/* SUB-TAB: REALTIME 30m */}
+          {subTab === 'realtime' && (
+            <RealtimeMonitorView
+              realtime={realtimeSnapshot || dashboard?.realtime || null}
+              autoPollEnabled={autoPoll}
+              onToggleAutoPoll={() => setAutoPoll((v) => !v)}
+              onSendLiveTestVisit={handleSendLiveTestVisit}
+              testingVisit={testingPing}
+            />
+          )}
+
+          {/* SUB-TAB: OVERVIEW & ACQUISITION */}
           {subTab === 'overview' && dashboard && (
             <div className="space-y-6">
-              {/* 4 KPI Summary Strip */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {/* 5 KPI Summary Strip */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 <div className="rounded-xl border border-slate-200 bg-white p-4">
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     Total dataLayer Events
@@ -528,8 +625,25 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                     {dashboard.summary.totalEvents.toLocaleString()}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-500 font-mono tabular-nums">
-                    {dashboard.summary.uniqueEventNames} event names ·{' '}
+                    {dashboard.summary.uniqueEventNames} names ·{' '}
                     {formatRelativeTime(dashboard.summary.lastEventAt)}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    Active / New Users
+                  </div>
+                  <div className="mt-2 font-mono text-2xl font-bold text-slate-900 tabular-nums">
+                    {(
+                      dashboard.summary.activeUsers ?? dashboard.summary.uniqueSessions
+                    ).toLocaleString()}{' '}
+                    <span className="text-base font-normal text-slate-400">
+                      / {(dashboard.summary.newUsers ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500 font-mono tabular-nums">
+                    {dashboard.summary.returningUsers ?? 0} returning
                   </div>
                 </div>
 
@@ -553,7 +667,7 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                     {dashboard.summary.pageViews.toLocaleString()}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-500 font-mono tabular-nums">
-                    SPA route hits via dataLayer
+                    Avg dwell: {formatDurationSeconds(dashboard.summary.avgEngagementSeconds ?? 0)}
                   </div>
                 </div>
 
@@ -565,7 +679,7 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                     {dashboard.summary.uniqueSessions.toLocaleString()}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-500 font-mono tabular-nums">
-                    Local buffer: {clientLocalCount} · window.dataLayer: {browserDataLayerLen}
+                    Buffer: {clientLocalCount} · dataLayer: {browserDataLayerLen}
                   </div>
                 </div>
               </div>
@@ -575,10 +689,11 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                   <div>
                     <h3 className="font-display text-sm font-bold text-slate-900">
-                      dataLayer Event Volume &amp; Conversions ({days === 1 ? 'Last 24 Hours' : `Last ${days} Days`})
+                      dataLayer Event Volume &amp; Conversions ({rangeMeta.label})
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      Persisted telemetry across public site visits and interactive funnel actions.
+                      Bucketed by {dashboard.bucketMode || rangeMeta.bucketMode} across public site
+                      visits and funnel actions
                     </p>
                   </div>
                   <div className="flex items-center gap-4 text-[11px] text-slate-600">
@@ -595,14 +710,17 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
 
                 {dashboard.series.length === 0 || dashboard.summary.totalEvents === 0 ? (
                   <div className="py-10 text-center text-xs text-slate-500">
-                    No GTM telemetry events recorded in this window yet. Browse public pages or click{' '}
-                    <strong>Send Test Event</strong> to populate live metrics.
+                    No GTM telemetry events recorded in this window yet. Browse public pages or
+                    click <strong>Test Live Visit</strong> to populate live metrics.
                   </div>
                 ) : (
                   <div className="mt-4 overflow-x-auto">
                     <div className="min-w-[540px] flex items-end gap-1.5 h-44 pt-4">
                       {dashboard.series.map((bucket) => {
-                        const evtH = Math.max(4, Math.round((bucket.events / maxBucketEvents) * 130));
+                        const evtH = Math.max(
+                          4,
+                          Math.round((bucket.events / maxBucketEvents) * 130)
+                        );
                         const convH =
                           bucket.conversions > 0
                             ? Math.max(4, Math.round((bucket.conversions / maxBucketEvents) * 130))
@@ -626,7 +744,7 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                               )}
                             </div>
                             <span className="font-mono text-[10px] text-slate-500 tabular-nums truncate max-w-full">
-                              {days === 1 ? bucket.label.slice(0, 2) : bucket.label.slice(5)}
+                              {bucket.label.length > 7 ? bucket.label.slice(5) : bucket.label}
                             </span>
                           </div>
                         );
@@ -635,6 +753,14 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                   </div>
                 )}
               </div>
+
+              {/* Channel & Platform Cards */}
+              <ChannelAndPlatformCards
+                channels={dashboard.channels || []}
+                devices={dashboard.devices || []}
+                newUsers={dashboard.summary.newUsers ?? 0}
+                returningUsers={dashboard.summary.returningUsers ?? 0}
+              />
 
               {/* Top Events + Top Pages Tables */}
               <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -725,7 +851,33 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
             </div>
           )}
 
-          {/* SUB-TAB 2: LIVE DATALAYER STREAM */}
+          {/* SUB-TAB: DEMOGRAPHICS */}
+          {subTab === 'demographics' && dashboard && (
+            <GeoWorldMap
+              countries={dashboard.countries || []}
+              cities={dashboard.cities || []}
+              title={`Tag Manager Visitor Countries & Cities (${rangeMeta.label})`}
+            />
+          )}
+
+          {/* SUB-TAB: LANDING PAGES & PAGES */}
+          {subTab === 'pages' && dashboard && (
+            <LandingPagesAndEventsView
+              landingPages={dashboard.landingPages || []}
+              pageTitles={dashboard.pageTitles || []}
+              eventCounts={gtmEventCounts}
+            />
+          )}
+
+          {/* SUB-TAB: RETENTION & COHORTS */}
+          {subTab === 'retention' && dashboard && (
+            <RetentionCohortsView
+              cohorts={dashboard.cohorts || []}
+              series={retentionSeries}
+            />
+          )}
+
+          {/* SUB-TAB: LIVE DATALAYER STREAM */}
           {subTab === 'stream' && dashboard && (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
               <div className="lg:col-span-8 rounded-xl border border-slate-200 bg-white overflow-hidden">
@@ -892,7 +1044,7 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
             </div>
           )}
 
-          {/* SUB-TAB 3: CONTAINER & OAUTH SYNC */}
+          {/* SUB-TAB: CONTAINER & OAUTH SYNC */}
           {subTab === 'oauth' && (
             <div className="space-y-6">
               <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -905,7 +1057,8 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                     <p className="mt-1 text-xs text-slate-600">
                       Sign in with Google (<code className="font-mono">tagmanager.readonly</code>)
                       to fetch live Containers, Workspaces, Tags, Triggers, and Variables from your
-                      GTM account.
+                      GTM account. First-party telemetry and Geo demographics remain active without
+                      OAuth.
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -1132,16 +1285,18 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                     Connect Your Google Tag Manager Account
                   </h4>
                   <p className="mt-1 max-w-md mx-auto text-xs text-slate-600">
-                    Your GTM container script (<code className="font-mono">{configDraft.gtm_container_id}</code>)
-                    is already active and streaming first-party <code className="font-mono">dataLayer</code> events.
-                    Connect OAuth above whenever you want to inspect published GTM Tags, Triggers, and Variables.
+                    Your GTM container script (
+                    <code className="font-mono">{configDraft.gtm_container_id}</code>) is already
+                    active and streaming first-party <code className="font-mono">dataLayer</code>{' '}
+                    events. Connect OAuth above whenever you want to inspect published GTM Tags,
+                    Triggers, and Variables.
                   </p>
                 </div>
               )}
             </div>
           )}
 
-          {/* SUB-TAB 4: CONFIGURATION & SNIPPET */}
+          {/* SUB-TAB: CONFIGURATION & SNIPPET */}
           {subTab === 'config' && (
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
               <form
@@ -1188,7 +1343,8 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                         Enable Google Tag Manager Script Injection
                       </div>
                       <div className="text-[11px] text-slate-500">
-                        Injects <code className="font-mono">gtm.js?id={configDraft.gtm_container_id}</code>{' '}
+                        Injects{' '}
+                        <code className="font-mono">gtm.js?id={configDraft.gtm_container_id}</code>{' '}
                         and <code className="font-mono">window.dataLayer</code> +{' '}
                         <code className="font-mono">gtag(&apos;js&apos;, new Date())</code>
                       </div>
@@ -1232,7 +1388,8 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                         Track Funnel Conversion Attribution
                       </div>
                       <div className="text-[11px] text-slate-500">
-                        Flags inquiry submissions, newsletter signups, demo signups &amp; Buy Me a Coffee clicks
+                        Flags inquiry submissions, newsletter signups, demo signups &amp; Buy Me a
+                        Coffee clicks
                       </div>
                     </div>
                     <input
@@ -1277,7 +1434,8 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
                         <code className="font-mono">/studio</code>)
                       </div>
                       <div className="text-[11px] text-slate-500">
-                        Prevents internal Back Office operator browsing from skewing public traffic metrics.
+                        Prevents internal Back Office operator browsing from skewing public traffic
+                        metrics.
                       </div>
                     </div>
                     <input

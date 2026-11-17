@@ -132,12 +132,28 @@ export default function App() {
   useEffect(() => {
     const isAdminRoute = route.startsWith('/obama') || route.startsWith('/studio');
     if (isAdminRoute) return;
-    api.trackAnalyticsEvent('pageview', route || '/');
-    api.sendPublicPresence(route || '/');
-    const id = window.setInterval(() => {
-      api.sendPublicPresence(route || '/');
-    }, 60_000);
-    return () => window.clearInterval(id);
+    const currentPath = route || '/';
+    const enteredMs = Date.now();
+
+    api.trackAnalyticsEvent('pageview', currentPath);
+    api.sendPublicPresence(currentPath, 1);
+
+    const reportEngagement = () => {
+      const elapsedSec = Math.min(3600, Math.max(1, Math.round((Date.now() - enteredMs) / 1000)));
+      api.sendPublicPresence(currentPath, elapsedSec);
+    };
+
+    const id = window.setInterval(reportEngagement, 25_000);
+    window.addEventListener('pagehide', reportEngagement);
+
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('pagehide', reportEngagement);
+      const elapsedSec = Math.min(3600, Math.max(1, Math.round((Date.now() - enteredMs) / 1000)));
+      if (elapsedSec >= 2) {
+        api.sendPublicPresence(currentPath, elapsedSec);
+      }
+    };
   }, [route]);
 
   useEffect(() => {

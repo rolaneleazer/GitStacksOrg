@@ -13,6 +13,12 @@ import {
   listIntegrationSecretRows,
   upsertIntegrationSecretRow
 } from './repository.ts';
+import {
+  discoverGa4PropertiesWithToken,
+  GA4_READONLY_SCOPE,
+  isServiceAccountJsonString,
+  mintGoogleAccessTokenFromServiceAccount
+} from './googleAnalyticsService.ts';
 
 export const VALID_INTEGRATION_PROVIDERS: IntegrationProviderId[] = [
   'lark_smtp',
@@ -52,14 +58,16 @@ const PROVIDER_DEFS: Record<IntegrationProviderId, ProviderMetaDef> = {
     }
   },
   google_analytics: {
-    label: 'Google Analytics 4 (One-Click OAuth)',
+    label: 'Google Analytics 4 (Service Account / OAuth)',
     category: 'Web Analytics',
     description:
-      'One-click Google Sign-In popup to connect your existing Google Analytics 4 account, select a GA4 Property & Measurement ID, and sync live traffic metrics without manual API keys.',
-    docsHint: 'Click "Connect with Google Analytics" to sign in and choose your GA4 Property.',
+      'Connects Google Analytics 4 via a server-side Google Cloud Service Account JSON key (zero domain limits in production) or optional Google Sign-In popup.',
+    docsHint: 'Paste a Google Cloud Service Account JSON key and add its client_email as Viewer in GA4 Property Access Management.',
     defaultConfigMeta: {
       ga4_account_email: '',
       ga4_account_name: '',
+      ga4_auth_mode: undefined,
+      ga4_service_account_email: '',
       ga4_property_id: '',
       ga4_property_name: '',
       ga4_measurement_id: '',
@@ -176,6 +184,17 @@ export function decryptVaultSecret(payload: string): string {
 function makeSecretHint(secret: string): string {
   const clean = secret.trim();
   if (!clean) return '';
+  if (isServiceAccountJsonString(clean)) {
+    try {
+      const parsed = JSON.parse(clean) as { client_email?: string };
+      if (parsed.client_email) {
+        return `SA:${parsed.client_email.slice(0, 28)}`;
+      }
+    } catch {
+      // ignore
+    }
+    return 'Service Account JSON';
+  }
   if (clean.length <= 4) return '••••';
   return `••••${clean.slice(-4)}`;
 }
@@ -242,6 +261,9 @@ function mergeConfigMeta(
   if (provider === 'google_analytics') {
     merged.ga4_account_email = (merged.ga4_account_email || '').trim().toLowerCase();
     merged.ga4_account_name = (merged.ga4_account_name || '').trim();
+    merged.ga4_service_account_email = (merged.ga4_service_account_email || '')
+      .trim()
+      .toLowerCase();
     merged.ga4_property_id = (merged.ga4_property_id || '').trim();
     merged.ga4_property_name = (merged.ga4_property_name || '').trim();
     merged.ga4_measurement_id = (merged.ga4_measurement_id || '').trim().toUpperCase();
@@ -716,6 +738,42 @@ async function runProviderLiveProbe(
     }
 
     if (provider === 'google_analytics') {
+      if (isServiceAccountJsonString(secret)) {
+        const { accessToken, serviceAccount } = await mintGoogleAccessTokenFromServiceAccount(
+          secret,
+          [GA4_READONLY_SCOPE]
+        );
+        const properties = await discoverGa4PropertiesWithToken(
+          accessToken,
+          serviceAccount.client_email
+        );
+        configMeta.ga4_auth_mode = 'service_account';
+        configMeta.ga4_service_account_email = serviceAccount.client_email.toLowerCase();
+        configMeta.ga4_account_email = serviceAccount.client_email.toLowerCase();
+        configMeta.ga4_account_name = `Service Account (${serviceAccount.project_id || 'GCP'})`;
+        if (properties.length > 0) {
+          configMeta.ga4_properties_list = properties;
+          const matching =
+            properties.find((p) => p.property_id === configMeta.ga4_property_id) || properties[0];
+          if (matching) {
+            configMeta.ga4_property_id = matching.property_id;
+            configMeta.ga4_property_name = matching.property_name;
+            configMeta.ga4_measurement_id =
+              configMeta.ga4_measurement_id || matching.measurement_id;
+            configMeta.ga4_stream_uri = matching.stream_uri;
+          }
+        }
+        const latencyMs = Date.now() - started;
+        return {
+          ok: true,
+          latencyMs,
+          message:
+            properties.length > 0
+              ? `Service Account verified (${serviceAccount.client_email}) · Found ${properties.length} GA4 propert${properties.length === 1 ? 'y' : 'ies'} in ${latencyMs}ms.`
+              : `Service Account token verified (${serviceAccount.client_email}) in ${latencyMs}ms. Note: No GA4 properties listed yet — grant Viewer role to this email in GA4 Property Access Management.`
+        };
+      }
+
       const email = (configMeta.ga4_account_email || '').trim();
       const propName = (configMeta.ga4_property_name || 'GitStack Production GA4').trim();
       const measId = (configMeta.ga4_measurement_id || '').trim();
@@ -733,7 +791,7 @@ async function runProviderLiveProbe(
           return {
             ok: true,
             latencyMs,
-            message: `Google Analytics 4 OAuth verified for ${email || 'Google Account'} · ${propName}${measId ? ` (${measId})` : ''} in ${latencyMs}ms.`
+            message: `Google Analytics 4 verified for ${email || 'Google Account'} · ${propName}${measId ? ` (${measId})` : ''} in ${latencyMs}ms.`
           };
         }
       }
@@ -742,13 +800,13 @@ async function runProviderLiveProbe(
         return {
           ok: true,
           latencyMs,
-          message: `Google Analytics 4 connected via Google OAuth (${email}) · ${propName}${measId ? ` (${measId})` : ''}.`
+          message: `Google Analytics 4 connected (${email}) · ${propName}${measId ? ` (${measId})` : ''}.`
         };
       }
       return {
         ok: false,
         latencyMs,
-        message: 'Click "Connect with Google Analytics" to sign in with your Google Account.'
+        message: 'Upload a Google Cloud Service Account JSON key or connect via Google OAuth.'
       };
     }
 

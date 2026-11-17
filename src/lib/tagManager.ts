@@ -196,6 +196,28 @@ function enqueueCapturedEvent(entry: unknown, forceRecord = false) {
     parsed.is_conversion = false;
   }
 
+  let visitorId = getVisitorSessionId();
+  let isReturning = false;
+  let landingPage = currentPath;
+  let timezone = 'UTC';
+  try {
+    const existingVid = window.localStorage.getItem('gitstack_visitor_uid');
+    const firstSeenStr = window.localStorage.getItem('gitstack_visitor_first_seen');
+    if (existingVid) {
+      visitorId = existingVid;
+      const firstSeenMs = Number(firstSeenStr || 0);
+      if (firstSeenMs > 0 && Date.now() - firstSeenMs > 30 * 60 * 1000) {
+        isReturning = true;
+      }
+    }
+    landingPage = window.sessionStorage.getItem('gitstack_landing_page') || currentPath;
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    // ignore storage limits
+  }
+  const width = window.innerWidth || 1280;
+  const deviceType = width < 640 ? 'mobile' : width < 1024 ? 'tablet' : 'desktop';
+
   const record: BufferedGtmEvent = {
     event_name: parsed.event_name,
     event_category: parsed.event_category,
@@ -203,7 +225,15 @@ function enqueueCapturedEvent(entry: unknown, forceRecord = false) {
     page_title: typeof document !== 'undefined' ? document.title.slice(0, 160) : '',
     session_id: getVisitorSessionId(),
     is_conversion: parsed.is_conversion,
-    payload: parsed.payload,
+    payload: {
+      visitor_id: visitorId,
+      is_returning: isReturning,
+      landing_page: landingPage,
+      device_type: deviceType,
+      timezone,
+      referrer: (typeof document !== 'undefined' ? document.referrer : '') || 'direct',
+      ...parsed.payload
+    },
     created_at: new Date().toISOString()
   };
 

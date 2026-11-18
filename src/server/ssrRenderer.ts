@@ -120,6 +120,7 @@ async function loadBaseHtmlTemplate(origin: string): Promise<string | null> {
   if (cachedDistHtml) return cachedDistHtml;
 
   const candidates = [
+    path.resolve(process.cwd(), 'dist', '_spa.html'),
     path.resolve(process.cwd(), 'dist', 'index.html'),
     path.resolve(process.cwd(), 'index.html')
   ];
@@ -137,18 +138,20 @@ async function loadBaseHtmlTemplate(origin: string): Promise<string | null> {
     }
   }
 
-  // Fallback for serverless environments where static dist/index.html is hosted on CDN
-  try {
-    const res = await fetch(`${origin}/index.html`, { signal: AbortSignal.timeout(4000) });
-    if (res.ok) {
-      const html = await res.text();
-      if (html.includes('<div id="root">')) {
-        cachedDistHtml = html;
-        return html;
+  // Fallback for serverless environments where static dist/_spa.html is hosted on CDN
+  for (const assetPath of ['/_spa.html', '/index.html']) {
+    try {
+      const res = await fetch(`${origin}${assetPath}`, { signal: AbortSignal.timeout(4000) });
+      if (res.ok) {
+        const html = await res.text();
+        if (html.includes('<div id="root">')) {
+          cachedDistHtml = html;
+          return html;
+        }
       }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
   return null;
 }

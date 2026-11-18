@@ -527,8 +527,16 @@ function verifyLocalToken(token: string): { email: string } | null {
 }
 
 function ensureLocalShape(db: LocalDatabase): LocalDatabase {
+  const seedById = new Map(SEED_ARTICLES.map((a) => [a.id, a]));
+  const normalizedPosts = (db.posts || SEED_ARTICLES).map((post) => {
+    const expanded = seedById.get(post.id);
+    if (expanded && (post.word_count || 0) < 800) {
+      return expanded;
+    }
+    return post;
+  });
   return {
-    posts: db.posts || SEED_ARTICLES,
+    posts: normalizedPosts,
     comments: db.comments || SEED_COMMENTS,
     subscribers: db.subscribers || SEED_SUBSCRIBERS,
     inquiries: db.inquiries || SEED_INQUIRIES,
@@ -784,6 +792,27 @@ export async function verifyEditorToken(token: string | undefined): Promise<Edit
   };
 }
 
+async function upgradeThinSeedPostsInSupabase(sb: ReturnType<typeof getSupabaseClient>): Promise<void> {
+  const seedIds = SEED_ARTICLES.map((a) => a.id);
+  const { data, error } = await sb
+    .from('posts')
+    .select('id, word_count')
+    .in('id', seedIds);
+  if (error || !Array.isArray(data)) return;
+
+  const thinIds = new Set(
+    data
+      .filter((row: { id: string; word_count?: number }) => Number(row.word_count || 0) < 800)
+      .map((row: { id: string }) => row.id)
+  );
+  if (thinIds.size === 0) return;
+
+  const upgrades = SEED_ARTICLES.filter((a) => thinIds.has(a.id));
+  if (upgrades.length > 0) {
+    await sb.from('posts').upsert(upgrades, { onConflict: 'id' });
+  }
+}
+
 export async function seedStarterDataToSupabase(userToken?: string): Promise<{ seededPosts: number }> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase environment variables are not configured.');
@@ -793,6 +822,8 @@ export async function seedStarterDataToSupabase(userToken?: string): Promise<{ s
     .from('posts')
     .upsert(SEED_ARTICLES, { onConflict: 'id', ignoreDuplicates: true });
   if (postsErr) throw new Error(postsErr.message);
+
+  await upgradeThinSeedPostsInSupabase(sb);
 
   await sb.from('comments').upsert(SEED_COMMENTS, { onConflict: 'id', ignoreDuplicates: true });
   await sb
@@ -821,6 +852,7 @@ export async function autoSeedSupabaseIfEmpty(): Promise<boolean> {
     await seedStarterDataToSupabase();
     return true;
   }
+  await upgradeThinSeedPostsInSupabase(sb);
   // Ensure routing_rules has starter rows if table is newly added
   const { count: rulesCount } = await sb.from('routing_rules').select('id', { count: 'exact', head: true });
   if ((rulesCount ?? 0) === 0) {

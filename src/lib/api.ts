@@ -285,11 +285,22 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
   // Invalidate read caches on mutations
   if (!isGet) {
-    if (url.includes('/api/posts')) invalidateClientApiCache('/api/posts');
+    if (url.includes('/api/posts')) {
+      invalidateClientApiCache('/api/posts');
+      invalidateClientApiCache('/api/audit/adsense');
+    }
     if (url.includes('/api/comments')) invalidateClientApiCache('/api/comments');
-    if (url.includes('/api/adsense')) invalidateClientApiCache('/api/adsense');
+    if (url.includes('/api/adsense')) {
+      invalidateClientApiCache('/api/adsense');
+      invalidateClientApiCache('/api/audit/adsense');
+    }
     if (url.includes('/api/settings') || url.includes('/api/admin/gtm/settings')) {
       invalidateClientApiCache('/api/settings');
+      invalidateClientApiCache('/api/audit/adsense');
+    }
+    if (url.includes('/api/supabase/')) {
+      invalidateClientApiCache('/api/posts');
+      invalidateClientApiCache('/api/audit/adsense');
     }
     if (url.includes('/api/pages')) invalidateClientApiCache('/api/pages');
     if (url.includes('/api/crm')) invalidateClientApiCache('/api/crm');
@@ -903,6 +914,9 @@ export const api = {
       title: string;
       slug: string;
       summary: string;
+      metaTitle: string;
+      metaDescription: string;
+      primaryKeyword: string;
       category: string;
       authorName: string;
       tags: string[];
@@ -910,6 +924,7 @@ export const api = {
       wordCount: number;
       policyBadge: 'AdSense Policy Safe' | 'Needs Human Attribution';
       policyNotes: string[];
+      faqs: { question: string; answer: string }[];
       sources: { title: string; url: string }[];
       notice?: string;
     }>('/api/generate-article', {

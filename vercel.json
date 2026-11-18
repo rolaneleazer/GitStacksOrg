@@ -5,7 +5,7 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 60,
-      "includeFiles": "{supabase/schema.sql,dist/index.html}"
+      "includeFiles": "{supabase/schema.sql,dist/_spa.html}"
     }
   },
   "crons": [
@@ -89,7 +89,7 @@
     },
     {
       "source": "/((?!assets/|src/assets/|favicon).*)",
-      "destination": "/index.html"
+      "destination": "/_spa.html"
     }
   ],
   "headers": [

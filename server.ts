@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { startAiSearchVisibilityLoop } from './src/server/aiSeoVisibility.ts';
@@ -24,12 +25,14 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
+    const spaShell = path.join(distDir, '_spa.html');
+    const legacyIndex = path.join(distDir, 'index.html');
+    app.use(express.static(distDir, { index: false }));
     app.get('*', (req, res) => {
       if (req.path.startsWith('/obama') || req.path.startsWith('/studio')) {
         res.setHeader('X-Robots-Tag', 'noindex, nofollow');
       }
-      res.sendFile(path.join(distDir, 'index.html'));
+      res.sendFile(fs.existsSync(spaShell) ? spaShell : legacyIndex);
     });
   }
 

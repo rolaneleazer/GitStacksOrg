@@ -1,11 +1,26 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'node:fs';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+function renameIndexToSpaShell(): Plugin {
+  return {
+    name: 'rename-index-to-spa-shell',
+    closeBundle() {
+      const distDir = path.resolve(__dirname, 'dist');
+      const indexFile = path.join(distDir, 'index.html');
+      const spaFile = path.join(distDir, '_spa.html');
+      if (fs.existsSync(indexFile)) {
+        fs.renameSync(indexFile, spaFile);
+      }
+    }
+  };
+}
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), renameIndexToSpaShell()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

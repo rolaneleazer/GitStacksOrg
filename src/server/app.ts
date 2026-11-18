@@ -428,7 +428,10 @@ async function ensureDatabaseReadyOnBoot(): Promise<void> {
     if (process.env.VERCEL) {
       // Fast check on serverless cold starts; skip redundant DDL unless tables are missing
       const ready = await checkSupabaseTablesReady();
-      if (ready) return;
+      if (ready) {
+        await autoSeedSupabaseIfEmpty();
+        return;
+      }
     }
     const migration = await autoMigrateSupabaseSchema();
     if (migration.executed) {

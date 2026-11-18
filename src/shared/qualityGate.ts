@@ -281,3 +281,138 @@ export function buildArticleJsonLd(article: Article, origin: string) {
     ]
   };
 }
+
+export function extractFaqsFromMarkdown(markdown: string): ArticleFAQ[] {
+  const lines = String(markdown || '').split('\n');
+  const faqs: ArticleFAQ[] = [];
+  let currentQuestion = '';
+  let answerParts: string[] = [];
+
+  const flush = () => {
+    const q = currentQuestion.replace(/^Q\d+\s*:\s*/i, '').trim();
+    const a = answerParts
+      .join(' ')
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (q.length >= 12 && a.length >= 30) {
+      faqs.push({ question: q, answer: a });
+    }
+    currentQuestion = '';
+    answerParts = [];
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    const h3Match = line.match(/^###\s+(.+)$/);
+    if (h3Match) {
+      if (currentQuestion) flush();
+      const heading = h3Match[1].trim();
+      if (/^Q\d+\s*:|[?？]$|^(how|what|why|when|which|can|does|is|are|do)\b/i.test(heading)) {
+        currentQuestion = heading;
+      }
+      continue;
+    }
+    if (/^##\s+/.test(line)) {
+      if (currentQuestion) flush();
+      continue;
+    }
+    if (currentQuestion) {
+      if (!line || line === '---' || line.startsWith('*Written by ')) {
+        if (answerParts.length > 0 && (line === '---' || line.startsWith('*Written by '))) {
+          flush();
+        }
+        continue;
+      }
+      answerParts.push(line.replace(/^>\s*/, '').replace(/\*\*/g, ''));
+    }
+  }
+  if (currentQuestion) flush();
+  return faqs;
+}
+
+function clampAtWordBoundary(text: string, maxLen: number): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLen) return clean;
+  const sliced = clean.slice(0, maxLen - 1);
+  const lastSpace = sliced.lastIndexOf(' ');
+  return (lastSpace > Math.floor(maxLen * 0.55) ? sliced.slice(0, lastSpace) : sliced).replace(/[:\-–—,\s]+$/, '');
+}
+
+export function normalizeSeoMetadata(input: {
+  title: string;
+  summary?: string;
+  metaTitle?: string;
+  metaDescription?: string;
+  primaryKeyword?: string;
+  category?: string;
+}): {
+  summary_tldr: string;
+  meta_title: string;
+  meta_description: string;
+  primary_keyword: string;
+} {
+  const cleanTitle = (input.title || 'Technical Architecture Guide').replace(/\s+/g, ' ').trim();
+  const cleanCategory = (input.category || 'Cloud Architecture').trim();
+  const keyword =
+    (input.primaryKeyword || '').trim() ||
+    cleanTitle
+      .split(/[:\-–|]/)[0]
+      .trim()
+      .split(/\s+/)
+      .slice(0, 4)
+      .join(' ') ||
+    'enterprise architecture';
+
+  // 1. Ensure summary_tldr is strictly 110–340 chars
+  let tldr = (input.summary || '').replace(/\s+/g, ' ').trim();
+  if (tldr.length < 110) {
+    const suffix = ` Explore production ${cleanCategory.toLowerCase()} benchmarks, failure modes, and actionable GitStack implementation blueprints.`;
+    tldr = `${tldr ? `${tldr.replace(/\.+$/, '')}.` : `${cleanTitle}.`}${suffix}`.trim();
+  }
+  if (tldr.length < 110) {
+    tldr = `${tldr} Engineered for high availability, regulatory compliance, and predictable cloud cost control.`.trim();
+  }
+  if (tldr.length > 340) {
+    tldr = `${clampAtWordBoundary(tldr, 336)}.`;
+  }
+
+  // 2. Ensure meta_title is strictly 30–68 chars (append "| GitStack" only if it fits <= 68 chars)
+  let metaTitle = (input.metaTitle || '').replace(/\s+/g, ' ').trim() || cleanTitle;
+  if (!metaTitle.includes('GitStack') && metaTitle.length + 11 <= 68) {
+    metaTitle = `${metaTitle} | GitStack`;
+  }
+  if (metaTitle.length > 68) {
+    const baseWithoutBrand = metaTitle.replace(/\s*\|\s*GitStack(\s+Insights)?$/i, '').trim();
+    if (baseWithoutBrand.length >= 30 && baseWithoutBrand.length <= 68) {
+      metaTitle = baseWithoutBrand;
+    } else if (baseWithoutBrand.length + 11 <= 68) {
+      metaTitle = `${baseWithoutBrand} | GitStack`;
+    } else {
+      metaTitle = clampAtWordBoundary(baseWithoutBrand, 68);
+    }
+  }
+  if (metaTitle.length < 30) {
+    metaTitle = `${metaTitle} | GitStack Engineering Guide`.slice(0, 68);
+  }
+
+  // 3. Ensure meta_description is strictly 115–165 chars
+  let metaDesc = (input.metaDescription || tldr || '').replace(/\s+/g, ' ').trim();
+  if (metaDesc.length < 115) {
+    metaDesc = `${metaDesc.replace(/\.+$/, '')}. Production ${cleanCategory.toLowerCase()} architecture, benchmarks, and checklists by GitStack.`.trim();
+  }
+  if (metaDesc.length < 115) {
+    metaDesc = `${metaDesc} Built for resilient enterprise engineering teams.`.trim();
+  }
+  if (metaDesc.length > 165) {
+    metaDesc = `${clampAtWordBoundary(metaDesc, 162)}.`;
+  }
+
+  return {
+    summary_tldr: tldr,
+    meta_title: metaTitle,
+    meta_description: metaDesc,
+    primary_keyword: keyword
+  };
+}
+

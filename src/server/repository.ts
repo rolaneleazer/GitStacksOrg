@@ -94,7 +94,8 @@ import type {
   GtmDashboardResponse,
   GtmEventCategory,
   GtmEventLog,
-  GtmSettingsConfig
+  GtmSettingsConfig,
+  DataAuditLogEntry
 } from '../shared/types.ts';
 import { resolveDateRangeBounds, type ResolvedDateRange } from '../shared/dateRanges.ts';
 import { classifyAcquisitionChannel } from './googleAnalyticsService.ts';
@@ -181,6 +182,7 @@ interface LocalDatabase {
   cyber_security_reports?: CyberSecurityReport[];
   cyber_security_settings?: CyberSecuritySettings;
   gtm_event_logs?: GtmEventLog[];
+  data_audit_logs?: DataAuditLogEntry[];
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -205,7 +207,7 @@ export function getSupabaseUrl(): string | undefined {
   )?.trim() || undefined;
 }
 
-function getSupabasePublicKey(): string | undefined {
+export function getSupabasePublicKey(): string | undefined {
   return (
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
@@ -328,7 +330,8 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
       reportsRes,
       crmRes,
       demoRes,
-      inboxRes
+      inboxRes,
+      auditRes
     ] = await Promise.all([
       client.from('posts').select('id').limit(1),
       client.from('page_contents').select('page_key').limit(1),
@@ -339,7 +342,8 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
       client.from('agent_email_reports').select('id').limit(1),
       client.from('crm_leads').select('id').limit(1),
       client.from('demo_users').select('id').limit(1),
-      client.from('inbox_email_logs').select('id').limit(1)
+      client.from('inbox_email_logs').select('id').limit(1),
+      client.from('data_audit_logs').select('id').limit(1)
     ]);
     return (
       !postsRes.error &&
@@ -351,7 +355,8 @@ export async function checkSupabaseTablesReady(): Promise<boolean> {
       !reportsRes.error &&
       !crmRes.error &&
       !demoRes.error &&
-      !inboxRes.error
+      !inboxRes.error &&
+      !auditRes.error
     );
   } catch {
     return false;
@@ -388,10 +393,13 @@ export function normalizePostgresUrl(raw: string): {
 
   let normalizedUrl = `${prefix}${encodedAuth}@${hostAndRest}`;
 
-  // Ensure sslmode=require and pooler configuration for Supabase Free Tier stability
+  // Ensure sslmode=require + uselibpqcompat=true and pooler configuration for Supabase Free Tier stability
   if (!normalizedUrl.includes('sslmode=')) {
     const separator = normalizedUrl.includes('?') ? '&' : '?';
     normalizedUrl = `${normalizedUrl}${separator}sslmode=require`;
+  }
+  if (normalizedUrl.includes('sslmode=') && !normalizedUrl.includes('uselibpqcompat=')) {
+    normalizedUrl = `${normalizedUrl}&uselibpqcompat=true`;
   }
   if (isPooler && !normalizedUrl.includes('connection_limit=')) {
     normalizedUrl = `${normalizedUrl}&connection_limit=1`;
@@ -546,11 +554,13 @@ function ensureLocalShape(db: LocalDatabase): LocalDatabase {
     crm_sync_runs: db.crm_sync_runs || [],
     crm_integration_secrets: db.crm_integration_secrets || [],
     demo_users: db.demo_users || [],
-    inbox_email_logs: db.inbox_email_logs || []
+    inbox_email_logs: db.inbox_email_logs || [],
+    gtm_event_logs: db.gtm_event_logs || [],
+    data_audit_logs: db.data_audit_logs || []
   };
 }
 
-async function readLocalDb(): Promise<LocalDatabase> {
+export async function readLocalDb(): Promise<LocalDatabase> {
   try {
     const raw = await fs.readFile(DATA_FILE, 'utf8');
     return ensureLocalShape(JSON.parse(raw) as LocalDatabase);
@@ -567,7 +577,7 @@ async function readLocalDb(): Promise<LocalDatabase> {
   }
 }
 
-async function writeLocalDb(data: LocalDatabase): Promise<void> {
+export async function writeLocalDb(data: LocalDatabase): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
 }

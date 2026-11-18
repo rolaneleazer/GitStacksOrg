@@ -1488,5 +1488,19 @@
   "crm_sync_runs": [],
   "crm_integration_secrets": [],
   "demo_users": [],
-  "inbox_email_logs": []
+  "inbox_email_logs": [],
+  "gtm_event_logs": [],
+  "data_audit_logs": [],
+  "product_qa_settings": {
+    "id": "default",
+    "agent_enabled": true,
+    "realtime_alert_on_critical": true,
+    "eod_enabled": true,
+    "eod_hour_utc": 8,
+    "recipient_email": "",
+    "last_eod_sent_date": "2026-11-18",
+    "last_scan_at": "2026-11-18T14:11:15.823+00:00",
+    "updated_at": "2026-11-18T14:11:15.998+00:00",
+    "feature_baselines": {}
+  }
 }

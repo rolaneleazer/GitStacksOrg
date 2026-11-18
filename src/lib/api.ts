@@ -83,7 +83,15 @@ import type {
   GtmDashboardResponse,
   GtmEventCategory,
   GtmEventLog,
-  GtmSettingsConfig
+  GtmSettingsConfig,
+  DataAuditLogEntry,
+  DataAuditLogsResponse,
+  DataAuditOperation,
+  DataAuditSource,
+  DataExplorerStatus,
+  DataRealtimeConfigResponse,
+  DataTableDescriptor,
+  DataTableRowsResponse
 } from '../shared/types.ts';
 import { pushGtmEvent } from './tagManager.ts';
 
@@ -1850,5 +1858,100 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload || {})
     });
+  },
+
+  // --- Super Admin Live Data Explorer & Audit Logs ---
+  async getDataRealtimeConfig() {
+    return request<DataRealtimeConfigResponse>('/api/admin/data/realtime-config');
+  },
+
+  async listDataTables() {
+    return request<{ tables: DataTableDescriptor[]; status: DataExplorerStatus }>(
+      '/api/admin/data/tables'
+    );
+  },
+
+  async getDataTableRows(
+    tableName: string,
+    opts?: {
+      limit?: number;
+      offset?: number;
+      search?: string;
+      sortColumn?: string;
+      sortDir?: 'asc' | 'desc';
+    }
+  ) {
+    const params = new URLSearchParams();
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.offset !== undefined) params.set('offset', String(opts.offset));
+    if (opts?.search) params.set('search', opts.search);
+    if (opts?.sortColumn) params.set('sortColumn', opts.sortColumn);
+    if (opts?.sortDir) params.set('sortDir', opts.sortDir);
+    const qs = params.toString();
+    return request<DataTableRowsResponse>(
+      `/api/admin/data/tables/${encodeURIComponent(tableName)}/rows${qs ? `?${qs}` : ''}`
+    );
+  },
+
+  async updateDataTableCell(
+    tableName: string,
+    payload: { primaryKeyValue: string; column: string; value: unknown }
+  ) {
+    return request<{ row: Record<string, unknown>; auditLog: DataAuditLogEntry }>(
+      `/api/admin/data/tables/${encodeURIComponent(tableName)}/cell`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async insertDataTableRow(tableName: string, values: Record<string, unknown>) {
+    return request<{ row: Record<string, unknown>; auditLog: DataAuditLogEntry }>(
+      `/api/admin/data/tables/${encodeURIComponent(tableName)}/rows`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ values })
+      }
+    );
+  },
+
+  async deleteDataTableRow(tableName: string, primaryKeyValue: string) {
+    return request<{ ok: boolean; auditLog: DataAuditLogEntry }>(
+      `/api/admin/data/tables/${encodeURIComponent(tableName)}/rows/${encodeURIComponent(primaryKeyValue)}`,
+      {
+        method: 'DELETE'
+      }
+    );
+  },
+
+  async listDataAuditLogs(opts?: {
+    table?: string;
+    source?: 'all' | DataAuditSource;
+    operation?: 'all' | DataAuditOperation;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (opts?.table && opts.table !== 'all') params.set('table', opts.table);
+    if (opts?.source && opts.source !== 'all') params.set('source', opts.source);
+    if (opts?.operation && opts.operation !== 'all') params.set('operation', opts.operation);
+    if (opts?.search) params.set('search', opts.search);
+    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.offset !== undefined) params.set('offset', String(opts.offset));
+    const qs = params.toString();
+    return request<DataAuditLogsResponse>(`/api/admin/data/audit-logs${qs ? `?${qs}` : ''}`);
+  },
+
+  async setupDataAuditTriggers() {
+    return request<{ executed: boolean; triggersReady: boolean; message: string }>(
+      '/api/admin/data/setup-triggers',
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
   }
 };
+

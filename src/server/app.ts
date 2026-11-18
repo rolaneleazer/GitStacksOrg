@@ -198,6 +198,7 @@ import {
   getDemoExpiresAtIso,
   getPostBySlug,
   getSupabaseAutomationMode,
+  getSupabasePublicKey,
   getSupabaseUrl,
   hashDemoPassword,
   isDemoUserExpired,
@@ -272,6 +273,15 @@ import {
   testIntegrationConnection,
   VALID_INTEGRATION_PROVIDERS
 } from './vault.ts';
+import {
+  deleteDataTableRow,
+  getDataExplorerOverview,
+  getDataTableRows,
+  insertDataTableRow,
+  listDataAuditLogs,
+  setupDataAuditTriggers,
+  updateDataTableCell
+} from './dataExplorer.ts';
 
 interface AuthReq extends Request {
   editor?: EditorSession;
@@ -5734,6 +5744,152 @@ export async function createApp(): Promise<Express> {
       }
     }
   );
+
+  // --- Super Admin Live Data Explorer, Click-to-Edit & Audit Logs ---
+
+  app.get('/api/admin/data/realtime-config', requireRoles('super_admin'), (_req, res) => {
+    const supabaseUrl = getSupabaseUrl() || null;
+    const supabasePublicKey = getSupabasePublicKey() || null;
+    res.json({
+      supabaseConfigured: Boolean(supabaseUrl && supabasePublicKey),
+      supabaseUrl,
+      supabasePublicKey,
+      storageBackend: isSupabaseConfigured() ? 'supabase' : 'local-json'
+    });
+  });
+
+  app.get('/api/admin/data/tables', requireRoles('super_admin'), async (req, res) => {
+    try {
+      const data = await getDataExplorerOverview(getBearerToken(req));
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed loading database tables overview.'
+      });
+    }
+  });
+
+  app.get('/api/admin/data/tables/:table/rows', requireRoles('super_admin'), async (req, res) => {
+    try {
+      const data = await getDataTableRows({
+        tableName: req.params.table,
+        limit: Number(req.query.limit || 50),
+        offset: Number(req.query.offset || 0),
+        search: String(req.query.search || ''),
+        sortColumn: req.query.sortColumn ? String(req.query.sortColumn) : undefined,
+        sortDir: req.query.sortDir === 'asc' ? 'asc' : 'desc',
+        userToken: getBearerToken(req)
+      });
+      res.json(data);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed loading table rows.'
+      });
+    }
+  });
+
+  app.patch(
+    '/api/admin/data/tables/:table/cell',
+    requireRoles('super_admin'),
+    async (req: AuthReq, res) => {
+      try {
+        const body = (req.body || {}) as {
+          primaryKeyValue?: string;
+          column?: string;
+          value?: unknown;
+        };
+        if (body.primaryKeyValue === undefined || !body.column) {
+          return res.status(400).json({
+            error: 'primaryKeyValue and column are required to update a cell.'
+          });
+        }
+        const result = await updateDataTableCell({
+          tableName: req.params.table,
+          primaryKeyValue: String(body.primaryKeyValue),
+          column: String(body.column),
+          value: body.value,
+          actorEmail: req.editor?.email || 'super_admin',
+          userToken: getBearerToken(req)
+        });
+        res.json(result);
+      } catch (err) {
+        res.status(400).json({
+          error: err instanceof Error ? err.message : 'Failed updating cell value.'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/data/tables/:table/rows',
+    requireRoles('super_admin'),
+    async (req: AuthReq, res) => {
+      try {
+        const body = (req.body || {}) as { values?: Record<string, unknown> };
+        const result = await insertDataTableRow({
+          tableName: req.params.table,
+          values: body.values || {},
+          actorEmail: req.editor?.email || 'super_admin',
+          userToken: getBearerToken(req)
+        });
+        res.status(201).json(result);
+      } catch (err) {
+        res.status(400).json({
+          error: err instanceof Error ? err.message : 'Failed inserting new table row.'
+        });
+      }
+    }
+  );
+
+  app.delete(
+    '/api/admin/data/tables/:table/rows/:pk',
+    requireRoles('super_admin'),
+    async (req: AuthReq, res) => {
+      try {
+        const result = await deleteDataTableRow({
+          tableName: req.params.table,
+          primaryKeyValue: req.params.pk,
+          actorEmail: req.editor?.email || 'super_admin',
+          userToken: getBearerToken(req)
+        });
+        res.json(result);
+      } catch (err) {
+        res.status(400).json({
+          error: err instanceof Error ? err.message : 'Failed deleting table row.'
+        });
+      }
+    }
+  );
+
+  app.get('/api/admin/data/audit-logs', requireRoles('super_admin'), async (req, res) => {
+    try {
+      const data = await listDataAuditLogs({
+        tableName: req.query.table ? String(req.query.table) : undefined,
+        source: req.query.source ? (String(req.query.source) as 'all' | 'app_studio' | 'supabase_dashboard' | 'api_backend') : 'all',
+        operation: req.query.operation ? (String(req.query.operation) as 'all' | 'INSERT' | 'UPDATE' | 'DELETE') : 'all',
+        search: req.query.search ? String(req.query.search) : '',
+        limit: Number(req.query.limit || 60),
+        offset: Number(req.query.offset || 0),
+        userToken: getBearerToken(req)
+      });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed loading audit logs.'
+      });
+    }
+  });
+
+  app.post('/api/admin/data/setup-triggers', requireRoles('super_admin'), async (_req, res) => {
+    try {
+      const result = await setupDataAuditTriggers();
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed installing database audit triggers.'
+      });
+    }
+  });
 
   app.get('/api/supabase-schema', async (_req, res) => {
     try {

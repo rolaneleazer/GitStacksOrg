@@ -1779,6 +1779,102 @@ export interface GtmDashboardResponse {
   recentEvents: GtmEventLog[];
 }
 
+// --- Super Admin Live Data Explorer & Audit Log Module ---
+
+export type DataColumnType =
+  | 'text'
+  | 'longtext'
+  | 'number'
+  | 'boolean'
+  | 'json'
+  | 'timestamp'
+  | 'enum';
+
+export type DataDomainGroup =
+  | 'Content & SEO'
+  | 'CRM & Leads'
+  | 'Communications'
+  | 'Analytics & Telemetry'
+  | 'Operations & Settings'
+  | 'Security & Audit';
+
+export interface DataTableColumnDescriptor {
+  name: string;
+  dataType: DataColumnType;
+  pgType: string;
+  nullable: boolean;
+  readOnly: boolean;
+  masked: boolean;
+  isPrimaryKey: boolean;
+  enumValues?: string[];
+  defaultValue?: unknown;
+}
+
+export interface DataTableDescriptor {
+  tableName: string;
+  label: string;
+  domainGroup: DataDomainGroup;
+  primaryKey: string;
+  defaultSortColumn: string;
+  rowCount: number;
+  readOnlyTable?: boolean;
+  columns: DataTableColumnDescriptor[];
+}
+
+export type DataAuditSource = 'app_studio' | 'supabase_dashboard' | 'api_backend';
+export type DataAuditOperation = 'INSERT' | 'UPDATE' | 'DELETE';
+
+export interface DataAuditLogEntry {
+  id: string;
+  table_name: string;
+  operation: DataAuditOperation;
+  record_pk: string;
+  source: DataAuditSource;
+  actor_email: string;
+  changed_columns: string[];
+  before_data: Record<string, unknown> | null;
+  after_data: Record<string, unknown> | null;
+  summary: string;
+  created_at: string;
+}
+
+export interface DataExplorerStatus {
+  supabaseConfigured: boolean;
+  storageBackend: 'supabase' | 'local-json';
+  triggersReady: boolean;
+  realtimeReady: boolean;
+  automationMode: 'db-url' | 'management-api' | 'manual';
+  totalTables: number;
+  totalAuditLogs: number;
+}
+
+export interface DataRealtimeConfigResponse {
+  supabaseConfigured: boolean;
+  supabaseUrl: string | null;
+  supabasePublicKey: string | null;
+  storageBackend: 'supabase' | 'local-json';
+}
+
+export interface DataTableRowsResponse {
+  table: DataTableDescriptor;
+  rows: Record<string, unknown>[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+}
+
+export interface DataAuditLogsResponse {
+  logs: DataAuditLogEntry[];
+  totalCount: number;
+  countsBySource: {
+    all: number;
+    app_studio: number;
+    supabase_dashboard: number;
+    api_backend: number;
+  };
+}
+
+
 
 
 

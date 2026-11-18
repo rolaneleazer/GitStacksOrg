@@ -1328,4 +1328,220 @@ CREATE POLICY "Authenticated team manage gtm event logs"
   USING (auth.role() = 'authenticated')
   WITH CHECK (auth.role() = 'authenticated');
 
+-- ============================================================================
+-- 39. Live Data Explorer Audit Logs, PostgreSQL Change Triggers & Realtime
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.data_audit_logs (
+  id TEXT PRIMARY KEY,
+  table_name TEXT NOT NULL,
+  operation TEXT NOT NULL CHECK (operation IN ('INSERT', 'UPDATE', 'DELETE')),
+  record_pk TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL CHECK (source IN ('app_studio', 'supabase_dashboard', 'api_backend')) DEFAULT 'supabase_dashboard',
+  actor_email TEXT NOT NULL DEFAULT '',
+  changed_columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+  before_data JSONB,
+  after_data JSONB,
+  summary TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_audit_logs_created ON public.data_audit_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_data_audit_logs_table ON public.data_audit_logs (table_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_data_audit_logs_source ON public.data_audit_logs (source, created_at DESC);
+
+GRANT ALL ON public.data_audit_logs TO authenticated, service_role;
+ALTER TABLE public.data_audit_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated team manage data audit logs" ON public.data_audit_logs;
+CREATE POLICY "Authenticated team manage data audit logs"
+  ON public.data_audit_logs FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+CREATE OR REPLACE FUNCTION public.fn_redact_sensitive_jsonb(payload JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  v_res JSONB := payload;
+  v_key TEXT;
+  v_sensitive TEXT[] := ARRAY[
+    'encrypted_secret',
+    'password_hash',
+    'access_token',
+    'refresh_token',
+    'secret_hint'
+  ];
+BEGIN
+  IF v_res IS NULL THEN
+    RETURN NULL;
+  END IF;
+  FOREACH v_key IN ARRAY v_sensitive LOOP
+    IF v_res ? v_key AND NULLIF(v_res ->> v_key, '') IS NOT NULL THEN
+      v_res := jsonb_set(v_res, ARRAY[v_key], '"[REDACTED]"'::jsonb, true);
+    END IF;
+  END LOOP;
+  RETURN v_res;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fn_log_table_data_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_old JSONB;
+  v_new JSONB;
+  v_pk TEXT := '';
+  v_source TEXT;
+  v_actor TEXT;
+  v_changed JSONB := '[]'::jsonb;
+  v_claims_raw TEXT;
+  v_claims_email TEXT := '';
+  v_summary TEXT := '';
+BEGIN
+  IF current_setting('app.skip_audit_trigger', true) = '1' THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  IF TG_TABLE_NAME = 'data_audit_logs' THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  v_old := CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN public.fn_redact_sensitive_jsonb(to_jsonb(OLD)) ELSE NULL END;
+  v_new := CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN public.fn_redact_sensitive_jsonb(to_jsonb(NEW)) ELSE NULL END;
+
+  v_pk := COALESCE(
+    COALESCE(v_new, v_old) ->> 'id',
+    COALESCE(v_new, v_old) ->> 'user_id',
+    COALESCE(v_new, v_old) ->> 'page_key',
+    COALESCE(v_new, v_old) ->> 'provider',
+    COALESCE(v_new, v_old) ->> 'agent_id',
+    COALESCE(v_new, v_old) ->> 'zone_id',
+    ''
+  );
+
+  IF TG_OP = 'UPDATE' THEN
+    SELECT COALESCE(jsonb_agg(k), '[]'::jsonb)
+    INTO v_changed
+    FROM (
+      SELECT key AS k
+      FROM jsonb_each(v_new)
+      WHERE NOT (v_old ? key) OR (v_old -> key) IS DISTINCT FROM (v_new -> key)
+    ) diff_keys;
+
+    IF jsonb_array_length(v_changed) = 0 THEN
+      RETURN NEW;
+    END IF;
+  ELSIF TG_OP = 'INSERT' THEN
+    SELECT COALESCE(jsonb_agg(key), '[]'::jsonb)
+    INTO v_changed
+    FROM jsonb_object_keys(v_new) AS key;
+  ELSIF TG_OP = 'DELETE' THEN
+    SELECT COALESCE(jsonb_agg(key), '[]'::jsonb)
+    INTO v_changed
+    FROM jsonb_object_keys(v_old) AS key;
+  END IF;
+
+  v_claims_raw := NULLIF(current_setting('request.jwt.claims', true), '');
+  IF v_claims_raw IS NOT NULL THEN
+    BEGIN
+      v_claims_email := COALESCE(v_claims_raw::jsonb ->> 'email', '');
+    EXCEPTION WHEN OTHERS THEN
+      v_claims_email := '';
+    END;
+  END IF;
+
+  v_source := COALESCE(NULLIF(current_setting('app.edit_source', true), ''), 'supabase_dashboard');
+  IF v_source NOT IN ('app_studio', 'supabase_dashboard', 'api_backend') THEN
+    v_source := 'supabase_dashboard';
+  END IF;
+
+  v_actor := COALESCE(
+    NULLIF(current_setting('app.actor_email', true), ''),
+    NULLIF(v_claims_email, ''),
+    current_user,
+    'supabase_dashboard'
+  );
+
+  v_summary := TG_OP || ' on ' || TG_TABLE_NAME || CASE WHEN v_pk <> '' THEN ' (' || v_pk || ')' ELSE '' END;
+
+  INSERT INTO public.data_audit_logs (
+    id,
+    table_name,
+    operation,
+    record_pk,
+    source,
+    actor_email,
+    changed_columns,
+    before_data,
+    after_data,
+    summary
+  )
+  VALUES (
+    'aud_' || replace(gen_random_uuid()::text, '-', ''),
+    TG_TABLE_NAME,
+    TG_OP,
+    v_pk,
+    v_source,
+    v_actor,
+    v_changed,
+    v_old,
+    v_new,
+    v_summary
+  );
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+-- Helper RPC for authenticated server mutations with transaction-local audit attribution
+CREATE OR REPLACE FUNCTION public.app_set_audit_context(p_source TEXT, p_actor_email TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  PERFORM set_config('app.edit_source', COALESCE(NULLIF(p_source, ''), 'app_studio'), true);
+  PERFORM set_config('app.actor_email', COALESCE(NULLIF(p_actor_email, ''), 'super_admin'), true);
+END;
+$$;
+
+-- Attach audit trigger and register Supabase Realtime across all public tables
+DO $$
+DECLARE
+  tbl RECORD;
+BEGIN
+  FOR tbl IN
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_type = 'BASE TABLE'
+      AND table_name <> 'data_audit_logs'
+  LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS trg_gitstack_audit ON public.%I;', tbl.table_name);
+    EXECUTE format(
+      'CREATE TRIGGER trg_gitstack_audit AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.fn_log_table_data_change();',
+      tbl.table_name
+    );
+
+    BEGIN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I;', tbl.table_name);
+    EXCEPTION WHEN OTHERS THEN
+      NULL;
+    END;
+  END LOOP;
+
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.data_audit_logs;
+  EXCEPTION WHEN OTHERS THEN
+    NULL;
+  END;
+END $$;
+
 

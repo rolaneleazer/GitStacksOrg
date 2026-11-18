@@ -11,6 +11,7 @@ import {
   Coffee,
   Compass,
   Copy,
+  Database,
   Download,
   ExternalLink,
   Eye,
@@ -48,6 +49,7 @@ import { BuyMeACoffeeHubPanel } from '../components/backoffice/BuyMeACoffeeHubPa
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
 import { CyberSecurityPanel } from '../components/backoffice/CyberSecurityPanel.tsx';
+import { DataExplorerPanel } from '../components/backoffice/DataExplorerPanel.tsx';
 import { DemoUsersDashboardPanel } from '../components/backoffice/DemoUsersDashboardPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
@@ -125,6 +127,7 @@ type StudioTab =
   | 'articles'
   | 'users'
   | 'demo_users'
+  | 'data_explorer'
   | 'adsense'
   | 'profile';
 
@@ -149,6 +152,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'articles',
     'users',
     'demo_users',
+    'data_explorer',
     'adsense',
     'profile'
   ],
@@ -1101,6 +1105,7 @@ export function StudioPage({
     { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
     { id: 'demo_users', label: 'Demo Users & Leads', icon: UserCheck },
+    { id: 'data_explorer', label: 'Data & Tables', icon: Database },
     { id: 'adsense', label: 'Settings & Integrations', icon: ShieldCheck },
     { id: 'profile', label: 'My Profile', icon: UserCheck }
   ];
@@ -1482,6 +1487,11 @@ export function StudioPage({
           {/* PANEL 8B: ISOLATED LIVE DEMO USERS & TELEMETRY */}
           {currentTab === 'demo_users' && (
             <DemoUsersDashboardPanel onOpenCrm={() => setActiveTab('crm')} />
+          )}
+
+          {/* PANEL 8C: SUPER ADMIN LIVE DATA EXPLORER & AUDIT LOGS */}
+          {currentTab === 'data_explorer' && currentUserRole === 'super_admin' && (
+            <DataExplorerPanel />
           )}
 
           {/* PANEL 9: MY PROFILE & PICTURE */}

@@ -861,12 +861,17 @@ export async function autoSeedSupabaseIfEmpty(): Promise<boolean> {
   return false;
 }
 
-export async function listPosts(includeDrafts: boolean, userToken?: string): Promise<Article[]> {
+export async function listPosts(
+  includeDrafts: boolean,
+  userToken?: string,
+  includeContent = false
+): Promise<Article[]> {
   if (isSupabaseConfigured()) {
     const sb = getSupabaseClient(userToken);
+    const cols: string = includeContent ? POST_COLUMNS : POST_LIST_COLUMNS;
     let query = sb
       .from('posts')
-      .select(POST_LIST_COLUMNS)
+      .select(cols)
       .order('updated_at', { ascending: false })
       .limit(50);
     if (!includeDrafts) {
@@ -874,7 +879,7 @@ export async function listPosts(includeDrafts: boolean, userToken?: string): Pro
     }
     const { data, error } = await query;
     if (!error) {
-      const rows = (data || []) as Article[];
+      const rows = (data || []) as unknown as Article[];
       if (rows.length === 0 && !includeDrafts) {
         return SEED_ARTICLES;
       }

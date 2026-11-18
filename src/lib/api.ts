@@ -891,12 +891,15 @@ export const api = {
         title: string;
         searchIntent: 'Informational' | 'Commercial' | 'News';
         opportunity: 'High' | 'Surging' | 'Breakout';
+        servicePillar?: string;
         summary: string;
         sources: { title: string; url: string }[];
         keyAngles: string[];
       }>;
       niche: string;
       country: string;
+      sourceMode: 'google_search' | 'gitstack_seo_library';
+      excludedUsedCount: number;
       notice?: string;
     }>('/api/discover-trends', {
       method: 'POST',

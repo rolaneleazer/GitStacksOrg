@@ -619,7 +619,7 @@ export async function createApp(): Promise<Express> {
   app.get('/llms-full.txt', async (req, res) => {
     try {
       const origin = getOrigin(req);
-      const posts = await listPosts(false);
+      const posts = await listPosts(false, undefined, true);
       const sections = [
         '# GitStack Complete Knowledge & Service Corpus',
         `Canonical Origin: ${origin}`,
@@ -795,7 +795,15 @@ export async function createApp(): Promise<Express> {
   app.post('/api/discover-trends', async (req, res) => {
     try {
       const token = getBearerToken(req);
-      const result = await discoverTrendingTopics(req.body || {}, token);
+      const existingPosts = await listPosts(true, token).catch(() => []);
+      const result = await discoverTrendingTopics(
+        {
+          ...(req.body || {}),
+          existingSlugs: existingPosts.map((p) => p.slug),
+          existingTitles: existingPosts.map((p) => p.title)
+        },
+        token
+      );
       res.json(result);
     } catch (err) {
       res.status(500).json({
@@ -897,6 +905,23 @@ export async function createApp(): Promise<Express> {
 
       const now = new Date().toISOString();
       const baseSlug = slugify(payload.slug || draftInput.title);
+      const token = getBearerToken(req);
+
+      const existingPosts = await listPosts(true, token).catch(() => []);
+      const normalizedTitle = draftInput.title.toLowerCase();
+      const duplicate = existingPosts.find(
+        (p) =>
+          p.id !== payload.id &&
+          (p.slug === baseSlug || p.title.trim().toLowerCase() === normalizedTitle)
+      );
+      if (duplicate) {
+        return res.status(409).json({
+          error: `Topic already exists as "${duplicate.title}" (${duplicate.status}). Duplicate reposting is blocked—edit the existing guide in Managed Articles or scout a fresh topic.`,
+          duplicateSlug: duplicate.slug,
+          duplicateId: duplicate.id
+        });
+      }
+
       const article: Article = {
         id: payload.id || `art-${crypto.randomUUID().slice(0, 8)}`,
         slug: baseSlug,
@@ -912,7 +937,7 @@ export async function createApp(): Promise<Express> {
         created_at: payload.created_at || now
       };
 
-      const saved = await upsertPost(article, getBearerToken(req));
+      const saved = await upsertPost(article, token);
       res.status(201).json({ post: saved, report });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save article' });

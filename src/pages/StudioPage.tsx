@@ -213,30 +213,95 @@ const COVER_PRESETS = [
 
 function createEmptyDraft(): Partial<Article> {
   return {
-    title: '',
-    slug: '',
-    summary_tldr: '',
+    title: 'Enterprise Architecture Blueprint: Production Reliability & Cloud FinOps Guide',
+    slug: 'enterprise-architecture-blueprint-production-reliability-finops',
+    summary_tldr:
+      'Production cloud platforms require transaction connection pooling, idempotent asynchronous event pipelines, and policy-as-code governance to deliver sub-250ms API latency at predictable unit cost.',
     category: 'AI Integration',
     author_name: 'Ronel Molina',
     author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
-      'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.',
+      'Principal Cloud Architect with 13+ years of experience designing high-throughput backend systems, MLOps pipelines, and enterprise compliance architectures.',
     cover_image: COVER_PRESETS[0].url,
     cover_alt:
       'Geometric optical glass prisms refracting cobalt blue light on a white studio surface',
-    meta_title: '',
-    meta_description: '',
-    primary_keyword: '',
+    meta_title: 'Enterprise Cloud Architecture & FinOps Blueprint | GitStack',
+    meta_description:
+      'Step-by-step GitStack production architecture guide covering connection pooling, transactional outbox pipelines, observability, and cloud FinOps controls.',
+    primary_keyword: 'enterprise cloud architecture',
     faqs: [
-      { question: '', answer: '' },
-      { question: '', answer: '' }
+      {
+        question: 'How do serverless APIs avoid exhausting PostgreSQL database connections?',
+        answer:
+          'Route stateless serverless workers through a transaction pooler on port 6543 using a singleton client wrapper with prepared statements disabled so concurrent requests share pooled backend sockets safely.'
+      },
+      {
+        question: 'Why is the transactional outbox pattern preferred over dual writes to message brokers?',
+        answer:
+          'Persisting business state changes and outgoing domain events inside a single ACID database transaction eliminates silent message loss during transient network blips or worker restarts.'
+      }
     ],
     references: [
-      { title: '', url: '' },
-      { title: '', url: '' }
+      {
+        title: 'GitStack Technical Insights & Case Studies',
+        url: 'https://git-stack.org/insights'
+      },
+      {
+        title: 'Google Search Central Helpful Content Guidelines',
+        url: 'https://developers.google.com/search/docs/fundamentals/creating-helpful-content'
+      }
     ],
-    content_markdown:
-      '## Problem Context and Architecture Scope\n\nDescribe the operational bottleneck and production requirements clearly.\n\n## Core System Design\n\nBreak down data flow, failure modes, and security boundaries.\n\n## Production Verification and Metrics\n\nExplain how engineering teams monitor reliability, latency, and cost in production.',
+    content_markdown: `## 1. Problem Context and Production Architecture Scope
+
+Modern engineering organizations scaling B2B SaaS, AI automation, and enterprise data platforms rarely struggle with initial prototype velocity; they struggle when concurrent customer traffic, strict regulatory compliance, and multi-region latency requirements expose brittle monolithic coupling. Without clear architectural boundaries around persistence, asynchronous queues, and observability, routine feature releases trigger unexpected database lock contention, 504 gateway timeouts, and runaway monthly cloud spend.
+
+At GitStack, every production architecture engagement begins by establishing deterministic reliability budgets, explicit service ownership boundaries, and automated FinOps telemetry before writing application controllers. Replace this opening context with the specific customer problem, target industry, and operational benchmarks relevant to your new guide.
+
+## 2. Core System Design & Integration Topology
+
+Reliable distributed systems separate latency-critical user interactions from heavy background processing such as document parsing, third-party webhook delivery, and compliance reporting. Incoming API requests validate authentication claims and payload schemas at the edge, persist authoritative state inside a single ACID transaction, and enqueue downstream work cleanly via a transactional outbox table.
+
+- **Edge Schema & Identity Verification**: Enforce strict runtime payload validation and role-based access control prior to invoking downstream business logic or AI retrieval layers.
+- **Singleton Transaction Pooling**: Share pooled PostgreSQL connections through port 6543 in serverless runtimes so traffic spikes never exhaust active backend processes.
+- **Idempotent Webhook & Queue Processing**: Tag every asynchronous command with a deterministic UUID key so network retries never create duplicate invoices, charges, or notifications.
+- **Zero-Trust Secret Isolation**: Keep third-party API keys, database strings, and OAuth tokens exclusively inside server-side encrypted vaults with automated rotation audits.
+
+## 3. Step-by-Step Implementation Blueprint
+
+Standardize your database access and asynchronous worker pattern so every microservice enforces consistent connection reuse, structured logging, and predictable retry behavior under regional load spikes.
+
+\`\`\`typescript
+interface ReliabilityPolicy {
+  maxPoolConnections: number;
+  requestTimeoutMs: number;
+  retryBackoffMs: number[];
+}
+
+export const PRODUCTION_POLICY: ReliabilityPolicy = {
+  maxPoolConnections: 1,
+  requestTimeoutMs: 4000,
+  retryBackoffMs: [250, 1000, 3000]
+};
+\`\`\`
+
+Document your concrete environment variables, deployment topology (e.g., Singapore or Tokyo primary database region), and schema migration safeguards here so fellow engineers can reproduce your configuration safely without guesswork.
+
+## 4. Production Verification, Cost Governance & Benchmarks
+
+Shipping production systems without continuous telemetry turns minor regressions into silent revenue leaks. Pair distributed OpenTelemetry tracing with explicit database Disk IO alerts, p95 endpoint latency budgets, and automated unit-cost dashboards.
+
+| Operational Metric | Baseline Target | Verification Mechanism |
+| :--- | :--- | :--- |
+| API p95 Response Latency | Under 250 milliseconds | Distributed edge-to-SQL trace histograms |
+| Database Connection Saturation | Below 65% pool ceiling | Transaction pooler metrics and idle timeout |
+| Asynchronous Delivery Reliability | 99.95% within 5 seconds | Outbox lag alerting and dead-letter replay |
+| Monthly Compute Efficiency | 30% to 45% cost reduction | Automated idle-resource and query audits |
+
+Review query execution plans quarterly, prune unindexed full-table scans, and verify backup restore drills on staging snapshots before every major release cycle.
+
+## 5. Frequently Asked Questions & Engineering Takeaways
+
+Summarize the primary architectural trade-offs readers should evaluate before adopting this pattern, and link directly to GitStack Engineering Services or live technical demonstrations where prospective enterprise teams can explore implementation support.`,
     status: 'draft'
   };
 }
@@ -1571,9 +1636,18 @@ export function StudioPage({
                         <div className="min-w-0">
                           <button
                             type="button"
-                            onClick={() => {
-                              setDraft(p);
+                            onClick={async () => {
                               setPostMessage(null);
+                              if (p.content_markdown && p.content_markdown.trim().length > 0) {
+                                setDraft(p);
+                                return;
+                              }
+                              try {
+                                const full = await api.getPost(p.slug);
+                                setDraft(full.post);
+                              } catch {
+                                setDraft(p);
+                              }
                             }}
                             className="text-left font-medium text-sm text-slate-900 hover:text-[#1E40AF] truncate block max-w-lg"
                           >
@@ -1609,9 +1683,18 @@ export function StudioPage({
                           )}
                           <button
                             type="button"
-                            onClick={() => {
-                              setDraft(p);
+                            onClick={async () => {
                               setPostMessage(null);
+                              if (p.content_markdown && p.content_markdown.trim().length > 0) {
+                                setDraft(p);
+                                return;
+                              }
+                              try {
+                                const full = await api.getPost(p.slug);
+                                setDraft(full.post);
+                              } catch {
+                                setDraft(p);
+                              }
                             }}
                             className="rounded border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                           >

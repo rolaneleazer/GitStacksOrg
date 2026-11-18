@@ -55,6 +55,8 @@ export function AiTrendContentStudio({
   const [keywords, setKeywords] = useState('cloud, MLOps, RAG, electronic invoicing, finops');
   const [discovering, setDiscovering] = useState(false);
   const [trends, setTrends] = useState<TrendingTopicItem[]>([]);
+  const [trendSourceMode, setTrendSourceMode] = useState<'google_search' | 'gitstack_seo_library' | null>(null);
+  const [excludedUsedCount, setExcludedUsedCount] = useState(0);
   const [trendError, setTrendError] = useState<string | null>(null);
   const [trendNotice, setTrendNotice] = useState<string | null>(null);
 
@@ -136,12 +138,14 @@ export function AiTrendContentStudio({
     setTrendError(null);
     setTrendNotice(null);
     try {
-      const res = (await api.discoverTrends({
+      const res = await api.discoverTrends({
         niche: niche.trim(),
         country: country.trim(),
         keywords: keywords.trim()
-      })) as { topics: TrendingTopicItem[]; notice?: string };
+      });
       setTrends(res.topics);
+      setTrendSourceMode(res.sourceMode);
+      setExcludedUsedCount(res.excludedUsedCount || 0);
       if (res.notice) setTrendNotice(res.notice);
     } catch (err) {
       setTrendError(err instanceof Error ? err.message : 'Failed to discover trends.');
@@ -364,6 +368,17 @@ export function AiTrendContentStudio({
         status: targetStatus
       });
 
+      const submittedSlug = editSlug.trim() || slugify(editTitle);
+      setTrends((prev) =>
+        prev.filter(
+          (t) =>
+            t.id !== selectedTopic?.id &&
+            slugify(t.title) !== submittedSlug &&
+            t.title.trim().toLowerCase() !== editTitle.trim().toLowerCase()
+        )
+      );
+      setExcludedUsedCount((prev) => prev + 1);
+
       setPublishSuccess(
         targetStatus === 'published'
           ? `Article "${editTitle.trim()}" passed all Quality Gatekeeper checks and is now live in GitStack Insights.`
@@ -404,8 +419,9 @@ export function AiTrendContentStudio({
             AI Trend Scout &amp; AdSense-Safe Content Studio
           </h2>
           <p className="mt-1 text-xs sm:text-sm text-slate-600 max-w-3xl leading-relaxed">
-            Discover rising topics, generate 1,000+ word technical guides with pre-filled GitStack
-            engineering field notes, structured FAQs, and primary citations, then publish directly.
+            Discover rising topics aligned with GitStack engineering services, generate 1,500–2,200
+            word SEO pillar guides with field notes, structured FAQs, and primary citations, while
+            automatically excluding already-published topics.
           </p>
         </div>
 
@@ -468,14 +484,26 @@ export function AiTrendContentStudio({
       {/* 2. TRENDING TOPIC CARDS (STEP 1) */}
       {trends.length > 0 && !draft && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-display text-base font-bold text-slate-900 flex items-center gap-2">
               <Flame className="h-4 w-4 text-amber-500" />
-              <span>Rising 7-Day High-Opportunity Topics ({trends.length})</span>
+              <span>Rising High-Opportunity Topics ({trends.length})</span>
             </h3>
-            <span className="text-xs text-slate-500 font-mono">
-              Grounding: Google Search (7-Day Recency)
-            </span>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono">
+              <span>
+                {trendSourceMode === 'google_search'
+                  ? 'Source: Live Google Search Grounding (7-Day)'
+                  : 'Source: GitStack Business SEO Library'}
+              </span>
+              {excludedUsedCount > 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums text-emerald-700 font-medium">
+                    {excludedUsedCount} already-published {excludedUsedCount === 1 ? 'topic' : 'topics'} excluded
+                  </span>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -486,7 +514,9 @@ export function AiTrendContentStudio({
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-500">
-                    <span>{t.searchIntent}</span>
+                    <span className="truncate">
+                      {t.servicePillar ? `${t.servicePillar} · ${t.searchIntent}` : t.searchIntent}
+                    </span>
                     <span
                       className={
                         t.opportunity === 'Breakout'
@@ -585,7 +615,7 @@ export function AiTrendContentStudio({
             </div>
           </div>
           <p className="text-xs text-slate-600">
-            Synthesizing 1,000+ words with structured FAQs, verified references, and SEO bounds...
+            Synthesizing 1,500–2,200 words with structured FAQs, verified references, and SEO bounds...
           </p>
         </div>
       )}

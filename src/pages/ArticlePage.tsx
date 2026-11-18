@@ -27,9 +27,10 @@ export function ArticlePage({
   onOpenCookiePrefs,
   onNavigate
 }: ArticlePageProps) {
-  const [article, setArticle] = useState<Article | null>(
-    () => articles.find((a) => a.slug === slug) || null
-  );
+  const [article, setArticle] = useState<Article | null>(() => {
+    const found = articles.find((a) => a.slug === slug);
+    return found && found.content_markdown && found.content_markdown.trim().length > 0 ? found : null;
+  });
   const [loading, setLoading] = useState(!article);
   const [comments, setComments] = useState<ArticleComment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
@@ -44,15 +45,20 @@ export function ArticlePage({
 
   useEffect(() => {
     const localMatch = articles.find((a) => a.slug === slug);
-    if (localMatch) {
+    if (localMatch && localMatch.content_markdown && localMatch.content_markdown.trim().length > 0) {
       setArticle(localMatch);
       setLoading(false);
     } else {
+      if (localMatch) {
+        setArticle(localMatch);
+      }
       setLoading(true);
       api
         .getPost(slug)
         .then((res) => setArticle(res.post))
-        .catch(() => setArticle(null))
+        .catch(() => {
+          if (!localMatch) setArticle(null);
+        })
         .finally(() => setLoading(false));
     }
   }, [slug, articles]);

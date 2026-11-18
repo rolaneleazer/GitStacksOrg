@@ -5,7 +5,7 @@ import { DEFAULT_PAGE_CONTENTS } from '../shared/pageDefaults.ts';
 import { buildArticleJsonLd } from '../shared/qualityGate.ts';
 import { DEFAULT_ADSENSE_SETTINGS, SEED_ARTICLES } from '../shared/seedData.ts';
 import type { AdSenseSettings, Article, PageContentConfig, PageKey } from '../shared/types.ts';
-import { getAdSenseSettings, listPageContents, listPosts } from './repository.ts';
+import { getAdSenseSettings, getPostBySlug, listPageContents, listPosts } from './repository.ts';
 
 type HtmlTransformer = (url: string, html: string) => Promise<string>;
 let devHtmlTransformer: HtmlTransformer | null = null;
@@ -596,17 +596,25 @@ export async function renderPublicRouteHtml(reqPath: string, origin: string): Pr
   const template = await loadBaseHtmlTemplate(origin);
   if (!template) return null;
 
-  const [pagesList, postsList, settings] = await Promise.all([
+  const articleSlug = cleanPath.startsWith('/insights/')
+    ? cleanPath.slice('/insights/'.length)
+    : null;
+
+  const [pagesList, postsList, settings, fullArticle] = await Promise.all([
     listPageContents().catch(() => Object.values(DEFAULT_PAGE_CONTENTS)),
     listPosts(false).catch(() => SEED_ARTICLES),
-    getAdSenseSettings().catch(() => DEFAULT_ADSENSE_SETTINGS)
+    getAdSenseSettings().catch(() => DEFAULT_ADSENSE_SETTINGS),
+    articleSlug ? getPostBySlug(articleSlug, false).catch(() => null) : Promise.resolve(null)
   ]);
 
   const pagesMap: Record<PageKey, PageContentConfig> = { ...DEFAULT_PAGE_CONTENTS };
   for (const page of pagesList) {
     pagesMap[page.page_key] = page;
   }
-  const posts = postsList.length > 0 ? postsList : SEED_ARTICLES;
+  const basePosts = postsList.length > 0 ? postsList : SEED_ARTICLES;
+  const posts = fullArticle
+    ? [fullArticle, ...basePosts.filter((p) => p.slug !== fullArticle.slug)]
+    : basePosts;
 
   const route = buildRouteContent(cleanPath, origin, pagesMap, posts, settings);
   const brandName = settings.brand_name?.trim() || DEFAULT_ADSENSE_SETTINGS.brand_name || 'GitStack';

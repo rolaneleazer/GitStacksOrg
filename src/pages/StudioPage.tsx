@@ -21,6 +21,7 @@ import {
   Lock,
   LogOut,
   Mail,
+  Megaphone,
   Menu,
   MessageSquare,
   Palette,
@@ -32,6 +33,7 @@ import {
   Sparkles,
   Tags,
   Trash2,
+  TrendingUp,
   UserCheck,
   UserCog,
   Workflow,
@@ -51,14 +53,17 @@ import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPane
 import { CyberSecurityPanel } from '../components/backoffice/CyberSecurityPanel.tsx';
 import { DataExplorerPanel } from '../components/backoffice/DataExplorerPanel.tsx';
 import { DemoUsersDashboardPanel } from '../components/backoffice/DemoUsersDashboardPanel.tsx';
+import { GoogleTrendsPanel } from '../components/backoffice/GoogleTrendsPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
 import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMonitor.tsx';
 import { IntegrationsVaultPanel } from '../components/backoffice/IntegrationsVaultPanel.tsx';
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
+import { MarketingStudioPanel } from '../components/backoffice/MarketingStudioPanel.tsx';
 import { NotificationModulePanel } from '../components/backoffice/NotificationModulePanel.tsx';
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
 import { ProductQaPanel } from '../components/backoffice/ProductQaPanel.tsx';
 import { ProfilePanel } from '../components/backoffice/ProfilePanel.tsx';
+import { SearchConsolePanel } from '../components/backoffice/SearchConsolePanel.tsx';
 import { TagManagerPanel } from '../components/backoffice/TagManagerPanel.tsx';
 import { UserAccessPanel } from '../components/backoffice/UserAccessPanel.tsx';
 import { UserWorkflowsPanel } from '../components/backoffice/UserWorkflowsPanel.tsx';
@@ -121,6 +126,9 @@ type StudioTab =
   | 'tag_manager'
   | 'cloudflare'
   | 'ai_visibility'
+  | 'search_console'
+  | 'marketing'
+  | 'google_trends'
   | 'resources'
   | 'qa'
   | 'cybersecurity'
@@ -146,6 +154,9 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'tag_manager',
     'cloudflare',
     'ai_visibility',
+    'search_console',
+    'marketing',
+    'google_trends',
     'resources',
     'qa',
     'cybersecurity',
@@ -168,6 +179,9 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'tag_manager',
     'cloudflare',
     'ai_visibility',
+    'search_console',
+    'marketing',
+    'google_trends',
     'resources',
     'qa',
     'cybersecurity',
@@ -1164,6 +1178,9 @@ export function StudioPage({
     { id: 'tag_manager', label: 'Tag Manager (GTM)', icon: Tags },
     { id: 'cloudflare', label: 'Cloudflare Analytics', icon: Cloud },
     { id: 'ai_visibility', label: 'AI & Search Visibility', icon: Sparkles },
+    { id: 'search_console', label: 'Search Console & SEO', icon: Search },
+    { id: 'marketing', label: 'Marketing & Social', icon: Megaphone },
+    { id: 'google_trends', label: 'Google Trends Agent', icon: TrendingUp },
     { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'qa', label: 'Product QA & Logs', icon: Bug },
     { id: 'cybersecurity', label: 'Cybersecurity & AI Sentinel', icon: Shield },
@@ -1510,6 +1527,23 @@ export function StudioPage({
                 onPagesChanged();
                 loadWorkspaceData(analyticsRange);
               }}
+            />
+          )}
+
+          {/* PANEL 5A-3: GOOGLE SEARCH CONSOLE & MULTI-ENGINE URL AUDITOR */}
+          {currentTab === 'search_console' && <SearchConsolePanel />}
+
+          {/* PANEL 5A-4: FREE ORGANIC MARKETING & SOCIAL MEDIA STUDIO */}
+          {currentTab === 'marketing' && <MarketingStudioPanel />}
+
+          {/* PANEL 5A-5: GOOGLE TRENDS MONITOR & MANDATORY APPROVAL QUEUE */}
+          {currentTab === 'google_trends' && (
+            <GoogleTrendsPanel
+              onArticlePublished={() => {
+                loadWorkspaceData(analyticsRange);
+                onArticlesChanged();
+              }}
+              onOpenMarketing={() => setActiveTab('marketing')}
             />
           )}
 

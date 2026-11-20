@@ -106,6 +106,32 @@ import { collectInfrastructureMetrics, restartInfrastructureServices } from './i
 import { auditPageAdSense } from './adsenseAuditor.ts';
 import { isPublicSsrPath, renderPublicRouteHtml } from './ssrRenderer.ts';
 import { discoverTrendingTopics, generateAdSenseSafeArticle } from './trendScout.ts';
+import { getAgentGrowthSnapshot, saveGrowthModuleEmailConfig } from './growthStore.ts';
+import {
+  analyzeUrlWithAi,
+  getSearchConsoleDashboard,
+  runWebsiteLinksAudit,
+  sendSearchConsoleEmailReport
+} from './searchConsoleService.ts';
+import {
+  buildFacebookOAuthUrl,
+  buildTikTokOAuthUrl,
+  exchangeFacebookOAuthCode,
+  exchangeTikTokOAuthCode,
+  generateDailyMarketingPlan,
+  getMarketingDashboard,
+  getSocialConnectionsStatus,
+  publishMarketingItemToSocial,
+  sendMarketingEmailReport,
+  updateMarketingScheduleItem
+} from './marketingService.ts';
+import {
+  generateTrendConversionBundle,
+  getGoogleTrendsDashboard,
+  reviewTrendApprovalBundle,
+  scanGoogleTrendsMonitor,
+  sendGoogleTrendsEmailReport
+} from './googleTrendsService.ts';
 import {
   broadcastToAdmins,
   broadcastToVisitor,
@@ -1588,6 +1614,14 @@ export async function createApp(): Promise<Express> {
       checkSupabaseTablesReady()
     ]);
 
+    const [socialStatus] = await Promise.all([
+      getSocialConnectionsStatus(token).catch(() => null)
+    ]);
+    const growthSnapshot = await getAgentGrowthSnapshot(
+      Boolean(socialStatus?.facebook.connected),
+      Boolean(socialStatus?.tiktok.connected)
+    ).catch(() => undefined);
+
     const publishedPosts = posts.filter((p) => p.status === 'published');
     const siteAudit = buildSiteAuditReport(publishedPosts, settings);
     const agents = buildAllAgentReports({
@@ -1600,7 +1634,8 @@ export async function createApp(): Promise<Express> {
       pageContents,
       chatThreads,
       analytics,
-      supabaseTablesReady
+      supabaseTablesReady,
+      growthSnapshot
     });
 
     return { agents, tasks, profiles, siteAudit };
@@ -5915,6 +5950,385 @@ export async function createApp(): Promise<Express> {
     } catch (err) {
       res.status(500).json({
         error: err instanceof Error ? err.message : 'Failed installing database audit triggers.'
+      });
+    }
+  });
+
+  // =========================================================================
+  // 1. GOOGLE SEARCH CONSOLE & MULTI-ENGINE URL AUDITOR
+  // =========================================================================
+  app.get('/api/admin/search-console/dashboard', requireEditor, async (req, res) => {
+    try {
+      const data = await getSearchConsoleDashboard({
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to load Search Console dashboard.'
+      });
+    }
+  });
+
+  app.post('/api/admin/search-console/scan', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as { baseOrigin?: string };
+      const run = await runWebsiteLinksAudit({
+        baseOrigin: body.baseOrigin?.trim() || getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getSearchConsoleDashboard({
+        baseOrigin: run.baseOrigin,
+        userToken: getBearerToken(req)
+      });
+      res.json({ run, dashboard });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Website links searchability scan failed.'
+      });
+    }
+  });
+
+  app.post('/api/admin/search-console/analyze-url', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as { path?: string; baseOrigin?: string };
+      if (!body.path) {
+        return res.status(400).json({ error: 'URL path is required for AI SEO analysis.' });
+      }
+      const result = await analyzeUrlWithAi({
+        path: body.path,
+        baseOrigin: body.baseOrigin?.trim() || getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'AI page SEO analysis failed.'
+      });
+    }
+  });
+
+  app.put('/api/admin/search-console/email-config', requireEditor, async (req, res) => {
+    try {
+      const config = await saveGrowthModuleEmailConfig('search_console', req.body || {});
+      res.json({ emailConfig: config });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed saving Search Console email settings.'
+      });
+    }
+  });
+
+  app.post('/api/admin/search-console/send-email', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as { recipient_email?: string };
+      const result = await sendSearchConsoleEmailReport({
+        recipientEmail: body.recipient_email,
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getSearchConsoleDashboard({
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      res.json({ ...result, dashboard });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed sending Search Console email report.'
+      });
+    }
+  });
+
+  // =========================================================================
+  // 2. FREE ORGANIC MARKETING & FACEBOOK / TIKTOK STUDIO
+  // =========================================================================
+  app.get('/api/admin/marketing/dashboard', requireEditor, async (req, res) => {
+    try {
+      const data = await getMarketingDashboard({
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed loading Organic Marketing dashboard.'
+      });
+    }
+  });
+
+  app.post('/api/admin/marketing/generate-plan', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as {
+        focusPillar?: string;
+        targetAudience?: string;
+        region?: string;
+      };
+      const schedule = await generateDailyMarketingPlan({
+        focusPillar: body.focusPillar,
+        targetAudience: body.targetAudience,
+        region: body.region,
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getMarketingDashboard({
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      res.json({ schedule, dashboard });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed generating 7-day marketing plan.'
+      });
+    }
+  });
+
+  app.patch('/api/admin/marketing/schedule/:id', requireEditor, async (req, res) => {
+    try {
+      const item = await updateMarketingScheduleItem(req.params.id, req.body || {});
+      res.json({ item });
+    } catch (err) {
+      res.status(404).json({
+        error: err instanceof Error ? err.message : 'Failed updating scheduled marketing post.'
+      });
+    }
+  });
+
+  app.post('/api/admin/marketing/publish/:id', requireEditor, async (req, res) => {
+    try {
+      const result = await publishMarketingItemToSocial({
+        itemId: req.params.id,
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getMarketingDashboard({
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      res.json({ ...result, dashboard });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Publishing marketing item failed.'
+      });
+    }
+  });
+
+  app.put('/api/admin/marketing/email-config', requireEditor, async (req, res) => {
+    try {
+      const config = await saveGrowthModuleEmailConfig('marketing', req.body || {});
+      res.json({ emailConfig: config });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed saving Marketing email settings.'
+      });
+    }
+  });
+
+  app.post('/api/admin/marketing/send-email', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as { recipient_email?: string };
+      const result = await sendMarketingEmailReport({
+        recipientEmail: body.recipient_email,
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getMarketingDashboard({
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      res.json({ ...result, dashboard });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed sending Marketing email report.'
+      });
+    }
+  });
+
+  // Popup OAuth routes for Facebook Page & TikTok (iframe-safe postMessage callbacks)
+  app.get('/api/oauth/facebook/url', requireEditor, (req, res) => {
+    try {
+      res.json(buildFacebookOAuthUrl(getOrigin(req)));
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Facebook OAuth is not configured.'
+      });
+    }
+  });
+
+  app.get(['/api/oauth/facebook/callback', '/api/oauth/facebook/callback/'], async (req, res) => {
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
+    const errParam = typeof req.query.error_message === 'string' ? req.query.error_message : String(req.query.error || '');
+    const renderPopupHtml = (ok: boolean, detail: string) => `<!doctype html><html><body><script>
+      if (window.opener) {
+        window.opener.postMessage({ type: 'SOCIAL_OAUTH_RESULT', provider: 'facebook_page', ok: ${ok}, message: ${JSON.stringify(detail)} }, '*');
+        window.close();
+      }
+    </script><p>${detail}</p></body></html>`;
+
+    if (errParam || !code) {
+      return res.send(renderPopupHtml(false, errParam || 'Facebook authorization was canceled.'));
+    }
+    try {
+      const info = await exchangeFacebookOAuthCode(code, getOrigin(req));
+      return res.send(renderPopupHtml(true, `Facebook Page "${info.pageName}" connected successfully.`));
+    } catch (err) {
+      return res.send(
+        renderPopupHtml(false, err instanceof Error ? err.message : 'Facebook OAuth failed.')
+      );
+    }
+  });
+
+  app.get('/api/oauth/tiktok/url', requireEditor, (req, res) => {
+    try {
+      res.json(buildTikTokOAuthUrl(getOrigin(req)));
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'TikTok OAuth is not configured.'
+      });
+    }
+  });
+
+  app.get(['/api/oauth/tiktok/callback', '/api/oauth/tiktok/callback/'], async (req, res) => {
+    const code = typeof req.query.code === 'string' ? req.query.code : '';
+    const errParam = typeof req.query.error_description === 'string' ? req.query.error_description : String(req.query.error || '');
+    const renderPopupHtml = (ok: boolean, detail: string) => `<!doctype html><html><body><script>
+      if (window.opener) {
+        window.opener.postMessage({ type: 'SOCIAL_OAUTH_RESULT', provider: 'tiktok', ok: ${ok}, message: ${JSON.stringify(detail)} }, '*');
+        window.close();
+      }
+    </script><p>${detail}</p></body></html>`;
+
+    if (errParam || !code) {
+      return res.send(renderPopupHtml(false, errParam || 'TikTok authorization was canceled.'));
+    }
+    try {
+      await exchangeTikTokOAuthCode(code, getOrigin(req));
+      return res.send(renderPopupHtml(true, 'TikTok Creator/Business account connected successfully.'));
+    } catch (err) {
+      return res.send(
+        renderPopupHtml(false, err instanceof Error ? err.message : 'TikTok OAuth failed.')
+      );
+    }
+  });
+
+  // =========================================================================
+  // 3. GOOGLE TRENDS MONITOR & MANDATORY APPROVAL QUEUE
+  // =========================================================================
+  app.get('/api/admin/google-trends/dashboard', requireEditor, async (req, res) => {
+    try {
+      const region = typeof req.query.region === 'string' ? req.query.region : undefined;
+      const data = await getGoogleTrendsDashboard({
+        region,
+        userToken: getBearerToken(req)
+      });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed loading Google Trends monitor.'
+      });
+    }
+  });
+
+  app.post('/api/admin/google-trends/scan', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as { region?: string };
+      const data = await scanGoogleTrendsMonitor({
+        region: body.region || 'PH',
+        userToken: getBearerToken(req)
+      });
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Google Trends scan failed.'
+      });
+    }
+  });
+
+  app.post('/api/admin/google-trends/generate-bundle', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as {
+        trendId?: string;
+        trendTitle?: string;
+        region?: string;
+      };
+      if (!body.trendTitle?.trim()) {
+        return res.status(400).json({ error: 'trendTitle is required to generate an article & marketing bundle.' });
+      }
+      const bundle = await generateTrendConversionBundle({
+        trendId: body.trendId,
+        trendTitle: body.trendTitle.trim(),
+        region: body.region || 'PH',
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getGoogleTrendsDashboard({
+        region: body.region || 'PH',
+        userToken: getBearerToken(req)
+      });
+      res.status(201).json({ bundle, dashboard });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed generating trend conversion bundle.'
+      });
+    }
+  });
+
+  app.post('/api/admin/google-trends/review/:id', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as {
+        action: 'publish_article' | 'queue_social' | 'publish_social_now' | 'reject';
+        reviewNote?: string;
+        articleTitle?: string;
+        articleMarkdown?: string;
+        facebookCaption?: string;
+        tiktokCaption?: string;
+      };
+      const result = await reviewTrendApprovalBundle({
+        bundleId: req.params.id,
+        action: body.action,
+        reviewNote: body.reviewNote,
+        articleTitle: body.articleTitle,
+        articleMarkdown: body.articleMarkdown,
+        facebookCaption: body.facebookCaption,
+        tiktokCaption: body.tiktokCaption,
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getGoogleTrendsDashboard({
+        userToken: getBearerToken(req)
+      });
+      res.json({ ...result, dashboard });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Trend approval action failed.'
+      });
+    }
+  });
+
+  app.put('/api/admin/google-trends/email-config', requireEditor, async (req, res) => {
+    try {
+      const config = await saveGrowthModuleEmailConfig('google_trends', req.body || {});
+      res.json({ emailConfig: config });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed saving Google Trends email settings.'
+      });
+    }
+  });
+
+  app.post('/api/admin/google-trends/send-email', requireEditor, async (req, res) => {
+    try {
+      const body = (req.body || {}) as { recipient_email?: string };
+      const result = await sendGoogleTrendsEmailReport({
+        recipientEmail: body.recipient_email,
+        baseOrigin: getOrigin(req),
+        userToken: getBearerToken(req)
+      });
+      const dashboard = await getGoogleTrendsDashboard({
+        userToken: getBearerToken(req)
+      });
+      res.json({ ...result, dashboard });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed sending Google Trends email report.'
       });
     }
   });

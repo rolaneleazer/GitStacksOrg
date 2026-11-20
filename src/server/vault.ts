@@ -24,6 +24,9 @@ export const VALID_INTEGRATION_PROVIDERS: IntegrationProviderId[] = [
   'lark_smtp',
   'google_analytics',
   'google_tag_manager',
+  'google_search_console',
+  'facebook_page',
+  'tiktok',
   'apollo',
   'google_maps',
   'gemini',
@@ -93,6 +96,46 @@ const PROVIDER_DEFS: Record<IntegrationProviderId, ProviderMetaDef> = {
       gtm_workspace_name: '',
       gtm_containers_list: [],
       gtm_snapshot: null
+    }
+  },
+  google_search_console: {
+    label: 'Google Search Console (Optional Live Metrics)',
+    category: 'Search & Social',
+    description:
+      'Pulls live 28-day search clicks, impressions, CTR, average position, and top queries per URL using a Google Cloud Service Account JSON key.',
+    docsHint:
+      'Paste a GCP Service Account JSON key and add its client_email as a Full/Restricted user in Google Search Console -> Settings -> Users & permissions.',
+    defaultConfigMeta: {
+      gsc_site_url: 'https://git-stack.org/',
+      gsc_service_account_email: ''
+    }
+  },
+  facebook_page: {
+    label: 'Facebook Page (Meta Graph API)',
+    category: 'Search & Social',
+    description:
+      'Connects your Facebook Business Page via Page Access Token or Meta OAuth to publish approved organic marketing and Google Trends posts directly.',
+    docsHint:
+      'Meta Developers -> Graph API Explorer (pages_manage_posts, pages_read_engagement) or connect via OAuth inside Marketing & Social.',
+    defaultConfigMeta: {
+      fb_page_id: '',
+      fb_page_name: '',
+      fb_page_url: '',
+      fb_app_id: ''
+    }
+  },
+  tiktok: {
+    label: 'TikTok Business / Creator Posting API',
+    category: 'Search & Social',
+    description:
+      'Connects your TikTok account via Content Posting API token or TikTok Login Kit OAuth to push approved short-form marketing posts.',
+    docsHint:
+      'TikTok for Developers -> Login Kit & Content Posting API (user.info.basic, video.publish / video.upload).',
+    defaultConfigMeta: {
+      tiktok_open_id: '',
+      tiktok_handle: '',
+      tiktok_display_name: '',
+      tiktok_client_key: ''
     }
   },
   apollo: {
@@ -219,6 +262,12 @@ function getEnvFallbackSecret(provider: IntegrationProviderId): string {
       return process.env.GITHUB_TOKEN?.trim() || '';
     case 'cloudflare':
       return process.env.CLOUDFLARE_API_TOKEN?.trim() || '';
+    case 'google_search_console':
+      return process.env.GSC_SERVICE_ACCOUNT_JSON?.trim() || '';
+    case 'facebook_page':
+      return process.env.FACEBOOK_PAGE_ACCESS_TOKEN?.trim() || '';
+    case 'tiktok':
+      return process.env.TIKTOK_ACCESS_TOKEN?.trim() || '';
     default:
       return '';
   }
@@ -282,6 +331,22 @@ function mergeConfigMeta(
     merged.gtm_container_name = (merged.gtm_container_name || '').trim();
     merged.gtm_workspace_id = (merged.gtm_workspace_id || '').trim();
     merged.gtm_workspace_name = (merged.gtm_workspace_name || '').trim();
+  }
+  if (provider === 'google_search_console') {
+    merged.gsc_site_url = (merged.gsc_site_url || process.env.GSC_SITE_URL || 'https://git-stack.org/').trim();
+    merged.gsc_service_account_email = (merged.gsc_service_account_email || '').trim().toLowerCase();
+  }
+  if (provider === 'facebook_page') {
+    merged.fb_page_id = (merged.fb_page_id || process.env.FACEBOOK_PAGE_ID || '').trim();
+    merged.fb_page_name = (merged.fb_page_name || '').trim();
+    merged.fb_page_url = (merged.fb_page_url || '').trim();
+    merged.fb_app_id = (merged.fb_app_id || process.env.FACEBOOK_APP_ID || '').trim();
+  }
+  if (provider === 'tiktok') {
+    merged.tiktok_open_id = (merged.tiktok_open_id || '').trim();
+    merged.tiktok_handle = (merged.tiktok_handle || '').trim();
+    merged.tiktok_display_name = (merged.tiktok_display_name || '').trim();
+    merged.tiktok_client_key = (merged.tiktok_client_key || process.env.TIKTOK_CLIENT_KEY || '').trim();
   }
   return merged;
 }
@@ -734,6 +799,110 @@ async function runProviderLiveProbe(
         message: resolvedZoneId
           ? `Cloudflare ${tokenKind} connected for ${resolvedZoneName} (${planName || 'Active Zone'}) in ${latencyMs}ms.`
           : `Cloudflare ${tokenKind} verified in ${latencyMs}ms. Enter your Zone ID for ${zoneNameDraft} to stream GraphQL metrics.`
+      };
+    }
+
+    if (provider === 'google_search_console') {
+      const gscScope = 'https://www.googleapis.com/auth/webmasters.readonly';
+      let accessToken = secret;
+      if (isServiceAccountJsonString(secret)) {
+        const minted = await mintGoogleAccessTokenFromServiceAccount(secret, [gscScope]);
+        accessToken = minted.accessToken;
+        if (configMeta) {
+          configMeta.gsc_service_account_email = minted.serviceAccount.client_email.toLowerCase();
+        }
+      }
+      const sitesRes = await fetch('https://www.googleapis.com/webmasters/v3/sites', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const latencyMs = Date.now() - started;
+      const sitesJson = (await sitesRes.json().catch(() => ({}))) as {
+        siteEntry?: Array<{ siteUrl?: string; permissionLevel?: string }>;
+        error?: { message?: string };
+      };
+      if (!sitesRes.ok) {
+        return {
+          ok: false,
+          latencyMs,
+          message:
+            sitesJson.error?.message ||
+            `Google Search Console API returned HTTP ${sitesRes.status}. Verify webmasters.readonly access.`
+        };
+      }
+      const verifiedSites = sitesJson.siteEntry || [];
+      if (configMeta && verifiedSites.length > 0 && !configMeta.gsc_site_url) {
+        configMeta.gsc_site_url = verifiedSites[0].siteUrl || 'https://git-stack.org/';
+      }
+      return {
+        ok: true,
+        latencyMs,
+        message: `Google Search Console verified (${verifiedSites.length} property${verifiedSites.length === 1 ? '' : ' properties'}) in ${latencyMs}ms.`
+      };
+    }
+
+    if (provider === 'facebook_page') {
+      const pageId = (configMeta?.fb_page_id || '').trim() || 'me';
+      const url = `https://graph.facebook.com/v20.0/${encodeURIComponent(pageId)}?fields=id,name,link&access_token=${encodeURIComponent(secret)}`;
+      const fbRes = await fetch(url);
+      const latencyMs = Date.now() - started;
+      const fbJson = (await fbRes.json().catch(() => ({}))) as {
+        id?: string;
+        name?: string;
+        link?: string;
+        error?: { message?: string };
+      };
+      if (!fbRes.ok || fbJson.error) {
+        return {
+          ok: false,
+          latencyMs,
+          message:
+            fbJson.error?.message ||
+            `Facebook Graph API returned HTTP ${fbRes.status}. Check Page ID and Page Access Token.`
+        };
+      }
+      if (configMeta) {
+        if (fbJson.id) configMeta.fb_page_id = fbJson.id;
+        if (fbJson.name) configMeta.fb_page_name = fbJson.name;
+        if (fbJson.link) configMeta.fb_page_url = fbJson.link;
+      }
+      return {
+        ok: true,
+        latencyMs,
+        message: `Facebook Page "${fbJson.name || pageId}" connected and verified in ${latencyMs}ms.`
+      };
+    }
+
+    if (provider === 'tiktok') {
+      const ttRes = await fetch(
+        'https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,username',
+        {
+          headers: { Authorization: `Bearer ${secret}` }
+        }
+      );
+      const latencyMs = Date.now() - started;
+      const ttJson = (await ttRes.json().catch(() => ({}))) as {
+        data?: { user?: { open_id?: string; display_name?: string; username?: string } };
+        error?: { code?: string; message?: string };
+      };
+      if (!ttRes.ok || (ttJson.error?.code && ttJson.error.code !== 'ok')) {
+        return {
+          ok: false,
+          latencyMs,
+          message:
+            ttJson.error?.message ||
+            `TikTok API returned HTTP ${ttRes.status}. Check Access Token and user.info.basic / video.publish scopes.`
+        };
+      }
+      const user = ttJson.data?.user;
+      if (configMeta && user) {
+        if (user.open_id) configMeta.tiktok_open_id = user.open_id;
+        if (user.display_name) configMeta.tiktok_display_name = user.display_name;
+        if (user.username) configMeta.tiktok_handle = `@${user.username.replace(/^@/, '')}`;
+      }
+      return {
+        ok: true,
+        latencyMs,
+        message: `TikTok account "${user?.display_name || user?.username || 'Connected Creator'}" verified in ${latencyMs}ms.`
       };
     }
 

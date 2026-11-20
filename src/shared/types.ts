@@ -893,6 +893,9 @@ export type IntegrationProviderId =
   | 'lark_smtp'
   | 'google_analytics'
   | 'google_tag_manager'
+  | 'google_search_console'
+  | 'facebook_page'
+  | 'tiktok'
   | 'apollo'
   | 'google_maps'
   | 'gemini'
@@ -977,6 +980,16 @@ export interface IntegrationConfigMeta {
   gtm_workspace_name?: string;
   gtm_containers_list?: GtmContainerOption[];
   gtm_snapshot?: GtmWorkspaceSnapshot | null;
+  gsc_site_url?: string;
+  gsc_service_account_email?: string;
+  fb_page_id?: string;
+  fb_page_name?: string;
+  fb_page_url?: string;
+  fb_app_id?: string;
+  tiktok_open_id?: string;
+  tiktok_handle?: string;
+  tiktok_display_name?: string;
+  tiktok_client_key?: string;
 }
 
 export interface IntegrationSecretRecord {
@@ -998,6 +1011,7 @@ export interface IntegrationStatusItem {
   category:
     | 'Email Outreach'
     | 'Web Analytics'
+    | 'Search & Social'
     | 'Lead Prospecting'
     | 'AI & Grounding'
     | 'Open-Source Scraping'
@@ -1873,6 +1887,291 @@ export interface DataAuditLogsResponse {
     api_backend: number;
   };
 }
+
+// --- Growth Suite: Search Console, Organic Marketing & Google Trends ---
+
+export type GrowthModuleKey = 'search_console' | 'marketing' | 'google_trends';
+
+export interface GrowthModuleEmailConfig {
+  module: GrowthModuleKey;
+  enabled: boolean;
+  recipient_email: string;
+  frequency: 'daily' | 'weekly' | 'manual';
+  send_hour_utc: number;
+  last_sent_at: string | null;
+  updated_at: string;
+}
+
+export interface GrowthModuleEmailLog {
+  id: string;
+  module: GrowthModuleKey;
+  recipient_email: string;
+  subject: string;
+  status: 'sent' | 'failed';
+  provider_message_id: string;
+  error_detail: string;
+  sent_at: string;
+}
+
+export interface SearchConsoleEngineVerdict {
+  engine: 'Google Search' | 'Bing & DuckDuckGo' | 'Yahoo Search' | 'AI Search (ChatGPT / Gemini / Perplexity)';
+  searchable: boolean;
+  statusLabel: string;
+  reason: string;
+}
+
+export interface SearchConsoleKeywordMetric {
+  keyword: string;
+  occurrences: number;
+  densityPercent: number;
+  inTitle: boolean;
+  inH1: boolean;
+  inMeta: boolean;
+  source: 'on_page' | 'gsc_live';
+  clicks?: number;
+  impressions?: number;
+  ctrPercent?: number;
+  position?: number;
+}
+
+export interface SearchConsoleAiRecommendation {
+  path: string;
+  analyzedAt: string;
+  modelUsed: string;
+  summary: string;
+  recommendedTitle: string;
+  recommendedMetaDescription: string;
+  priorityKeywordsToAdd: string[];
+  contentImprovements: string[];
+  technicalFixes: string[];
+  internalLinkSuggestions: string[];
+  estimatedImpact: 'High' | 'Medium' | 'Foundational';
+}
+
+export interface SearchConsoleUrlAudit {
+  id: string;
+  path: string;
+  fullUrl: string;
+  pageType: 'core_page' | 'article' | 'legal_page';
+  httpStatus: number;
+  indexable: boolean;
+  title: string;
+  titleLength: number;
+  metaDescription: string;
+  metaDescriptionLength: number;
+  canonicalUrl: string;
+  robotsDirective: string;
+  h1: string;
+  h2Headings: string[];
+  wordCount: number;
+  internalLinksCount: number;
+  schemaTypes: string[];
+  ogTitle: string;
+  ogDescription: string;
+  ogImage: string;
+  primaryKeyword: string;
+  keywords: SearchConsoleKeywordMetric[];
+  engineVerdicts: SearchConsoleEngineVerdict[];
+  seoScore: number;
+  issues: string[];
+  quickSuggestions: string[];
+  gscMetrics?: {
+    clicks: number;
+    impressions: number;
+    ctrPercent: number;
+    avgPosition: number;
+    topQueries: Array<{
+      query: string;
+      clicks: number;
+      impressions: number;
+      ctrPercent: number;
+      position: number;
+    }>;
+  } | null;
+  aiAnalysis?: SearchConsoleAiRecommendation | null;
+}
+
+export interface SearchConsoleAuditRun {
+  id: string;
+  baseOrigin: string;
+  scannedAt: string;
+  gscApiConnected: boolean;
+  gscSiteUrl: string;
+  totalLinks: number;
+  searchableLinks: number;
+  avgSeoScore: number;
+  issueCount: number;
+  urls: SearchConsoleUrlAudit[];
+}
+
+export interface SearchConsoleDashboardResponse {
+  latestRun: SearchConsoleAuditRun | null;
+  historyCount: number;
+  gscConnected: boolean;
+  gscSiteUrl: string;
+  gscServiceAccountEmail: string;
+  emailConfig: GrowthModuleEmailConfig;
+  emailLogs: GrowthModuleEmailLog[];
+}
+
+export type MarketingChannel = 'facebook_page' | 'tiktok' | 'website_organic';
+export type MarketingPostStatus = 'draft' | 'pending_approval' | 'approved' | 'published' | 'failed';
+
+export interface SocialAccountConnection {
+  provider: 'facebook_page' | 'tiktok';
+  connected: boolean;
+  source: 'vault' | 'env' | 'disconnected';
+  accountLabel: string;
+  accountId: string;
+  profileUrl: string;
+  oauthConfigured: boolean;
+  callbackUrls: {
+    development: string;
+    shared: string;
+  };
+  lastTestedAt: string | null;
+  lastTestStatus: 'ok' | 'error' | 'untested';
+  lastTestMessage: string;
+}
+
+export interface MarketingScheduleItem {
+  id: string;
+  dayNumber: number;
+  dayLabel: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  channel: MarketingChannel;
+  contentFormat: string;
+  servicePillar: string;
+  headline: string;
+  hook: string;
+  caption: string;
+  videoScript: string;
+  hashtags: string[];
+  ctaLabel: string;
+  ctaUrl: string;
+  coverImage: string;
+  coverAlt: string;
+  status: MarketingPostStatus;
+  sourceTrendTitle?: string;
+  remotePostId?: string;
+  remotePostUrl?: string;
+  publishedAt?: string;
+  deliveryMessage?: string;
+  updatedAt: string;
+}
+
+export interface MarketingPublishProof {
+  id: string;
+  scheduleItemId: string;
+  channel: MarketingChannel;
+  headline: string;
+  captionPreview: string;
+  ctaUrl: string;
+  coverImage: string;
+  status: 'published' | 'failed';
+  mode: 'live_api' | 'organic_ready';
+  remotePostId: string;
+  remotePostUrl: string;
+  responseNote: string;
+  publishedAt: string;
+}
+
+export interface MarketingDashboardResponse {
+  accounts: {
+    facebook: SocialAccountConnection;
+    tiktok: SocialAccountConnection;
+  };
+  schedule: MarketingScheduleItem[];
+  proofs: MarketingPublishProof[];
+  emailConfig: GrowthModuleEmailConfig;
+  emailLogs: GrowthModuleEmailLog[];
+  lastGeneratedAt: string | null;
+}
+
+export interface GoogleTrendMonitorItem {
+  id: string;
+  title: string;
+  region: string;
+  trafficLabel: string;
+  sourceType: 'google_trends_rss' | 'google_search_grounding' | 'gitstack_trend_radar';
+  servicePillar: string;
+  whyItConverts: string;
+  relatedQueries: string[];
+  sources: { title: string; url: string }[];
+  publishedAt: string;
+  alreadyCovered: boolean;
+}
+
+export type TrendBundleStatus = 'pending_approval' | 'approved' | 'published' | 'rejected';
+
+export interface TrendApprovalBundle {
+  id: string;
+  trendId: string;
+  trendTitle: string;
+  region: string;
+  status: TrendBundleStatus;
+  createdAt: string;
+  reviewedAt: string | null;
+  ctaLinks: {
+    appUrl: string;
+    signupDemoUrl: string;
+    contactServiceUrl: string;
+  };
+  articleDraft: {
+    title: string;
+    slug: string;
+    summary_tldr: string;
+    content_markdown: string;
+    category: ServiceCategory;
+    meta_title: string;
+    meta_description: string;
+    primary_keyword: string;
+    word_count: number;
+    quality_score: number;
+    geo_score: number;
+    publish_eligible: boolean;
+    faqs: ArticleFAQ[];
+    references: ArticleReference[];
+  };
+  facebookPost: {
+    headline: string;
+    caption: string;
+    hashtags: string[];
+    ctaUrl: string;
+    coverImage: string;
+  };
+  tiktokPost: {
+    hook: string;
+    videoScript: string;
+    caption: string;
+    hashtags: string[];
+    ctaUrl: string;
+    coverImage: string;
+  };
+  publishedArticleSlug?: string | null;
+  queuedMarketingIds?: string[];
+  socialPublishNotes?: string[];
+  reviewNote?: string;
+}
+
+export interface GoogleTrendsDashboardResponse {
+  region: string;
+  lastScannedAt: string | null;
+  feedSourceMode: 'google_trends_rss' | 'google_search_grounding' | 'gitstack_trend_radar';
+  notice?: string;
+  trends: GoogleTrendMonitorItem[];
+  approvalQueue: TrendApprovalBundle[];
+  stats: {
+    monitoredCount: number;
+    pendingApprovalCount: number;
+    publishedBundlesCount: number;
+    alreadyCoveredCount: number;
+  };
+  emailConfig: GrowthModuleEmailConfig;
+  emailLogs: GrowthModuleEmailLog[];
+}
+
 
 
 

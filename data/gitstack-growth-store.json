@@ -1,0 +1,2580 @@
+{
+  "searchConsoleRuns": [
+    {
+      "id": "gsc-run-3f5565e2-4",
+      "baseOrigin": "https://git-stack.org",
+      "scannedAt": "2026-11-20T06:48:37.473Z",
+      "gscApiConnected": false,
+      "gscSiteUrl": "https://git-stack.org/",
+      "totalLinks": 15,
+      "searchableLinks": 15,
+      "avgSeoScore": 87,
+      "issueCount": 17,
+      "urls": [
+        {
+          "id": "url-42099b4af0",
+          "path": "/",
+          "fullUrl": "https://git-stack.org",
+          "pageType": "core_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "GitStack — AI Integration, ML Automation & Cloud Engineering",
+          "titleLength": 60,
+          "metaDescription": "GitStack delivers AI integration, machine learning automation, custom software engineering, cloud infrastructure management, and technical consulting for enterprise teams.",
+          "metaDescriptionLength": 171,
+          "canonicalUrl": "https://git-stack.org",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "GitStack — AI Integration, ML Automation & Cloud Engineering",
+          "ogDescription": "GitStack delivers AI integration, machine learning automation, custom software engineering, cloud infrastructure management, and technical consulting for enterprise teams.",
+          "ogImage": "",
+          "primaryKeyword": "cloud",
+          "keywords": [
+            {
+              "keyword": "cloud",
+              "occurrences": 6,
+              "densityPercent": 2.35,
+              "inTitle": true,
+              "inH1": true,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "integration",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "engineering",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "automation",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 80,
+          "issues": [
+            "Meta description is 171 chars (optimal: 120–160 chars).",
+            "Core page has 253 rendered words (target: 400+ words for rich snippets)."
+          ],
+          "quickSuggestions": [
+            "Craft a 135–155 char action-oriented meta description with your core benefit and CTA.",
+            "Add service deliverables, proof benchmarks, and FAQ blocks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": {
+            "path": "/",
+            "analyzedAt": "2026-11-20T06:48:37.477Z",
+            "modelUsed": "deterministic-seo-auditor",
+            "summary": "This core page scores 80/100 with 253 crawlable SSR words. Tightening title keyword placement, adding commercial long-tail terms, and linking directly to /demo and /contact will increase Google CTR and top-3 ranking authority.",
+            "recommendedTitle": "GitStack — AI Integration, ML Automation & Cloud Engineering",
+            "recommendedMetaDescription": "Explore Production AI, Machine Learning, and Cloud Systems Built for Scale from GitStack. Practical production architecture, benchmarks, and direct consultati",
+            "priorityKeywordsToAdd": [
+              "cloud architecture",
+              "cloud best practices 2026",
+              "enterprise software engineering services",
+              "production cloud optimization"
+            ],
+            "contentImprovements": [
+              "Add a concise 2-sentence direct answer block directly under the H1 to capture Google AI Overviews and Featured Snippets.",
+              "Include an explicit comparison matrix contrasting DIY setups vs. GitStack production-grade architecture.",
+              "Add 2–3 domain-specific FAQ pairs answering buyer objections on pricing, timeline, and compliance."
+            ],
+            "technicalFixes": [
+              "Meta description is 171 chars (optimal: 120–160 chars).",
+              "Core page has 253 rendered words (target: 400+ words for rich snippets)."
+            ],
+            "internalLinkSuggestions": [
+              "Link primary service keywords to /services (\"Explore GitStack Engineering Services\")",
+              "Add a mid-page callout to /demo (\"Test Live Architecture Benchmarks in Our Interactive Sandbox\")",
+              "Close with a high-intent CTA to /contact (\"Book a Principal Architecture Review\")"
+            ],
+            "estimatedImpact": "High"
+          }
+        },
+        {
+          "id": "url-d109d728cd",
+          "path": "/services",
+          "fullUrl": "https://git-stack.org/services",
+          "pageType": "core_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Enterprise AI, MLOps, Custom Software & Cloud Services | GitStack",
+          "titleLength": 65,
+          "metaDescription": "GitStack pairs senior software and cloud platform engineering with production AI integration and automated machine learning operations.",
+          "metaDescriptionLength": 135,
+          "canonicalUrl": "https://git-stack.org/services",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Enterprise AI, MLOps, Custom Software & Cloud Services | GitStack",
+          "ogDescription": "GitStack pairs senior software and cloud platform engineering with production AI integration and automated machine learning operations.",
+          "ogImage": "",
+          "primaryKeyword": "custom software",
+          "keywords": [
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud",
+              "occurrences": 6,
+              "densityPercent": 2.35,
+              "inTitle": true,
+              "inH1": true,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "enterprise",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": true,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 90,
+          "issues": [
+            "Core page has 253 rendered words (target: 400+ words for rich snippets)."
+          ],
+          "quickSuggestions": [
+            "Add service deliverables, proof benchmarks, and FAQ blocks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-da2671b42c",
+          "path": "/insights",
+          "fullUrl": "https://git-stack.org/insights",
+          "pageType": "core_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Technical Insights Journal — AI, MLOps & Cloud Architecture | GitStack",
+          "titleLength": 70,
+          "metaDescription": "In-depth engineering blueprints, AI integration patterns, MLOps automation strategies, and cloud governance guides authored by GitStack principal architects.",
+          "metaDescriptionLength": 157,
+          "canonicalUrl": "https://git-stack.org/insights",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage",
+            "Blog"
+          ],
+          "ogTitle": "Technical Insights Journal — AI, MLOps & Cloud Architecture | GitStack",
+          "ogDescription": "In-depth engineering blueprints, AI integration patterns, MLOps automation strategies, and cloud governance guides authored by GitStack principal architects.",
+          "ogImage": "",
+          "primaryKeyword": "cloud",
+          "keywords": [
+            {
+              "keyword": "cloud",
+              "occurrences": 6,
+              "densityPercent": 2.35,
+              "inTitle": true,
+              "inH1": true,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "technical",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage, Blog · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 5 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 80,
+          "issues": [
+            "Meta title length is 70 chars (optimal: 30–65 chars).",
+            "Core page has 253 rendered words (target: 400+ words for rich snippets)."
+          ],
+          "quickSuggestions": [
+            "Rewrite <title> to 45–60 chars placing \"cloud\" near the front to prevent Google truncation.",
+            "Add service deliverables, proof benchmarks, and FAQ blocks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-69bbc6be2c",
+          "path": "/about",
+          "fullUrl": "https://git-stack.org/about",
+          "pageType": "core_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "About GitStack — Engineering Leadership & Mission",
+          "titleLength": 49,
+          "metaDescription": "Learn about GitStack Technologies Inc., our engineering team, technical credentials, and commitment to transparent AI, MLOps, cloud, and software delivery.",
+          "metaDescriptionLength": 155,
+          "canonicalUrl": "https://git-stack.org/about",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage",
+            "AboutPage"
+          ],
+          "ogTitle": "About GitStack — Engineering Leadership & Mission",
+          "ogDescription": "Learn about GitStack Technologies Inc., our engineering team, technical credentials, and commitment to transparent AI, MLOps, cloud, and software delivery.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "engineering",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage, AboutPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 5 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 90,
+          "issues": [
+            "Core page has 253 rendered words (target: 400+ words for rich snippets)."
+          ],
+          "quickSuggestions": [
+            "Add service deliverables, proof benchmarks, and FAQ blocks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-eda4eb3e35",
+          "path": "/contact",
+          "fullUrl": "https://git-stack.org/contact",
+          "pageType": "core_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Contact GitStack — Schedule a Technical Consultation",
+          "titleLength": 52,
+          "metaDescription": "Reach GitStack for custom software engineering, cloud infrastructure management, AI integration, and ML automation consulting.",
+          "metaDescriptionLength": 126,
+          "canonicalUrl": "https://git-stack.org/contact",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Contact GitStack — Schedule a Technical Consultation",
+          "ogDescription": "Reach GitStack for custom software engineering, cloud infrastructure management, AI integration, and ML automation consulting.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "technical",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 90,
+          "issues": [
+            "Core page has 253 rendered words (target: 400+ words for rich snippets)."
+          ],
+          "quickSuggestions": [
+            "Add service deliverables, proof benchmarks, and FAQ blocks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-39ce28de9b",
+          "path": "/privacy-policy",
+          "fullUrl": "https://git-stack.org/privacy-policy",
+          "pageType": "legal_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Privacy Policy | GitStack",
+          "titleLength": 25,
+          "metaDescription": "GitStack Privacy Policy covering data collection, project inquiries, newsletter subscriptions, Google AdSense cookies, and GDPR/CCPA rights.",
+          "metaDescriptionLength": 140,
+          "canonicalUrl": "https://git-stack.org/privacy-policy",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Privacy Policy | GitStack",
+          "ogDescription": "GitStack Privacy Policy covering data collection, project inquiries, newsletter subscriptions, Google AdSense cookies, and GDPR/CCPA rights.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "policy",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 90,
+          "issues": [
+            "Meta title length is 25 chars (optimal: 30–65 chars)."
+          ],
+          "quickSuggestions": [
+            "Rewrite <title> to 45–60 chars placing \"gitstack\" near the front to prevent Google truncation."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-1da22e510f",
+          "path": "/terms",
+          "fullUrl": "https://git-stack.org/terms",
+          "pageType": "legal_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Terms of Service | GitStack",
+          "titleLength": 27,
+          "metaDescription": "Terms governing use of the GitStack website, technical documentation, comments, and consulting inquiry channels.",
+          "metaDescriptionLength": 112,
+          "canonicalUrl": "https://git-stack.org/terms",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Terms of Service | GitStack",
+          "ogDescription": "Terms governing use of the GitStack website, technical documentation, comments, and consulting inquiry channels.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "third-party advertising",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 80,
+          "issues": [
+            "Meta title length is 27 chars (optimal: 30–65 chars).",
+            "Meta description is 112 chars (optimal: 120–160 chars)."
+          ],
+          "quickSuggestions": [
+            "Rewrite <title> to 45–60 chars placing \"gitstack\" near the front to prevent Google truncation.",
+            "Craft a 135–155 char action-oriented meta description with your core benefit and CTA."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-5fcda27f22",
+          "path": "/cookie-policy",
+          "fullUrl": "https://git-stack.org/cookie-policy",
+          "pageType": "legal_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Cookie Policy | GitStack",
+          "titleLength": 24,
+          "metaDescription": "How GitStack uses essential security cookies and optional Google AdSense advertising cookies.",
+          "metaDescriptionLength": 93,
+          "canonicalUrl": "https://git-stack.org/cookie-policy",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Cookie Policy | GitStack",
+          "ogDescription": "How GitStack uses essential security cookies and optional Google AdSense advertising cookies.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "policy",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 80,
+          "issues": [
+            "Meta title length is 24 chars (optimal: 30–65 chars).",
+            "Meta description is 93 chars (optimal: 120–160 chars)."
+          ],
+          "quickSuggestions": [
+            "Rewrite <title> to 45–60 chars placing \"gitstack\" near the front to prevent Google truncation.",
+            "Craft a 135–155 char action-oriented meta description with your core benefit and CTA."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-86f719f167",
+          "path": "/disclaimer",
+          "fullUrl": "https://git-stack.org/disclaimer",
+          "pageType": "legal_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Technical & Professional Disclaimer | GitStack",
+          "titleLength": 46,
+          "metaDescription": "Disclaimer regarding technical architecture articles, code examples, and compliance guidance published on GitStack.",
+          "metaDescriptionLength": 115,
+          "canonicalUrl": "https://git-stack.org/disclaimer",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Technical & Professional Disclaimer | GitStack",
+          "ogDescription": "Disclaimer regarding technical architecture articles, code examples, and compliance guidance published on GitStack.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "technical",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 100,
+          "issues": [],
+          "quickSuggestions": [
+            "Strong baseline — target featured snippets by adding a 2-sentence definition box for \"gitstack\" and earning 2–3 authoritative backlinks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-b94b8fc070",
+          "path": "/editorial-policy",
+          "fullUrl": "https://git-stack.org/editorial-policy",
+          "pageType": "legal_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Editorial Policy & E-E-A-T Quality Standards | GitStack",
+          "titleLength": 55,
+          "metaDescription": "How GitStack ensures technical accuracy, original research, author accountability, and Google AdSense high-value content compliance.",
+          "metaDescriptionLength": 132,
+          "canonicalUrl": "https://git-stack.org/editorial-policy",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Editorial Policy & E-E-A-T Quality Standards | GitStack",
+          "ogDescription": "How GitStack ensures technical accuracy, original research, author accountability, and Google AdSense high-value content compliance.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "policy",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 100,
+          "issues": [],
+          "quickSuggestions": [
+            "Strong baseline — target featured snippets by adding a 2-sentence definition box for \"gitstack\" and earning 2–3 authoritative backlinks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-dccf9746bb",
+          "path": "/demo",
+          "fullUrl": "https://git-stack.org/demo",
+          "pageType": "core_page",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Live Enterprise Architecture & MLOps Simulator | GitStack",
+          "titleLength": 57,
+          "metaDescription": "Interactive sandbox demonstrating enterprise RAG retrieval, MLOps drift detection, and GitStack deployment metrics.",
+          "metaDescriptionLength": 115,
+          "canonicalUrl": "https://git-stack.org/demo",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage"
+          ],
+          "ogTitle": "Live Enterprise Architecture & MLOps Simulator | GitStack",
+          "ogDescription": "Interactive sandbox demonstrating enterprise RAG retrieval, MLOps drift detection, and GitStack deployment metrics.",
+          "ogImage": "",
+          "primaryKeyword": "gitstack",
+          "keywords": [
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "enterprise",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 4 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 90,
+          "issues": [
+            "Core page has 253 rendered words (target: 400+ words for rich snippets)."
+          ],
+          "quickSuggestions": [
+            "Add service deliverables, proof benchmarks, and FAQ blocks."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-704a763afd",
+          "path": "/insights/modernizing-legacy-monoliths-into-event-driven-typescript-microservices",
+          "fullUrl": "https://git-stack.org/insights/modernizing-legacy-monoliths-into-event-driven-typescript-microservices",
+          "pageType": "article",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Modernizing Legacy Monoliths with Event-Driven TypeScript | GitStack",
+          "titleLength": 68,
+          "metaDescription": "Learn GitStack Strangler Fig strategies, transactional outbox patterns, and schema-first TypeScript practices for safe legacy software modernization.",
+          "metaDescriptionLength": 149,
+          "canonicalUrl": "https://git-stack.org/insights/modernizing-legacy-monoliths-into-event-driven-typescript-microservices",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage",
+            "TechArticle",
+            "BreadcrumbList"
+          ],
+          "ogTitle": "Modernizing Legacy Monoliths with Event-Driven TypeScript | GitStack",
+          "ogDescription": "Learn GitStack Strangler Fig strategies, transactional outbox patterns, and schema-first TypeScript practices for safe legacy software modernization.",
+          "ogImage": "",
+          "primaryKeyword": "custom software development",
+          "keywords": [
+            {
+              "keyword": "custom software development",
+              "occurrences": 0,
+              "densityPercent": 0,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "principal technical",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage, TechArticle, BreadcrumbList · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 6 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 85,
+          "issues": [
+            "Article has 253 rendered words (top-ranking pillar target: 1,500+ words)."
+          ],
+          "quickSuggestions": [
+            "Expand implementation examples, architecture trade-offs, and FAQ depth past 1,500 words."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-e47a882e63",
+          "path": "/insights/multi-region-cloud-infrastructure-governance-with-terraform-and-policy-as-code",
+          "fullUrl": "https://git-stack.org/insights/multi-region-cloud-infrastructure-governance-with-terraform-and-policy-as-code",
+          "pageType": "article",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Multi-Region Cloud Governance with Terraform & OPA | GitStack",
+          "titleLength": 61,
+          "metaDescription": "Explore GitStack patterns for multi-region cloud infrastructure management using Terraform modules, OPA policy-as-code, and automated FinOps controls.",
+          "metaDescriptionLength": 150,
+          "canonicalUrl": "https://git-stack.org/insights/multi-region-cloud-infrastructure-governance-with-terraform-and-policy-as-code",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage",
+            "TechArticle",
+            "BreadcrumbList"
+          ],
+          "ogTitle": "Multi-Region Cloud Governance with Terraform & OPA | GitStack",
+          "ogDescription": "Explore GitStack patterns for multi-region cloud infrastructure management using Terraform modules, OPA policy-as-code, and automated FinOps controls.",
+          "ogImage": "",
+          "primaryKeyword": "cloud infrastructure management",
+          "keywords": [
+            {
+              "keyword": "cloud infrastructure management",
+              "occurrences": 1,
+              "densityPercent": 0.39,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud",
+              "occurrences": 6,
+              "densityPercent": 2.35,
+              "inTitle": true,
+              "inH1": true,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage, TechArticle, BreadcrumbList · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 6 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 85,
+          "issues": [
+            "Article has 253 rendered words (top-ranking pillar target: 1,500+ words)."
+          ],
+          "quickSuggestions": [
+            "Expand implementation examples, architecture trade-offs, and FAQ depth past 1,500 words."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-e9e7137d02",
+          "path": "/insights/automated-mlops-zero-downtime-model-retraining-and-drift-detection",
+          "fullUrl": "https://git-stack.org/insights/automated-mlops-zero-downtime-model-retraining-and-drift-detection",
+          "pageType": "article",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Automated MLOps & Zero-Downtime Drift Detection | GitStack",
+          "titleLength": 58,
+          "metaDescription": "Discover how GitStack engineers automated MLOps pipelines with statistical drift detection, reproducible training, and canary Kubernetes deployments.",
+          "metaDescriptionLength": 149,
+          "canonicalUrl": "https://git-stack.org/insights/automated-mlops-zero-downtime-model-retraining-and-drift-detection",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage",
+            "TechArticle",
+            "BreadcrumbList"
+          ],
+          "ogTitle": "Automated MLOps & Zero-Downtime Drift Detection | GitStack",
+          "ogDescription": "Discover how GitStack engineers automated MLOps pipelines with statistical drift detection, reproducible training, and canary Kubernetes deployments.",
+          "ogImage": "",
+          "primaryKeyword": "automated mlops",
+          "keywords": [
+            {
+              "keyword": "automated mlops",
+              "occurrences": 1,
+              "densityPercent": 0.39,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops automation",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage, TechArticle, BreadcrumbList · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 6 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 85,
+          "issues": [
+            "Article has 253 rendered words (top-ranking pillar target: 1,500+ words)."
+          ],
+          "quickSuggestions": [
+            "Expand implementation examples, architecture trade-offs, and FAQ depth past 1,500 words."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        },
+        {
+          "id": "url-f03891ecb7",
+          "path": "/insights/architecting-production-rag-pipelines-for-enterprise-knowledge-bases",
+          "fullUrl": "https://git-stack.org/insights/architecting-production-rag-pipelines-for-enterprise-knowledge-bases",
+          "pageType": "article",
+          "httpStatus": 200,
+          "indexable": true,
+          "title": "Architecting Production RAG Pipelines for Enterprise AI | GitStack",
+          "titleLength": 66,
+          "metaDescription": "Learn how GitStack builds enterprise RAG pipelines with hybrid search, RBAC permissions, reranking, and deterministic citation evaluation.",
+          "metaDescriptionLength": 138,
+          "canonicalUrl": "https://git-stack.org/insights/architecting-production-rag-pipelines-for-enterprise-knowledge-bases",
+          "robotsDirective": "index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1",
+          "h1": "Production AI, Machine Learning, and Cloud Systems Built for Scale",
+          "h2Headings": [
+            "Five Integrated Engineering Practices Under One Roof"
+          ],
+          "wordCount": 253,
+          "internalLinksCount": 13,
+          "schemaTypes": [
+            "Organization",
+            "Person",
+            "ProfessionalService",
+            "FAQPage",
+            "TechArticle",
+            "BreadcrumbList"
+          ],
+          "ogTitle": "Architecting Production RAG Pipelines for Enterprise AI | GitStack",
+          "ogDescription": "Learn how GitStack builds enterprise RAG pipelines with hybrid search, RBAC permissions, reranking, and deterministic citation evaluation.",
+          "ogImage": "",
+          "primaryKeyword": "enterprise rag pipelines",
+          "keywords": [
+            {
+              "keyword": "enterprise rag pipelines",
+              "occurrences": 1,
+              "densityPercent": 0.39,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "gitstack",
+              "occurrences": 4,
+              "densityPercent": 1.57,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "pipelines",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "enterprise",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": true,
+              "inH1": false,
+              "inMeta": true,
+              "source": "on_page"
+            },
+            {
+              "keyword": "cloud infrastructure",
+              "occurrences": 3,
+              "densityPercent": 1.18,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "machine learning",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": true,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "custom software",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            },
+            {
+              "keyword": "mlops pipelines",
+              "occurrences": 2,
+              "densityPercent": 0.78,
+              "inTitle": false,
+              "inH1": false,
+              "inMeta": false,
+              "source": "on_page"
+            }
+          ],
+          "engineVerdicts": [
+            {
+              "engine": "Google Search",
+              "searchable": true,
+              "statusLabel": "Searchable & Indexed Ready",
+              "reason": "HTTP 200 SSR HTML (253w) · Organization, Person, ProfessionalService, FAQPage, TechArticle, BreadcrumbList · Canonical verified"
+            },
+            {
+              "engine": "Bing & DuckDuckGo",
+              "searchable": true,
+              "statusLabel": "Searchable",
+              "reason": "Sitemap + OpenGraph + semantic H1/H2 structure available for Bingbot & DuckDuckBot."
+            },
+            {
+              "engine": "Yahoo Search",
+              "searchable": true,
+              "statusLabel": "Searchable (Bing Index)",
+              "reason": "Powered by Bing web index with verified canonical URL and clean meta snippet."
+            },
+            {
+              "engine": "AI Search (ChatGPT / Gemini / Perplexity)",
+              "searchable": true,
+              "statusLabel": "AI Citation Ready",
+              "reason": "Exposed via /llms.txt + SSR semantic HTML (1 H2 sections, 6 JSON-LD schemas)."
+            }
+          ],
+          "seoScore": 85,
+          "issues": [
+            "Article has 253 rendered words (top-ranking pillar target: 1,500+ words)."
+          ],
+          "quickSuggestions": [
+            "Expand implementation examples, architecture trade-offs, and FAQ depth past 1,500 words."
+          ],
+          "gscMetrics": null,
+          "aiAnalysis": null
+        }
+      ]
+    }
+  ],
+  "marketingSchedule": [
+    {
+      "dayNumber": 1,
+      "dayLabel": "Day 1 · Mon",
+      "scheduledTime": "09:00",
+      "channel": "facebook_page",
+      "contentFormat": "Problem-Solution Authority Post",
+      "servicePillar": "AI Integration & RAG",
+      "headline": "Stop Shipping Fragile Chatbots — Deploy Production RAG Under 350ms",
+      "hook": "Most enterprise AI pilots fail in week 3 because of hallucinated answers and leaked permissions.",
+      "caption": "Most enterprise AI pilots stall in production because of slow vector lookups and broken access controls.\n\nAt GitStack, we build hybrid RAG architectures with PostgreSQL pgvector, strict pre-retrieval RBAC, and sub-350ms latency.\n\nTest our live interactive AI sandbox free today — or book a 1-on-1 architecture review with our principal engineers.\n\nTry the Live Demo: https://git-stack.org/demo\nBook a Free Consultation: https://git-stack.org/contact",
+      "videoScript": "",
+      "hashtags": [
+        "#GitStack",
+        "#EnterpriseAI",
+        "#RAGArchitecture",
+        "#SoftwareEngineering",
+        "#TechPH"
+      ],
+      "ctaLabel": "Try Live Demo Free",
+      "ctaUrl": "https://git-stack.org/demo",
+      "coverImage": "/src/assets/images/insight_cover_ai_agents_1794645171607.jpg",
+      "coverAlt": "Optical glass prisms visualizing multi-agent AI retrieval architecture",
+      "status": "pending_approval",
+      "id": "mkt-day-1-85174b",
+      "scheduledDate": "2026-11-20",
+      "updatedAt": "2026-11-20T06:48:37.483Z"
+    },
+    {
+      "dayNumber": 2,
+      "dayLabel": "Day 2 · Tue",
+      "scheduledTime": "18:30",
+      "channel": "tiktok",
+      "contentFormat": "45s Vertical Demo Screen-Walkthrough",
+      "servicePillar": "Cloud Infrastructure & FinOps",
+      "headline": "How We Cut Serverless PostgreSQL & Vercel Bills by 42% Without Downtime",
+      "hook": "If your cloud database throws 504 timeouts every Monday morning, watch this 40-second fix.",
+      "caption": "Why your serverless app crashes under traffic bursts (and how port 6543 Transaction Pooling + singleton clients cut compute bills by 42%). Full free guide + live sandbox link in bio -> https://git-stack.org/demo",
+      "videoScript": "[0-5s HOOK] Screen-record live latency monitor: \"Your serverless app isn't slow — your database connections are choking.\"\n[5-20s PROBLEM] Show unpooled serverless lambdas opening 120 raw Postgres slots and hitting 504 errors.\n[20-35s SOLUTION] Show GitStack's singleton pooler + transactional outbox cutting p95 latency under 220ms and saving 42% monthly cloud spend.\n[35-45s CTA] \"Try our live architecture demo free at git-stack.org/demo or tap the link in bio to book a cloud audit.\"",
+      "hashtags": [
+        "#CloudFinOps",
+        "#WebDev",
+        "#PostgreSQL",
+        "#Vercel",
+        "#GitStack"
+      ],
+      "ctaLabel": "Open Interactive Sandbox",
+      "ctaUrl": "https://git-stack.org/demo",
+      "coverImage": "/src/assets/images/cloud_infra_architecture_1794645172181.jpg",
+      "coverAlt": "Cloud infrastructure FinOps engineering workspace and architecture monitoring",
+      "status": "pending_approval",
+      "id": "mkt-day-2-5aed6d",
+      "scheduledDate": "2026-11-21",
+      "updatedAt": "2026-11-20T06:48:37.483Z"
+    },
+    {
+      "dayNumber": 3,
+      "dayLabel": "Day 3 · Wed",
+      "scheduledTime": "11:00",
+      "channel": "facebook_page",
+      "contentFormat": "Deep Pillar Article Distribution",
+      "servicePillar": "Custom Software Engineering",
+      "headline": "New Engineering Guide: Modernizing Legacy Monoliths into Event-Driven TypeScript Microservices",
+      "hook": "We just published our complete 2026 production blueprint with runnable TypeScript patterns.",
+      "caption": "New on GitStack Technical Insights:\n\"Modernizing Legacy Monoliths into Event-Driven TypeScript Microservices\"\n\nInside this deep engineering guide:\n• Real production failure modes & benchmarks\n• Step-by-step TypeScript architecture code\n• Compliance & FinOps checklists you can apply immediately\n\nRead the full free guide: https://git-stack.org/insights/modernizing-legacy-monoliths-into-event-driven-typescript-microservices\nNeed help implementing this for your company? Talk to us: https://git-stack.org/contact",
+      "videoScript": "",
+      "hashtags": [
+        "#SystemDesign",
+        "#CustomSoftware",
+        "#TypeScript",
+        "#CloudArchitecture",
+        "#GitStack"
+      ],
+      "ctaLabel": "Read Full Guide",
+      "ctaUrl": "https://git-stack.org/insights/modernizing-legacy-monoliths-into-event-driven-typescript-microservices",
+      "coverImage": "/src/assets/images/hero_gitstack_architecture_1794645171609.jpg",
+      "coverAlt": "GitStack enterprise software architecture and engineering command view",
+      "status": "pending_approval",
+      "id": "mkt-day-3-830b87",
+      "scheduledDate": "2026-11-22",
+      "updatedAt": "2026-11-20T06:48:37.483Z"
+    },
+    {
+      "dayNumber": 4,
+      "dayLabel": "Day 4 · Thu",
+      "scheduledTime": "19:00",
+      "channel": "tiktok",
+      "contentFormat": "35s Founder Tech Tip Video",
+      "servicePillar": "MLOps Automation",
+      "headline": "3 Signs Your Machine Learning Model Is Silently Losing You Money",
+      "hook": "Your ML endpoint returns HTTP 200 OK... while accuracy quietly drops 18% every month.",
+      "caption": "Models don't crash loudly — they drift silently. Here's how our MLOps team catches drift early with automated PSI telemetry & shadow canaries. Free architecture checklist at https://git-stack.org/services",
+      "videoScript": "[0-4s HOOK] \"HTTP 200 doesn't mean your AI model is working.\"\n[4-16s SIGN 1-2] Explain feature skew and silent data drift after seasonal customer shifts.\n[16-28s SOLUTION] Show GitStack's automated PSI drift alerts + 24-hour shadow deployment gate.\n[28-35s CTA] \"Need production MLOps without hiring a 10-person team? Visit git-stack.org/contact.\"",
+      "hashtags": [
+        "#MLOps",
+        "#MachineLearning",
+        "#AIEngineering",
+        "#SaaSFounders",
+        "#GitStack"
+      ],
+      "ctaLabel": "View MLOps Services",
+      "ctaUrl": "https://git-stack.org/services",
+      "coverImage": "/src/assets/images/ai_ml_pipeline_visual_1794645170877.jpg",
+      "coverAlt": "Isometric enterprise AI integration and MLOps automation pipeline diagram",
+      "status": "pending_approval",
+      "id": "mkt-day-4-de3f3b",
+      "scheduledDate": "2026-11-23",
+      "updatedAt": "2026-11-20T06:48:37.483Z"
+    },
+    {
+      "dayNumber": 5,
+      "dayLabel": "Day 5 · Fri",
+      "scheduledTime": "10:30",
+      "channel": "facebook_page",
+      "contentFormat": "Interactive Live App Showcase",
+      "servicePillar": "AI Integration & RAG",
+      "headline": "Test Before You Hire: Try the GitStack Interactive Customer Sandbox Free",
+      "hook": "Don’t trust agency slide decks — test live AI workflows, CRM automation, and cloud telemetry yourself.",
+      "caption": "Tired of agencies pitching slide decks without showing real production code?\n\nWe opened the GitStack Interactive Sandbox so CTOs, founders, and ops leaders can test live AI workflows, RAG pipelines, and real-time analytics directly in the browser — 100% free.\n\nCreate your free sandbox account now: https://git-stack.org/demo\nOr schedule a 30-min engineering discovery call: https://git-stack.org/contact",
+      "videoScript": "",
+      "hashtags": [
+        "#LiveDemo",
+        "#B2BSaaS",
+        "#AIAutomation",
+        "#SoftwareAgency",
+        "#GitStack"
+      ],
+      "ctaLabel": "Sign Up for Free Demo",
+      "ctaUrl": "https://git-stack.org/demo",
+      "coverImage": "/src/assets/images/hero_gitstack_architecture_1794645171609.jpg",
+      "coverAlt": "GitStack enterprise software architecture and engineering command view",
+      "status": "pending_approval",
+      "id": "mkt-day-5-82ad7a",
+      "scheduledDate": "2026-11-24",
+      "updatedAt": "2026-11-20T06:48:37.483Z"
+    },
+    {
+      "dayNumber": 6,
+      "dayLabel": "Day 6 · Sat",
+      "scheduledTime": "17:00",
+      "channel": "tiktok",
+      "contentFormat": "40s Myth-Busting Short",
+      "servicePillar": "Technical Consulting",
+      "headline": "Why 80% of Custom Software Projects Go Over Budget (And Our Fix)",
+      "hook": "Want to save 6 months of wasted engineering budget? Do this one step before writing code.",
+      "caption": "Before spending $50k+ on custom software or AI integration, run a 1-week Principal Architecture & FinOps Blueprint. See how GitStack de-risks builds -> https://git-stack.org/contact",
+      "videoScript": "[0-5s HOOK] \"Stop hiring dev shops that start coding on Day 1 with zero architecture spec.\"\n[5-20s BREAKDOWN] Show 3 hidden budget killers: unpooled DBs, missing audit logs, and unverified third-party APIs.\n[20-34s GITSTACK METHOD] Show GitStack's 5-pillar architecture checklist & live interactive prototype workflow.\n[34-40s CTA] \"Book a Principal Architect review at git-stack.org/contact.\"",
+      "hashtags": [
+        "#StartupCTO",
+        "#TechConsulting",
+        "#SoftwareArchitecture",
+        "#BuildInPublic",
+        "#GitStack"
+      ],
+      "ctaLabel": "Book Architecture Review",
+      "ctaUrl": "https://git-stack.org/contact",
+      "coverImage": "/src/assets/images/cloud_infra_architecture_1794645172181.jpg",
+      "coverAlt": "Cloud infrastructure FinOps engineering workspace and architecture monitoring",
+      "status": "pending_approval",
+      "id": "mkt-day-6-f22ee7",
+      "scheduledDate": "2026-11-25",
+      "updatedAt": "2026-11-20T06:48:37.483Z"
+    },
+    {
+      "dayNumber": 7,
+      "dayLabel": "Day 7 · Sun",
+      "scheduledTime": "14:00",
+      "channel": "website_organic",
+      "contentFormat": "Weekly Organic Community & Newsletter Roundup",
+      "servicePillar": "Technical Consulting",
+      "headline": "Weekly Engineering Digest: Free Templates, Live Sandbox & Q&A",
+      "hook": "Recap our highest-value architecture blueprints and invite founders into next week’s discovery slots.",
+      "caption": "Weekly GitStack Engineering Dispatch:\n1. Explore our latest deep-dive technical guides (https://git-stack.org/insights)\n2. Test live AI & cloud workflows in our free sandbox (https://git-stack.org/demo)\n3. Reserve one of next week's Principal Architecture consultation slots (https://git-stack.org/contact)\n\nBuilt for teams shipping reliable AI, cloud, and custom software at predictable unit cost.",
+      "videoScript": "",
+      "hashtags": [
+        "#WeeklyDigest",
+        "#EngineeringLeadership",
+        "#FreeTools",
+        "#GitStack"
+      ],
+      "ctaLabel": "Book Next Week Slot",
+      "ctaUrl": "https://git-stack.org/contact",
+      "coverImage": "/src/assets/images/insight_cover_ai_agents_1794645171607.jpg",
+      "coverAlt": "Optical glass prisms visualizing multi-agent AI retrieval architecture",
+      "status": "pending_approval",
+      "id": "mkt-day-7-e426a8",
+      "scheduledDate": "2026-11-26",
+      "updatedAt": "2026-11-20T06:48:37.483Z"
+    }
+  ],
+  "marketingProofs": [],
+  "marketingLastGeneratedAt": "2026-11-20T06:48:37.484Z",
+  "trendsRegion": "PH",
+  "trendsLastScannedAt": "2026-11-20T06:50:21.976Z",
+  "trendsFeedSourceMode": "google_trends_rss",
+  "monitoredTrends": [
+    {
+      "id": "gt-b2b-gs-seo-4",
+      "title": "Supabase Transaction Pooler vs Direct Connections: Fixing Serverless Disk IO & Swap Throttling",
+      "region": "PH",
+      "trafficLabel": "High Demand · Informational",
+      "sourceType": "gitstack_trend_radar",
+      "servicePillar": "Cloud Infrastructure Management",
+      "whyItConverts": "Engineering teams running Vercel or AWS Lambda against managed PostgreSQL frequently hit connection exhaustion and Disk IO throttling under burst traffic. Port 6543 transaction pooling with singleton clients eliminates 504 outages.",
+      "relatedQueries": [
+        "Session vs Transaction Pooler trade-offs on Port 6543",
+        "Singleton pool client architecture and prepared-statement rules",
+        "SWR caching and query indexing to cut database CPU by 45%"
+      ],
+      "sources": [
+        {
+          "title": "Supabase Connection Pooling Documentation",
+          "url": "https://supabase.com/docs"
+        },
+        {
+          "title": "Vercel Serverless Concurrency Guidelines",
+          "url": "https://vercel.com/docs"
+        }
+      ],
+      "publishedAt": "2026-11-20T06:50:21.973Z",
+      "alreadyCovered": false
+    },
+    {
+      "id": "gt-b2b-gs-seo-5",
+      "title": "Kubernetes GPU Autoscaling & Spot Instance FinOps for Production ML Inference",
+      "region": "PH",
+      "trafficLabel": "Surging Demand · Commercial",
+      "sourceType": "gitstack_trend_radar",
+      "servicePillar": "MLOps Automation",
+      "whyItConverts": "Always-on GPU clusters drain cloud budgets during off-peak hours. Splitting synchronous quantized ONNX inference from spot-backed batch retraining cuts monthly ML infrastructure costs by nearly 50%.",
+      "relatedQueries": [
+        "KEDA queue-depth scaling with fast-booting ONNX containers",
+        "Checkpointed training DAGs on fault-tolerant spot node pools",
+        "Shadow traffic mirroring and 3-second canary rollbacks"
+      ],
+      "sources": [
+        {
+          "title": "Kubernetes Horizontal Pod Autoscaling Docs",
+          "url": "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/"
+        },
+        {
+          "title": "GitStack MLOps Automation Services",
+          "url": "https://git-stack.org/services"
+        }
+      ],
+      "publishedAt": "2026-11-20T06:50:21.973Z",
+      "alreadyCovered": false
+    },
+    {
+      "id": "gt-b2b-gs-seo-6",
+      "title": "Strangler Fig Legacy Modernization: Migrating Monolithic ERPs Without Business Downtime",
+      "region": "PH",
+      "trafficLabel": "High Demand · Commercial",
+      "sourceType": "gitstack_trend_radar",
+      "servicePillar": "Custom Software Engineering",
+      "whyItConverts": "Big-bang rewrites stall product roadmaps for 18 months and frequently fail. Incremental Strangler Fig decomposition with Change Data Capture and edge path routing delivers bi-weekly production releases safely.",
+      "relatedQueries": [
+        "Three-phase CDC backfill and shadow read diff verification",
+        "Edge API gateway traffic splitting with instant rollback",
+        "Contract-first TypeScript OpenAPI schemas across bounded contexts"
+      ],
+      "sources": [
+        {
+          "title": "Strangler Fig Application Pattern (Martin Fowler)",
+          "url": "https://martinfowler.com/bliki/StranglerFigApplication.html"
+        },
+        {
+          "title": "Transactional Outbox Pattern Guide",
+          "url": "https://microservices.io/patterns/data/transactional-outbox.html"
+        }
+      ],
+      "publishedAt": "2026-11-20T06:50:21.973Z",
+      "alreadyCovered": false
+    },
+    {
+      "id": "gt-b2b-gs-seo-7",
+      "title": "Automated PostgreSQL Audit Trails with Triggers & Realtime Streams for SOC2 Compliance",
+      "region": "PH",
+      "trafficLabel": "Breakout Demand · Commercial",
+      "sourceType": "gitstack_trend_radar",
+      "servicePillar": "Technical Consulting",
+      "whyItConverts": "Enterprise buyers demand immutable row-level change logs tracking both application edits and direct database console mutations. PostgreSQL JSONB triggers paired with secret redaction satisfy strict audit reviews.",
+      "relatedQueries": [
+        "Automatic secret masking inside JSONB old/new row diffs",
+        "Session context attribution distinguishing app vs dashboard edits",
+        "Zero-polling Supabase Realtime operational audit feeds"
+      ],
+      "sources": [
+        {
+          "title": "PostgreSQL Trigger Functions Documentation",
+          "url": "https://www.postgresql.org/docs/current/plpgsql-trigger.html"
+        },
+        {
+          "title": "GitStack Security & Editorial Standards",
+          "url": "https://git-stack.org/editorial-policy"
+        }
+      ],
+      "publishedAt": "2026-11-20T06:50:21.973Z",
+      "alreadyCovered": false
+    },
+    {
+      "id": "gt-rss-3037333846",
+      "title": "fuel prices",
+      "region": "PH",
+      "trafficLabel": "1000+ searches",
+      "sourceType": "google_trends_rss",
+      "servicePillar": "AI & Custom Software Opportunity",
+      "whyItConverts": "Rising PH Google Trend (1000+ searches) — angle into an enterprise software, automation, or cloud workflow guide that directs readers to GitStack's free Live Demo (/demo) and Consultation (/contact).",
+      "relatedQueries": [
+        "fuel prices",
+        "fuel prices software automation",
+        "fuel prices enterprise guide"
+      ],
+      "sources": [
+        {
+          "title": "Diesel, gas rollbacks seen next week",
+          "url": "https://business.inquirer.net/621886/diesel-gas-rollbacks-seen-next-week"
+        },
+        {
+          "title": "GitStack Technical Services",
+          "url": "https://git-stack.org/services"
+        }
+      ],
+      "publishedAt": "2026-11-20T06:00:00.000Z",
+      "alreadyCovered": false
+    },
+    {
+      "id": "gt-rss-2f1eb9d3b5",
+      "title": "balita",
+      "region": "PH",
+      "trafficLabel": "100+ searches",
+      "sourceType": "google_trends_rss",
+      "servicePillar": "AI & Custom Software Opportunity",
+      "whyItConverts": "Rising PH Google Trend (100+ searches) — angle into an enterprise software, automation, or cloud workflow guide that directs readers to GitStack's free Live Demo (/demo) and Consultation (/contact).",
+      "relatedQueries": [
+        "balita",
+        "balita software automation",
+        "balita enterprise guide"
+      ],
+      "sources": [
+        {
+          "title": "WALANG PASOK: Mga suspendidong klase sa Biyernes, Nov. 20, 2026",
+          "url": "https://www.gmanetwork.com/news/balitambayan/balita/1010105/walang-pasok-mga-suspendidong-klase-sa-biyernes-nov-20-2026/story/"
+        },
+        {
+          "title": "GitStack Technical Services",
+          "url": "https://git-stack.org/services"
+        }
+      ],
+      "publishedAt": "2026-11-20T05:50:00.000Z",
+      "alreadyCovered": false
+    },
+    {
+      "id": "gt-rss-746aac5a30",
+      "title": "meralco",
+      "region": "PH",
+      "trafficLabel": "200+ searches",
+      "sourceType": "google_trends_rss",
+      "servicePillar": "AI & Custom Software Opportunity",
+      "whyItConverts": "Rising PH Google Trend (200+ searches) — angle into an enterprise software, automation, or cloud workflow guide that directs readers to GitStack's free Live Demo (/demo) and Consultation (/contact).",
+      "relatedQueries": [
+        "meralco",
+        "meralco software automation",
+        "meralco enterprise guide"
+      ],
+      "sources": [
+        {
+          "title": "Meralco, Bulacan PVO team up for animal welfare",
+          "url": "https://thephilbiznews.com/2026/11/20/meralco-bulacan-pvo-team-up-for-animal-welfare/"
+        },
+        {
+          "title": "GitStack Technical Services",
+          "url": "https://git-stack.org/services"
+        }
+      ],
+      "publishedAt": "2026-11-20T05:40:00.000Z",
+      "alreadyCovered": false
+    },
+    {
+      "id": "gt-rss-d7ed6df3ad",
+      "title": "panfilo lacson",
+      "region": "PH",
+      "trafficLabel": "200+ searches",
+      "sourceType": "google_trends_rss",
+      "servicePillar": "AI & Custom Software Opportunity",
+      "whyItConverts": "Rising PH Google Trend (200+ searches) — angle into an enterprise software, automation, or cloud workflow guide that directs readers to GitStack's free Live Demo (/demo) and Consultation (/contact).",
+      "relatedQueries": [
+        "panfilo lacson",
+        "panfilo lacson software automation",
+        "panfilo lacson enterprise guide"
+      ],
+      "sources": [
+        {
+          "title": "Lacson disputes Sara Duterte’s claim that corruption runs in gov’t ‘DNA’",
+          "url": "https://newsinfo.inquirer.net/2344278/lacson-disputes-sara-dutertes-claim-that-corruption-runs-in-govt-dna"
+        },
+        {
+          "title": "GitStack Technical Services",
+          "url": "https://git-stack.org/services"
+        }
+      ],
+      "publishedAt": "2026-11-20T04:50:00.000Z",
+      "alreadyCovered": false
+    }
+  ],
+  "trendApprovalQueue": [],
+  "emailConfigs": {
+    "search_console": {
+      "module": "search_console",
+      "enabled": true,
+      "recipient_email": "gitstackitsolution@gmail.com",
+      "frequency": "daily",
+      "send_hour_utc": 1,
+      "last_sent_at": null,
+      "updated_at": "2026-11-20T06:48:37.361Z"
+    },
+    "marketing": {
+      "module": "marketing",
+      "enabled": true,
+      "recipient_email": "gitstackitsolution@gmail.com",
+      "frequency": "daily",
+      "send_hour_utc": 2,
+      "last_sent_at": null,
+      "updated_at": "2026-11-20T06:48:37.361Z"
+    },
+    "google_trends": {
+      "module": "google_trends",
+      "enabled": true,
+      "recipient_email": "gitstackitsolution@gmail.com",
+      "frequency": "daily",
+      "send_hour_utc": 3,
+      "last_sent_at": null,
+      "updated_at": "2026-11-20T06:48:37.361Z"
+    }
+  },
+  "emailLogs": []
+}

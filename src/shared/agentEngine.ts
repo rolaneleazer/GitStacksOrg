@@ -25,6 +25,18 @@ export interface AgentAuditContext {
   chatThreads: ChatThread[];
   analytics: AnalyticsSummary;
   supabaseTablesReady: boolean;
+  growthSnapshot?: {
+    totalAuditedLinks: number;
+    searchableLinks: number;
+    avgSeoScore: number;
+    lastSearchScanAt: string | null;
+    marketingScheduledCount: number;
+    marketingPublishedCount: number;
+    facebookConnected: boolean;
+    tiktokConnected: boolean;
+    monitoredTrendsCount: number;
+    pendingTrendApprovals: number;
+  };
 }
 
 function summarizeStatus(checks: AgentRuleCheck[]): {
@@ -105,6 +117,42 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
       detail: 'Consent-verified newsletter capture is active on the Insights Journal and Home page.',
       targetTab: 'inbox',
       actionLabel: 'View Subscribers'
+    },
+    {
+      id: 'mkt-organic-social',
+      label: 'Free Organic 7-Day Schedule & Social Channels (FB / TikTok)',
+      status:
+        (ctx.growthSnapshot?.marketingScheduledCount || 0) >= 5 &&
+        (ctx.growthSnapshot?.facebookConnected || ctx.growthSnapshot?.tiktokConnected)
+          ? 'pass'
+          : (ctx.growthSnapshot?.marketingScheduledCount || 0) > 0
+            ? 'warning'
+            : 'warning',
+      metric: `${ctx.growthSnapshot?.marketingScheduledCount || 0} Planned · ${
+        ctx.growthSnapshot?.facebookConnected && ctx.growthSnapshot?.tiktokConnected
+          ? 'FB + TikTok Ready'
+          : ctx.growthSnapshot?.facebookConnected
+            ? 'FB Connected'
+            : ctx.growthSnapshot?.tiktokConnected
+              ? 'TikTok Connected'
+              : 'Connect FB / TikTok'
+      }`,
+      detail:
+        'Runs zero-ad-spend daily Facebook Page & TikTok campaigns with live visual previews and conversion links to /demo and /contact.',
+      targetTab: 'marketing',
+      actionLabel: 'Open Marketing Studio'
+    },
+    {
+      id: 'mkt-trends-approval',
+      label: 'Google Trends Content & Approval Queue Velocity',
+      status: (ctx.growthSnapshot?.pendingTrendApprovals || 0) > 0 ? 'warning' : 'pass',
+      metric: `${ctx.growthSnapshot?.monitoredTrendsCount || 0} Monitored · ${ctx.growthSnapshot?.pendingTrendApprovals || 0} Pending`,
+      detail:
+        (ctx.growthSnapshot?.pendingTrendApprovals || 0) > 0
+          ? `${ctx.growthSnapshot?.pendingTrendApprovals} trend article + social campaign bundle(s) are waiting for your explicit approval before publishing.`
+          : 'Google Trends monitor active. Generate trend-backed articles and social posts whenever new high-intent topics break out.',
+      targetTab: 'google_trends',
+      actionLabel: 'Review Trend Queue'
     }
   ];
   const mktSummary = summarizeStatus(marketingChecks);
@@ -273,6 +321,23 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
       status: ctx.siteAudit.thinArticleCount === 0 ? 'pass' : 'fail',
       metric: `Avg ${ctx.siteAudit.averageWordCount} words`,
       detail: `${ctx.siteAudit.thinArticleCount} thin articles detected across ${publishedPosts.length} published guides.`
+    },
+    {
+      id: 'qa-live-url-indexability',
+      label: 'Sitewide URL Metadata, Canonical & Schema Integrity',
+      status:
+        (ctx.growthSnapshot?.totalAuditedLinks || 0) > 0 &&
+        (ctx.growthSnapshot?.searchableLinks || 0) === (ctx.growthSnapshot?.totalAuditedLinks || 0)
+          ? 'pass'
+          : 'warning',
+      metric:
+        (ctx.growthSnapshot?.totalAuditedLinks || 0) > 0
+          ? `${ctx.growthSnapshot?.searchableLinks}/${ctx.growthSnapshot?.totalAuditedLinks} Searchable`
+          : 'Scan Pending',
+      detail:
+        'Audits every public route and published article SSR HTML for HTTP 200 status, canonical URL, Schema.org markup, and title/meta bounds.',
+      targetTab: 'search_console',
+      actionLabel: 'Open Search Console'
     }
   ];
   const qaSummary = summarizeStatus(qaChecks);
@@ -325,6 +390,23 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
       detail: `${ctx.analytics.uniqueSessions} unique visitor session(s) generated ${ctx.analytics.inquiryConversions + ctx.analytics.newsletterConversions} lead/subscriber conversions.`,
       targetTab: 'analytics',
       actionLabel: 'View Traffic Dashboard'
+    },
+    {
+      id: 'trf-search-console-links',
+      label: 'Multi-Engine URL Searchability (Google, Bing, DuckDuckGo, Yahoo, AI)',
+      status:
+        (ctx.growthSnapshot?.totalAuditedLinks || 0) > 0 &&
+        (ctx.growthSnapshot?.avgSeoScore || 0) >= 85
+          ? 'pass'
+          : 'warning',
+      metric:
+        (ctx.growthSnapshot?.totalAuditedLinks || 0) > 0
+          ? `${ctx.growthSnapshot?.searchableLinks}/${ctx.growthSnapshot?.totalAuditedLinks} Links · ${ctx.growthSnapshot?.avgSeoScore}% SEO`
+          : 'Run Site Link Audit',
+      detail:
+        'Continuously inspects all website routes & articles for searchability, keyword placement, Google SERP appearance, and AI ranking recommendations.',
+      targetTab: 'search_console',
+      actionLabel: 'Inspect Website Links'
     }
   ];
   const trafficSummary = summarizeStatus(trafficChecks);

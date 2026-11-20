@@ -91,7 +91,18 @@ import type {
   DataExplorerStatus,
   DataRealtimeConfigResponse,
   DataTableDescriptor,
-  DataTableRowsResponse
+  DataTableRowsResponse,
+  GoogleTrendsDashboardResponse,
+  GrowthModuleEmailConfig,
+  GrowthModuleEmailLog,
+  MarketingDashboardResponse,
+  MarketingPublishProof,
+  MarketingScheduleItem,
+  SearchConsoleAiRecommendation,
+  SearchConsoleAuditRun,
+  SearchConsoleDashboardResponse,
+  SearchConsoleUrlAudit,
+  TrendApprovalBundle
 } from '../shared/types.ts';
 import { pushGtmEvent } from './tagManager.ts';
 
@@ -1970,6 +1981,187 @@ export const api = {
         body: JSON.stringify({})
       }
     );
+  },
+
+  // --- 1. Google Search Console & Multi-Engine URL Auditor ---
+  async getSearchConsoleDashboard() {
+    return request<SearchConsoleDashboardResponse>('/api/admin/search-console/dashboard');
+  },
+
+  async scanSearchConsoleLinks(baseOrigin?: string) {
+    return request<{ run: SearchConsoleAuditRun; dashboard: SearchConsoleDashboardResponse }>(
+      '/api/admin/search-console/scan',
+      {
+        method: 'POST',
+        body: JSON.stringify({ baseOrigin })
+      }
+    );
+  },
+
+  async analyzeSearchConsoleUrl(path: string, baseOrigin?: string) {
+    return request<{ url: SearchConsoleUrlAudit; analysis: SearchConsoleAiRecommendation }>(
+      '/api/admin/search-console/analyze-url',
+      {
+        method: 'POST',
+        body: JSON.stringify({ path, baseOrigin })
+      }
+    );
+  },
+
+  async saveSearchConsoleEmailConfig(payload: Partial<GrowthModuleEmailConfig>) {
+    return request<{ emailConfig: GrowthModuleEmailConfig }>(
+      '/api/admin/search-console/email-config',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async sendSearchConsoleEmailReport(recipient_email?: string) {
+    return request<{
+      delivered: boolean;
+      log: GrowthModuleEmailLog;
+      message: string;
+      dashboard: SearchConsoleDashboardResponse;
+    }>('/api/admin/search-console/send-email', {
+      method: 'POST',
+      body: JSON.stringify({ recipient_email })
+    });
+  },
+
+  // --- 2. Organic Marketing & Social Media (Facebook Page & TikTok) ---
+  async getMarketingDashboard() {
+    return request<MarketingDashboardResponse>('/api/admin/marketing/dashboard');
+  },
+
+  async generateMarketingPlan(payload: {
+    focusPillar?: string;
+    targetAudience?: string;
+    region?: string;
+  }) {
+    return request<{
+      schedule: MarketingScheduleItem[];
+      dashboard: MarketingDashboardResponse;
+    }>('/api/admin/marketing/generate-plan', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async updateMarketingScheduleItem(id: string, patch: Partial<MarketingScheduleItem>) {
+    return request<{ item: MarketingScheduleItem }>(
+      `/api/admin/marketing/schedule/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(patch)
+      }
+    );
+  },
+
+  async publishMarketingItem(id: string) {
+    return request<{
+      item: MarketingScheduleItem;
+      proof: MarketingPublishProof;
+      liveApiDelivered: boolean;
+      dashboard: MarketingDashboardResponse;
+    }>(`/api/admin/marketing/publish/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async getFacebookOAuthUrl() {
+    return request<{ url: string; redirectUri: string }>('/api/oauth/facebook/url');
+  },
+
+  async getTikTokOAuthUrl() {
+    return request<{ url: string; redirectUri: string }>('/api/oauth/tiktok/url');
+  },
+
+  async saveMarketingEmailConfig(payload: Partial<GrowthModuleEmailConfig>) {
+    return request<{ emailConfig: GrowthModuleEmailConfig }>('/api/admin/marketing/email-config', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async sendMarketingEmailReport(recipient_email?: string) {
+    return request<{
+      delivered: boolean;
+      log: GrowthModuleEmailLog;
+      message: string;
+      dashboard: MarketingDashboardResponse;
+    }>('/api/admin/marketing/send-email', {
+      method: 'POST',
+      body: JSON.stringify({ recipient_email })
+    });
+  },
+
+  // --- 3. Google Trends Monitor & Approval Queue ---
+  async getGoogleTrendsDashboard(region?: string) {
+    const qs = region ? `?region=${encodeURIComponent(region)}` : '';
+    return request<GoogleTrendsDashboardResponse>(`/api/admin/google-trends/dashboard${qs}`);
+  },
+
+  async scanGoogleTrends(region: string) {
+    return request<GoogleTrendsDashboardResponse>('/api/admin/google-trends/scan', {
+      method: 'POST',
+      body: JSON.stringify({ region })
+    });
+  },
+
+  async generateTrendBundle(payload: { trendId?: string; trendTitle: string; region: string }) {
+    return request<{ bundle: TrendApprovalBundle; dashboard: GoogleTrendsDashboardResponse }>(
+      '/api/admin/google-trends/generate-bundle',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async reviewTrendBundle(
+    id: string,
+    payload: {
+      action: 'publish_article' | 'queue_social' | 'publish_social_now' | 'reject';
+      reviewNote?: string;
+      articleTitle?: string;
+      articleMarkdown?: string;
+      facebookCaption?: string;
+      tiktokCaption?: string;
+    }
+  ) {
+    return request<{
+      bundle: TrendApprovalBundle;
+      message: string;
+      dashboard: GoogleTrendsDashboardResponse;
+    }>(`/api/admin/google-trends/review/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async saveGoogleTrendsEmailConfig(payload: Partial<GrowthModuleEmailConfig>) {
+    return request<{ emailConfig: GrowthModuleEmailConfig }>(
+      '/api/admin/google-trends/email-config',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async sendGoogleTrendsEmailReport(recipient_email?: string) {
+    return request<{
+      delivered: boolean;
+      log: GrowthModuleEmailLog;
+      message: string;
+      dashboard: GoogleTrendsDashboardResponse;
+    }>('/api/admin/google-trends/send-email', {
+      method: 'POST',
+      body: JSON.stringify({ recipient_email })
+    });
   }
 };
 

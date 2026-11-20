@@ -91,27 +91,27 @@ export const DEFAULT_AGENT_OFFICE_PROFILES: AgentOfficeProfile[] = [
   {
     agent_id: 'marketing',
     display_name: 'Aria (Marketing)',
-    custom_role: 'Positioning, AI/ML Messaging & Lead Capture',
+    custom_role: 'Organic Social (FB/TikTok), Trends & Lead Capture',
     avatar_icon: 'megaphone',
     accent_color: '#10B981',
     desk_label: 'Growth & Marketing',
     desk_x: 5.2,
     desk_y: 5.1,
     work_status: 'working',
-    current_mission: 'Audit homepage AI/ML positioning, CTA clarity, and subscriber capture',
+    current_mission: 'Run 7-day organic FB/TikTok campaigns, monitor Google Trends approvals, and optimize CTAs',
     updated_at: '2026-11-15T00:00:00Z'
   },
   {
     agent_id: 'traffic',
     display_name: 'Pulse (Traffic)',
-    custom_role: 'Organic SEO, GEO Visibility & GA4 Telemetry',
+    custom_role: 'Search Console, Multi-Engine SEO & GEO Visibility',
     avatar_icon: 'trending',
     accent_color: '#059669',
     desk_label: 'Growth & Marketing',
     desk_x: 6.7,
     desk_y: 5.8,
     work_status: 'idle',
-    current_mission: 'Evaluate llms.txt indexing, GA4 signals, and conversion funnel velocity',
+    current_mission: 'Audit all website links across Google, Bing, Yahoo & AI Search and boost keyword rankings',
     updated_at: '2026-11-15T00:00:00Z'
   },
   {

@@ -9,9 +9,10 @@ interface HeaderProps {
   currentPath: string;
   settings?: AdSenseSettings | null;
   onNavigate: (path: string) => void;
+  fullWidth?: boolean;
 }
 
-export function Header({ currentPath, settings, onNavigate }: HeaderProps) {
+export function Header({ currentPath, settings, onNavigate, fullWidth = false }: HeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const brandName = settings?.brand_name?.trim() || DEFAULT_BRANDING.brand_name;
@@ -42,7 +43,11 @@ export function Header({ currentPath, settings, onNavigate }: HeaderProps) {
       className="sticky top-0 z-40 border-b border-slate-200 backdrop-blur-sm transition-colors"
       style={{ backgroundColor: themeTokens.headerBg }}
     >
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 sm:gap-8 px-4 sm:px-6">
+      <div
+        className={`flex h-16 items-center justify-between gap-4 sm:gap-8 ${
+          fullWidth ? 'w-full px-3 sm:px-5 lg:px-6' : 'mx-auto max-w-6xl px-4 sm:px-6'
+        }`}
+      >
         {/* Zone 1: Brand Logo & Wordmark */}
         <a
           href="/"
@@ -174,11 +179,13 @@ export function Header({ currentPath, settings, onNavigate }: HeaderProps) {
 export function Footer({
   settings,
   onNavigate,
-  onOpenCookiePrefs
+  onOpenCookiePrefs,
+  fullWidth = false
 }: {
   settings?: AdSenseSettings | null;
   onNavigate: (path: string) => void;
   onOpenCookiePrefs: () => void;
+  fullWidth?: boolean;
 }) {
   const brandName = settings?.brand_name?.trim() || DEFAULT_BRANDING.brand_name;
   const brandLogoUrl = settings?.brand_logo_url?.trim() || '';
@@ -191,7 +198,11 @@ export function Footer({
 
   return (
     <footer className="border-t border-slate-200 bg-white text-slate-600">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12 sm:py-14">
+      <div
+        className={`py-12 sm:py-14 ${
+          fullWidth ? 'w-full px-3 sm:px-5 lg:px-6' : 'mx-auto max-w-6xl px-4 sm:px-6'
+        }`}
+      >
         <div className="grid grid-cols-1 gap-10 md:grid-cols-4">
           <div className="md:col-span-1">
             <a

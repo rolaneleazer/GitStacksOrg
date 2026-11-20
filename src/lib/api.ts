@@ -102,7 +102,8 @@ import type {
   SearchConsoleAuditRun,
   SearchConsoleDashboardResponse,
   SearchConsoleUrlAudit,
-  TrendApprovalBundle
+  TrendApprovalBundle,
+  WorkspaceLayoutConfig
 } from '../shared/types.ts';
 import { pushGtmEvent } from './tagManager.ts';
 
@@ -2162,6 +2163,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ recipient_email })
     });
+  },
+
+  // --- Back Office Customizable Workspace Layout ---
+  async getWorkspaceLayout() {
+    return request<{ layout: WorkspaceLayoutConfig }>('/api/admin/workspace-layout');
+  },
+
+  async saveWorkspaceLayout(layout: WorkspaceLayoutConfig) {
+    return request<{ layout: WorkspaceLayoutConfig }>('/api/admin/workspace-layout', {
+      method: 'PUT',
+      body: JSON.stringify(layout)
+    });
   }
 };
+
 

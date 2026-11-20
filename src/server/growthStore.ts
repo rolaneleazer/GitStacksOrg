@@ -9,8 +9,13 @@ import type {
   MarketingPublishProof,
   MarketingScheduleItem,
   SearchConsoleAuditRun,
-  TrendApprovalBundle
+  TrendApprovalBundle,
+  WorkspaceLayoutConfig
 } from '../shared/types.ts';
+import {
+  createDefaultWorkspaceLayout,
+  sanitizeWorkspaceLayout
+} from '../shared/workspaceLayout.ts';
 
 interface GrowthSuiteStore {
   searchConsoleRuns: SearchConsoleAuditRun[];
@@ -25,6 +30,7 @@ interface GrowthSuiteStore {
   trendApprovalQueue: TrendApprovalBundle[];
   emailConfigs: Record<GrowthModuleKey, GrowthModuleEmailConfig>;
   emailLogs: GrowthModuleEmailLog[];
+  workspaceLayouts: Record<string, WorkspaceLayoutConfig>;
 }
 
 const IS_VERCEL = Boolean(process.env.VERCEL);
@@ -65,7 +71,8 @@ function createDefaultStore(): GrowthSuiteStore {
       marketing: createDefaultEmailConfig('marketing'),
       google_trends: createDefaultEmailConfig('google_trends')
     },
-    emailLogs: []
+    emailLogs: [],
+    workspaceLayouts: {}
   };
 }
 
@@ -75,6 +82,14 @@ let writeQueue: Promise<void> = Promise.resolve();
 function normalizeStore(raw: Partial<GrowthSuiteStore> | null | undefined): GrowthSuiteStore {
   const base = createDefaultStore();
   if (!raw || typeof raw !== 'object') return base;
+  const workspaceLayouts: Record<string, WorkspaceLayoutConfig> = {};
+  if (raw.workspaceLayouts && typeof raw.workspaceLayouts === 'object') {
+    for (const [k, v] of Object.entries(raw.workspaceLayouts)) {
+      if (k && v && typeof v === 'object') {
+        workspaceLayouts[k] = sanitizeWorkspaceLayout(v);
+      }
+    }
+  }
   return {
     searchConsoleRuns: Array.isArray(raw.searchConsoleRuns) ? raw.searchConsoleRuns.slice(0, 15) : [],
     marketingSchedule: Array.isArray(raw.marketingSchedule) ? raw.marketingSchedule : [],
@@ -103,7 +118,8 @@ function normalizeStore(raw: Partial<GrowthSuiteStore> | null | undefined): Grow
         module: 'google_trends'
       }
     },
-    emailLogs: Array.isArray(raw.emailLogs) ? raw.emailLogs.slice(0, 120) : []
+    emailLogs: Array.isArray(raw.emailLogs) ? raw.emailLogs.slice(0, 120) : [],
+    workspaceLayouts
   };
 }
 
@@ -213,3 +229,28 @@ export async function getAgentGrowthSnapshot(
     ).length
   };
 }
+
+export async function getOperatorWorkspaceLayout(
+  operatorKey: string
+): Promise<WorkspaceLayoutConfig> {
+  const store = await readGrowthStore();
+  const cleanKey = operatorKey.trim().toLowerCase() || 'default';
+  const existing = store.workspaceLayouts[cleanKey];
+  return existing ? sanitizeWorkspaceLayout(existing) : createDefaultWorkspaceLayout();
+}
+
+export async function saveOperatorWorkspaceLayout(
+  operatorKey: string,
+  incoming: Partial<WorkspaceLayoutConfig>
+): Promise<WorkspaceLayoutConfig> {
+  const cleanKey = operatorKey.trim().toLowerCase() || 'default';
+  const sanitized = sanitizeWorkspaceLayout({
+    ...incoming,
+    updatedAt: new Date().toISOString()
+  });
+  await updateGrowthStore((s) => {
+    s.workspaceLayouts[cleanKey] = sanitized;
+  });
+  return sanitized;
+}
+

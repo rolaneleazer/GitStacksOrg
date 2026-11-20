@@ -1160,7 +1160,7 @@ export function AgentsWorkspace({
                             value={newTaskTitle}
                             onChange={(e) => setNewTaskTitle(e.target.value)}
                             placeholder={`Add ${activeProfile.display_name.split(' ')[0]} task...`}
-                            className="min-h-[38px] flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                            className="min-h-[40px] flex-1 min-w-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                           />
                           <select
                             value={newTaskPriority}
@@ -1254,7 +1254,7 @@ export function AgentsWorkspace({
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
                           placeholder={`Ask ${activeProfile.display_name.split(' ')[0]} about status or tasks...`}
-                          className="min-h-[40px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
+                          className="min-h-[40px] flex-1 min-w-0 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                         />
                         <button
                           type="submit"

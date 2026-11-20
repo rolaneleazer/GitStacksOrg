@@ -2172,10 +2172,46 @@ export interface GoogleTrendsDashboardResponse {
   emailLogs: GrowthModuleEmailLog[];
 }
 
+// --- Customizable Back Office Module Categories & Layout ---
 
+export type WorkspaceModuleId =
+  | 'agents'
+  | 'crm'
+  | 'pages'
+  | 'branding'
+  | 'buymeacoffee'
+  | 'inbox'
+  | 'notifications'
+  | 'chat'
+  | 'workflows'
+  | 'analytics'
+  | 'tag_manager'
+  | 'cloudflare'
+  | 'ai_visibility'
+  | 'search_console'
+  | 'marketing'
+  | 'google_trends'
+  | 'resources'
+  | 'qa'
+  | 'cybersecurity'
+  | 'articles'
+  | 'users'
+  | 'demo_users'
+  | 'data_explorer'
+  | 'adsense'
+  | 'profile';
 
+export interface WorkspaceCategoryConfig {
+  id: string;
+  name: string;
+  collapsed?: boolean;
+  moduleIds: WorkspaceModuleId[];
+}
 
-
-
-
-
+export interface WorkspaceLayoutConfig {
+  version: number;
+  sidebarCollapsed: boolean;
+  categories: WorkspaceCategoryConfig[];
+  moduleAliases: Record<string, string>;
+  updatedAt: string;
+}

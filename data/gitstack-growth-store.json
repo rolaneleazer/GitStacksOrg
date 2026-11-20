@@ -2576,5 +2576,6 @@
       "updated_at": "2026-11-20T06:48:37.361Z"
     }
   },
-  "emailLogs": []
+  "emailLogs": [],
+  "workspaceLayouts": {}
 }

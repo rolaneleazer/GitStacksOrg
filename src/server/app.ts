@@ -106,7 +106,12 @@ import { collectInfrastructureMetrics, restartInfrastructureServices } from './i
 import { auditPageAdSense } from './adsenseAuditor.ts';
 import { isPublicSsrPath, renderPublicRouteHtml } from './ssrRenderer.ts';
 import { discoverTrendingTopics, generateAdSenseSafeArticle } from './trendScout.ts';
-import { getAgentGrowthSnapshot, saveGrowthModuleEmailConfig } from './growthStore.ts';
+import {
+  getAgentGrowthSnapshot,
+  getOperatorWorkspaceLayout,
+  saveGrowthModuleEmailConfig,
+  saveOperatorWorkspaceLayout
+} from './growthStore.ts';
 import {
   analyzeUrlWithAi,
   getSearchConsoleDashboard,
@@ -6329,6 +6334,30 @@ export async function createApp(): Promise<Express> {
     } catch (err) {
       res.status(400).json({
         error: err instanceof Error ? err.message : 'Failed sending Google Trends email report.'
+      });
+    }
+  });
+
+  app.get('/api/admin/workspace-layout', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const key = req.editor?.userId || req.editor?.email || 'default';
+      const layout = await getOperatorWorkspaceLayout(key);
+      res.json({ layout });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Unable to load workspace layout.'
+      });
+    }
+  });
+
+  app.put('/api/admin/workspace-layout', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const key = req.editor?.userId || req.editor?.email || 'default';
+      const layout = await saveOperatorWorkspaceLayout(key, req.body || {});
+      res.json({ layout });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Unable to save workspace layout.'
       });
     }
   });

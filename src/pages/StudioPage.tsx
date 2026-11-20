@@ -19,10 +19,8 @@ import {
   FileEdit,
   FileText,
   Lock,
-  LogOut,
   Mail,
   Megaphone,
-  Menu,
   MessageSquare,
   Palette,
   Plus,
@@ -67,6 +65,10 @@ import { SearchConsolePanel } from '../components/backoffice/SearchConsolePanel.
 import { TagManagerPanel } from '../components/backoffice/TagManagerPanel.tsx';
 import { UserAccessPanel } from '../components/backoffice/UserAccessPanel.tsx';
 import { UserWorkflowsPanel } from '../components/backoffice/UserWorkflowsPanel.tsx';
+import {
+  type StudioNavDescriptor,
+  WorkspaceSidebarNav
+} from '../components/backoffice/WorkspaceSidebarNav.tsx';
 import { MarkdownRenderer } from '../components/MarkdownRenderer.tsx';
 import {
   api,
@@ -102,8 +104,14 @@ import type {
   UserProfile,
   UserRole,
   UserStatus,
-  UserWorkflowItem
+  UserWorkflowItem,
+  WorkspaceLayoutConfig,
+  WorkspaceModuleId
 } from '../shared/types.ts';
+import {
+  createDefaultWorkspaceLayout,
+  sanitizeWorkspaceLayout
+} from '../shared/workspaceLayout.ts';
 
 interface StudioPageProps {
   onArticlesChanged: () => void;
@@ -112,32 +120,7 @@ interface StudioPageProps {
   onNavigate: (path: string) => void;
 }
 
-type StudioTab =
-  | 'agents'
-  | 'crm'
-  | 'pages'
-  | 'branding'
-  | 'buymeacoffee'
-  | 'inbox'
-  | 'notifications'
-  | 'chat'
-  | 'workflows'
-  | 'analytics'
-  | 'tag_manager'
-  | 'cloudflare'
-  | 'ai_visibility'
-  | 'search_console'
-  | 'marketing'
-  | 'google_trends'
-  | 'resources'
-  | 'qa'
-  | 'cybersecurity'
-  | 'articles'
-  | 'users'
-  | 'demo_users'
-  | 'data_explorer'
-  | 'adsense'
-  | 'profile';
+type StudioTab = WorkspaceModuleId;
 
 const ROLE_TABS: Record<UserRole, StudioTab[]> = {
   super_admin: [
@@ -351,6 +334,10 @@ export function StudioPage({
   const [adsenseSubView, setAdsenseSubView] = useState<'auditor' | 'settings'>('auditor');
   const [articlesSubView, setArticlesSubView] = useState<'trend_studio' | 'managed'>('trend_studio');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [workspaceLayout, setWorkspaceLayout] = useState<WorkspaceLayoutConfig>(() =>
+    createDefaultWorkspaceLayout()
+  );
+  const [savingWorkspaceLayout, setSavingWorkspaceLayout] = useState(false);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
   const [workspaceNotice, setWorkspaceNotice] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -397,8 +384,33 @@ export function StudioPage({
     });
   }, []);
 
+  const getLayoutStorageKey = useCallback(
+    (userKey: string) => `gitstack_studio_layout_v1_${userKey || 'operator'}`,
+    []
+  );
+
+  const hydrateLocalLayout = useCallback(
+    (userKey: string) => {
+      try {
+        const raw = localStorage.getItem(getLayoutStorageKey(userKey));
+        if (raw) {
+          setWorkspaceLayout(sanitizeWorkspaceLayout(JSON.parse(raw)));
+          return;
+        }
+      } catch {
+        // ignore invalid cached JSON
+      }
+      setWorkspaceLayout(createDefaultWorkspaceLayout());
+    },
+    [getLayoutStorageKey]
+  );
+
   const loadWorkspaceData = useCallback(
-    async (targetRange: DateRangeSelection = analyticsRange, roleOverride?: UserRole) => {
+    async (
+      targetRange: DateRangeSelection = analyticsRange,
+      roleOverride?: UserRole,
+      userKeyOverride?: string
+    ) => {
       const effectiveRole = roleOverride || currentUserRole;
       setLoadingWorkspace(true);
       try {
@@ -417,7 +429,8 @@ export function StudioPage({
           workflowsRes,
           rulesRes,
           analyticsRes,
-          usersRes
+          usersRes,
+          layoutRes
         ] = await Promise.all([
           api.listPosts(true),
           api.listComments(),
@@ -441,7 +454,8 @@ export function StudioPage({
             : Promise.resolve({ summary: null }),
           effectiveRole === 'super_admin'
             ? api.listUsers()
-            : Promise.resolve({ users: [] as UserProfile[] })
+            : Promise.resolve({ users: [] as UserProfile[] }),
+          api.getWorkspaceLayout().catch(() => null)
         ]);
         setPosts(postsRes.posts);
         setComments(commentsRes.comments);
@@ -460,13 +474,25 @@ export function StudioPage({
         setRoutingRules(rulesRes.rules);
         setAnalyticsSummary(analyticsRes.summary);
         setTeamUsers(usersRes.users);
+        if (layoutRes?.layout) {
+          const sanitized = sanitizeWorkspaceLayout(layoutRes.layout);
+          setWorkspaceLayout(sanitized);
+          const storageId = userKeyOverride || currentUserId || editorEmail;
+          if (storageId) {
+            try {
+              localStorage.setItem(getLayoutStorageKey(storageId), JSON.stringify(sanitized));
+            } catch {
+              // ignore storage quota errors
+            }
+          }
+        }
       } catch (err) {
         console.error('Failed loading studio workspace:', err);
       } finally {
         setLoadingWorkspace(false);
       }
     },
-    [analyticsRange, currentUserRole, onSettingsChanged]
+    [analyticsRange, currentUserId, currentUserRole, editorEmail, getLayoutStorageKey, onSettingsChanged]
   );
 
   useEffect(() => {
@@ -486,15 +512,17 @@ export function StudioPage({
           setCurrentUserId(res.editor.userId);
           setCurrentUserRole(res.editor.role);
           setCurrentProfile(res.editor.profile);
+          const operatorKey = res.editor.userId || res.editor.email;
+          hydrateLocalLayout(operatorKey);
           setActiveTab((prev) =>
             ROLE_TABS[res.editor!.role].includes(prev) ? prev : ROLE_TABS[res.editor!.role][0]
           );
-          loadWorkspaceData(analyticsRange, res.editor.role);
+          loadWorkspaceData(analyticsRange, res.editor.role, operatorKey);
         }
       })
       .catch(() => setAuthenticated(false))
       .finally(() => setCheckingAuth(false));
-  }, [loadWorkspaceData]);
+  }, [hydrateLocalLayout, loadWorkspaceData]);
 
   // Continuous Back Office operator presence heartbeat + WS join while logged in
   useEffect(() => {
@@ -539,8 +567,10 @@ export function StudioPage({
       setSupabaseUrl(res.supabaseUrl);
       setSupabaseTablesReady(res.supabaseTablesReady);
       setSupabaseAutomationMode(res.supabaseAutomationMode || 'manual');
+      const operatorKey = res.editor.userId || res.editor.email;
+      hydrateLocalLayout(operatorKey);
       setActiveTab(ROLE_TABS[res.editor.role][0]);
-      await loadWorkspaceData(analyticsRange, res.editor.role);
+      await loadWorkspaceData(analyticsRange, res.editor.role, operatorKey);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Sign in failed.');
     } finally {
@@ -558,6 +588,46 @@ export function StudioPage({
     setTeamDirectory([]);
     setWorkflows([]);
     setWorkspaceNotice(null);
+    setWorkspaceLayout(createDefaultWorkspaceLayout());
+  };
+
+  const handleChangeWorkspaceLayout = async (
+    next: WorkspaceLayoutConfig,
+    persistImmediately = false
+  ) => {
+    if (!persistImmediately) {
+      setWorkspaceLayout(next);
+      return;
+    }
+
+    const sanitized = sanitizeWorkspaceLayout(next);
+    setWorkspaceLayout(sanitized);
+    const operatorKey = currentUserId || editorEmail;
+    if (operatorKey) {
+      try {
+        localStorage.setItem(getLayoutStorageKey(operatorKey), JSON.stringify(sanitized));
+      } catch {
+        // ignore storage quota errors
+      }
+    }
+
+    setSavingWorkspaceLayout(true);
+    try {
+      const res = await api.saveWorkspaceLayout(sanitized);
+      const saved = sanitizeWorkspaceLayout(res.layout);
+      setWorkspaceLayout(saved);
+      if (operatorKey) {
+        try {
+          localStorage.setItem(getLayoutStorageKey(operatorKey), JSON.stringify(saved));
+        } catch {
+          // ignore
+        }
+      }
+    } catch (err) {
+      console.error('Failed saving workspace layout:', err);
+    } finally {
+      setSavingWorkspaceLayout(false);
+    }
   };
 
   const qualityReport = useMemo(
@@ -1022,7 +1092,20 @@ export function StudioPage({
   const handleJumpToSection = (section: string) => {
     const allowed = ROLE_TABS[currentUserRole];
     if (allowed.includes(section as StudioTab)) {
-      setActiveTab(section as StudioTab);
+      const targetTab = section as StudioTab;
+      setWorkspaceLayout((prev) => {
+        const hasCollapsedParent = prev.categories.some(
+          (c) => c.collapsed && c.moduleIds.includes(targetTab)
+        );
+        if (!hasCollapsedParent) return prev;
+        return {
+          ...prev,
+          categories: prev.categories.map((c) =>
+            c.moduleIds.includes(targetTab) ? { ...c, collapsed: false } : c
+          )
+        };
+      });
+      setActiveTab(targetTab);
       setWorkspaceNotice(null);
     }
   };
@@ -1149,53 +1232,60 @@ export function StudioPage({
     );
   }
 
-  const allNavItems: {
-    id: StudioTab;
-    label: string;
-    icon: React.ComponentType<{ className?: string }>;
-    count?: number;
-  }[] = [
-    { id: 'agents', label: 'Overview & 7 Agents', icon: Bot, count: agents.length || 7 },
-    { id: 'crm', label: 'CRM & Prospecting', icon: Briefcase },
-    { id: 'pages', label: 'Page Content Editor', icon: FileEdit },
-    { id: 'branding', label: 'Branding & Theme', icon: Palette },
-    { id: 'buymeacoffee', label: 'Buy Me a Coffee Hub', icon: Coffee },
-    { id: 'inbox', label: 'Lark Mail & Lead Inbox', icon: Mail, count: inquiries.length },
-    { id: 'notifications', label: 'Notifications & Alerts', icon: Bell },
+  const allNavItems: StudioNavDescriptor[] = [
+    { id: 'agents', defaultLabel: 'Overview & 7 Agents', icon: Bot, count: agents.length || 7 },
+    { id: 'crm', defaultLabel: 'CRM & Prospecting', icon: Briefcase },
+    { id: 'pages', defaultLabel: 'Page Content Editor', icon: FileEdit },
+    { id: 'branding', defaultLabel: 'Branding & Theme', icon: Palette },
+    { id: 'buymeacoffee', defaultLabel: 'Buy Me a Coffee Hub', icon: Coffee },
+    { id: 'inbox', defaultLabel: 'Lark Mail & Lead Inbox', icon: Mail, count: inquiries.length },
+    { id: 'notifications', defaultLabel: 'Notifications & Alerts', icon: Bell },
     {
       id: 'chat',
-      label: 'Live Q&A Chat Box',
+      defaultLabel: 'Live Q&A Chat Box',
       icon: MessageSquare,
       count: chatThreads.filter((t) => t.status === 'open').length
     },
     {
       id: 'workflows',
-      label: 'Team Workflows',
+      defaultLabel: 'Team Workflows',
       icon: Workflow,
       count: workflows.filter((w) => w.status !== 'done').length
     },
-    { id: 'analytics', label: 'Google Analytics', icon: BarChart3 },
-    { id: 'tag_manager', label: 'Tag Manager (GTM)', icon: Tags },
-    { id: 'cloudflare', label: 'Cloudflare Analytics', icon: Cloud },
-    { id: 'ai_visibility', label: 'AI & Search Visibility', icon: Sparkles },
-    { id: 'search_console', label: 'Search Console & SEO', icon: Search },
-    { id: 'marketing', label: 'Marketing & Social', icon: Megaphone },
-    { id: 'google_trends', label: 'Google Trends Agent', icon: TrendingUp },
-    { id: 'resources', label: 'Vercel & Supabase Monitor', icon: Activity },
-    { id: 'qa', label: 'Product QA & Logs', icon: Bug },
-    { id: 'cybersecurity', label: 'Cybersecurity & AI Sentinel', icon: Shield },
-    { id: 'articles', label: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
-    { id: 'users', label: 'User Access', icon: UserCog, count: teamUsers.length },
-    { id: 'demo_users', label: 'Demo Users & Leads', icon: UserCheck },
-    { id: 'data_explorer', label: 'Data & Tables', icon: Database },
-    { id: 'adsense', label: 'Settings & Integrations', icon: ShieldCheck },
-    { id: 'profile', label: 'My Profile', icon: UserCheck }
+    { id: 'analytics', defaultLabel: 'Google Analytics', icon: BarChart3 },
+    { id: 'tag_manager', defaultLabel: 'Tag Manager (GTM)', icon: Tags },
+    { id: 'cloudflare', defaultLabel: 'Cloudflare Analytics', icon: Cloud },
+    { id: 'ai_visibility', defaultLabel: 'AI & Search Visibility', icon: Sparkles },
+    { id: 'search_console', defaultLabel: 'Search Console & SEO', icon: Search },
+    { id: 'marketing', defaultLabel: 'Marketing & Social', icon: Megaphone },
+    { id: 'google_trends', defaultLabel: 'Google Trends Agent', icon: TrendingUp },
+    { id: 'resources', defaultLabel: 'Vercel & Supabase Monitor', icon: Activity },
+    { id: 'qa', defaultLabel: 'Product QA & Logs', icon: Bug },
+    { id: 'cybersecurity', defaultLabel: 'Cybersecurity & AI Sentinel', icon: Shield },
+    { id: 'articles', defaultLabel: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
+    { id: 'users', defaultLabel: 'User Access', icon: UserCog, count: teamUsers.length },
+    { id: 'demo_users', defaultLabel: 'Demo Users & Leads', icon: UserCheck },
+    { id: 'data_explorer', defaultLabel: 'Data & Tables', icon: Database },
+    { id: 'adsense', defaultLabel: 'Settings & Integrations', icon: ShieldCheck },
+    { id: 'profile', defaultLabel: 'My Profile', icon: UserCheck }
   ];
 
+  const navMap = allNavItems.reduce(
+    (acc, item) => {
+      acc[item.id] = item;
+      return acc;
+    },
+    {} as Record<StudioTab, StudioNavDescriptor>
+  );
+
   const allowedTabs = ROLE_TABS[currentUserRole];
-  const navItems = allNavItems.filter((item) => allowedTabs.includes(item.id));
-  const currentTab: StudioTab = allowedTabs.includes(activeTab) ? activeTab : navItems[0].id;
-  const activeNav = navItems.find((n) => n.id === currentTab) || navItems[0];
+  const currentTab: StudioTab = allowedTabs.includes(activeTab) ? activeTab : allowedTabs[0];
+  const activeNav = navMap[currentTab] || allNavItems[0];
+  const activeCategory =
+    workspaceLayout.categories.find((c) => c.moduleIds.includes(currentTab)) ||
+    workspaceLayout.categories[0];
+  const activeDisplayLabel =
+    workspaceLayout.moduleAliases[currentTab]?.trim() || activeNav.defaultLabel;
 
   const displayName = currentProfile?.full_name || editorEmail.split('@')[0] || 'Operator';
   const avatarInitials = displayName
@@ -1206,125 +1296,47 @@ export function StudioPage({
   const canAssignLeads = currentUserRole === 'super_admin' || currentUserRole === 'support_agent';
 
   return (
-    <div className="mx-auto max-w-[1440px] px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Mobile Sidebar Toggle */}
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 lg:hidden">
-          <div className="text-xs font-bold text-slate-900 truncate">
-            Back Office · {activeNav.label}
-          </div>
-          <button
-            type="button"
-            onClick={() => setMobileNavOpen((p) => !p)}
-            aria-label="Toggle Back Office Navigation"
-            className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center rounded-lg border border-slate-200 p-1.5 text-slate-700"
-          >
-            {mobileNavOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-          </button>
-        </div>
+    <div className="w-full max-w-none px-3 sm:px-5 lg:px-6 py-4 sm:py-6 overflow-x-clip">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-5">
+        {/* Responsive Categorized Sidebar + Mobile Quick Switcher & Drawer */}
+        <WorkspaceSidebarNav
+          layout={workspaceLayout}
+          savingLayout={savingWorkspaceLayout}
+          navMap={navMap}
+          allowedTabs={allowedTabs}
+          activeTab={currentTab}
+          onSelectTab={(tabId) => {
+            setActiveTab(tabId);
+            setWorkspaceNotice(null);
+          }}
+          onChangeLayout={handleChangeWorkspaceLayout}
+          currentUserRole={currentUserRole}
+          roleLabel={ROLE_LABELS[currentUserRole]}
+          displayName={displayName}
+          avatarInitials={avatarInitials}
+          editorEmail={editorEmail}
+          currentProfile={currentProfile}
+          storageBackend={storageBackend}
+          mobileDrawerOpen={mobileNavOpen}
+          onSetMobileDrawerOpen={setMobileNavOpen}
+          onLogout={handleLogout}
+        />
 
-        {/* 260px Left Sidebar Navigation */}
-        <aside
-          className={`${
-            mobileNavOpen ? 'block' : 'hidden'
-          } lg:block w-full lg:w-[260px] shrink-0`}
-        >
-          <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4 lg:sticky lg:top-24">
-            <div className="border-b border-slate-200 pb-3 flex items-center gap-3">
-              {currentProfile?.avatar_url ? (
-                <img
-                  src={currentProfile.avatar_url}
-                  alt={displayName}
-                  referrerPolicy="no-referrer"
-                  className="h-10 w-10 rounded-full border border-slate-200 object-cover shrink-0"
-                />
-              ) : (
-                <div
-                  className="flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold text-white shrink-0"
-                  style={{ backgroundColor: 'var(--gs-primary)' }}
-                >
-                  {avatarInitials || 'GS'}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="text-[11px] font-semibold text-[var(--gs-primary)] truncate">
-                  {ROLE_LABELS[currentUserRole]}
-                </div>
-                <div className="font-display text-sm font-bold text-slate-900 truncate">
-                  {displayName}
-                </div>
-                <div className="text-[11px] text-slate-500 truncate">{editorEmail}</div>
-              </div>
-            </div>
-
-            <nav aria-label="Back Office Sections" className="space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = currentTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveTab(item.id);
-                      setMobileNavOpen(false);
-                      setWorkspaceNotice(null);
-                    }}
-                    className={`min-h-[42px] w-full flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors text-left ${
-                      active
-                        ? 'bg-[var(--gs-primary)] text-white'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2.5 min-w-0">
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                    {typeof item.count === 'number' && (
-                      <span
-                        className={`font-mono text-[11px] tabular-nums shrink-0 ${
-                          active ? 'text-white/80' : 'text-slate-400'
-                        }`}
-                      >
-                        {item.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="border-t border-slate-200 pt-3 space-y-2 text-[11px] text-slate-500">
-              <div className="flex items-center justify-between">
-                <span>Store</span>
-                <span className="font-mono text-slate-700">{storageBackend}</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="min-h-[42px] w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main Workspace Canvas */}
-        <div className="flex-1 min-w-0 space-y-6">
+        {/* Main Workspace Canvas (Maximized Left & Right Space) */}
+        <div className="flex-1 min-w-0 space-y-5">
           {/* Breadcrumb Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 sm:px-6 py-4">
-            <div>
-              <div className="text-[11px] font-medium text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 sm:px-6 py-3.5 sm:py-4">
+            <div className="min-w-0">
+              <div className="text-[11px] font-medium text-slate-500 truncate">
                 GitStack Back Office /{' '}
-                <span className="text-[var(--gs-primary)]">{activeNav.label}</span>
+                <span className="text-slate-700">{activeCategory?.name || 'Workspace'}</span> /{' '}
+                <span className="text-[var(--gs-primary)]">{activeDisplayLabel}</span>
               </div>
-              <h1 className="mt-0.5 font-display text-lg sm:text-xl font-bold text-slate-900">
-                {activeNav.label}
+              <h1 className="mt-0.5 font-display text-lg sm:text-xl font-bold text-slate-900 truncate">
+                {activeDisplayLabel}
               </h1>
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="flex items-center gap-2 text-xs text-slate-500 shrink-0">
               <span>AdSense Readiness:</span>
               <span className="font-mono font-bold text-[#16A34A] tabular-nums">
                 {auditReport ? `${auditReport.passedCount}/${auditReport.totalChecks}` : '—'}

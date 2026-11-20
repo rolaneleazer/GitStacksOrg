@@ -302,9 +302,19 @@ export default function App() {
       <AdSenseScriptLoader settings={adSenseSettings} consent={consent} />
       <GoogleAnalyticsLoader settings={adSenseSettings} consent={consent} route={route} />
       <GoogleTagManagerLoader settings={adSenseSettings} consent={consent} route={route} />
-      <Header currentPath={route} settings={adSenseSettings} onNavigate={navigate} />
-      <main className="flex-1">{renderPage()}</main>
-      <Footer settings={adSenseSettings} onNavigate={navigate} onOpenCookiePrefs={openPreferences} />
+      <Header
+        currentPath={route}
+        settings={adSenseSettings}
+        onNavigate={navigate}
+        fullWidth={route.startsWith('/obama') || route.startsWith('/studio')}
+      />
+      <main className="flex-1 min-w-0">{renderPage()}</main>
+      <Footer
+        settings={adSenseSettings}
+        onNavigate={navigate}
+        onOpenCookiePrefs={openPreferences}
+        fullWidth={route.startsWith('/obama') || route.startsWith('/studio')}
+      />
       <CookieConsentBanner
         consent={consent}
         modalOpen={modalOpen}

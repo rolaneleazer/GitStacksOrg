@@ -1371,6 +1371,7 @@ export interface WebsiteChatSession {
   id: string;
   visitor_token: string;
   visitor_name: string;
+  visitor_phone: string;
   visitor_email: string;
   page_path: string;
   status: WebsiteChatStatus;
@@ -1393,10 +1394,57 @@ export interface WebsiteChatMessage {
   created_at: string;
 }
 
+export interface ChatAutoResponseTemplate {
+  id: string;
+  question_label: string;
+  answer_body: string;
+  keywords: string[];
+  category: string;
+  sort_order: number;
+  is_active: boolean;
+  show_as_quick_chip: boolean;
+  escalate_prompt_enabled: boolean;
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatAutoResponseSettings {
+  id: string;
+  require_intake_before_chat: boolean;
+  intake_headline: string;
+  intake_subheadline: string;
+  welcome_message_after_intake: string;
+  auto_reply_on_keyword_match: boolean;
+  escalation_button_label: string;
+  updated_by: string;
+  updated_at: string;
+}
+
+export interface ChatAutoResponseDashboardResponse {
+  templates: ChatAutoResponseTemplate[];
+  settings: ChatAutoResponseSettings;
+}
+
 export interface WebsiteChatThreadResponse {
+  session: WebsiteChatSession | null;
+  messages: WebsiteChatMessage[];
+  adminOnline: boolean;
+  autoResponses?: ChatAutoResponseTemplate[];
+  chatSettings?: ChatAutoResponseSettings;
+}
+
+export interface PublicChatStartResponse {
   session: WebsiteChatSession;
   messages: WebsiteChatMessage[];
   adminOnline: boolean;
+  autoResponses: ChatAutoResponseTemplate[];
+  chatSettings: ChatAutoResponseSettings;
+}
+
+export interface PurgeEmptyChatSessionsResponse {
+  purgedCount: number;
+  remainingCount: number;
 }
 
 export type LiveChatNotifyMode = 'instant' | 'offline_only';
@@ -2238,6 +2286,7 @@ export type WorkspaceModuleId =
   | 'branding'
   | 'buymeacoffee'
   | 'inbox'
+  | 'chat_auto_response'
   | 'notifications'
   | 'chat'
   | 'workflows'

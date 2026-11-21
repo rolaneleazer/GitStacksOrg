@@ -95,6 +95,7 @@ export async function runOfflineChatInquiryCheck(options?: {
       'GitStack Inquiry Watcher Alert — Unanswered Home Page Live Chat',
       '',
       `Visitor Name: ${session.visitor_name}`,
+      `Contact Number: ${session.visitor_phone || 'Not provided'}`,
       `Visitor Email: ${session.visitor_email || 'Not provided yet'}`,
       `Page URL: ${session.page_path}`,
       `Status: Back Office offline > ${notifSettings.offline_delay_minutes || 2} minute(s)`,

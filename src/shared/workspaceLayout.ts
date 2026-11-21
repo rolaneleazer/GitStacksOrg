@@ -11,6 +11,7 @@ export const ALL_WORKSPACE_MODULE_IDS: WorkspaceModuleId[] = [
   'articles',
   'crm',
   'inbox',
+  'chat_auto_response',
   'chat',
   'demo_users',
   'buymeacoffee',
@@ -41,6 +42,7 @@ export const DEFAULT_MODULE_LABELS: Record<WorkspaceModuleId, string> = {
   articles: 'Articles & Gatekeeper',
   crm: 'CRM & Prospecting',
   inbox: 'Lark Mail & Lead Inbox',
+  chat_auto_response: 'Chat Auto-Response',
   chat: 'Live Q&A Chat Box',
   demo_users: 'Demo Users & Leads',
   buymeacoffee: 'Buy Me a Coffee Hub',
@@ -78,7 +80,7 @@ export function createDefaultWorkspaceCategories(): WorkspaceCategoryConfig[] {
       id: 'cat-clients',
       name: 'Revenue, CRM & Clients',
       collapsed: false,
-      moduleIds: ['crm', 'inbox', 'chat', 'demo_users', 'buymeacoffee']
+      moduleIds: ['crm', 'inbox', 'chat_auto_response', 'chat', 'demo_users', 'buymeacoffee']
     },
     {
       id: 'cat-analytics',

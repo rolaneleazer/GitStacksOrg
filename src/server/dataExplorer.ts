@@ -348,6 +348,7 @@ const TABLE_CATALOG_SPECS: TableSeedSpec[] = [
       { name: 'id', dataType: 'text' },
       { name: 'visitor_token', dataType: 'text' },
       { name: 'visitor_name', dataType: 'text', defaultValue: 'Website Visitor' },
+      { name: 'visitor_phone', dataType: 'text', defaultValue: '' },
       { name: 'visitor_email', dataType: 'text' },
       { name: 'page_path', dataType: 'text', defaultValue: '/' },
       { name: 'status', dataType: 'enum', enumValues: ['open', 'replied', 'resolved'], defaultValue: 'open' },
@@ -355,6 +356,26 @@ const TABLE_CATALOG_SPECS: TableSeedSpec[] = [
       { name: 'last_admin_reply_at', dataType: 'timestamp', nullable: true },
       { name: 'escalated_at', dataType: 'timestamp', nullable: true },
       { name: 'converted_lead_id', dataType: 'text', nullable: true },
+      { name: 'created_at', dataType: 'timestamp' },
+      { name: 'updated_at', dataType: 'timestamp' }
+    ]
+  },
+  {
+    tableName: 'chat_auto_responses',
+    label: 'Chat Auto-Response Templates',
+    domainGroup: 'Communications',
+    primaryKey: 'id',
+    defaultSortColumn: 'sort_order',
+    localCollectionKey: 'chat_auto_responses',
+    columns: [
+      { name: 'id', dataType: 'text' },
+      { name: 'question_label', dataType: 'text' },
+      { name: 'answer_body', dataType: 'longtext' },
+      { name: 'category', dataType: 'text', defaultValue: 'General' },
+      { name: 'sort_order', dataType: 'number', defaultValue: 0 },
+      { name: 'is_active', dataType: 'boolean', defaultValue: true },
+      { name: 'show_as_quick_chip', dataType: 'boolean', defaultValue: true },
+      { name: 'usage_count', dataType: 'number', defaultValue: 0 },
       { name: 'created_at', dataType: 'timestamp' },
       { name: 'updated_at', dataType: 'timestamp' }
     ]

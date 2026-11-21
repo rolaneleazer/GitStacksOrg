@@ -78,6 +78,11 @@ import type {
   WebsiteChatSession,
   WebsiteChatStatus,
   WebsiteChatThreadResponse,
+  ChatAutoResponseDashboardResponse,
+  ChatAutoResponseSettings,
+  ChatAutoResponseTemplate,
+  PublicChatStartResponse,
+  PurgeEmptyChatSessionsResponse,
   AiSearchVisibilityDashboardResponse,
   AiSearchVisibilityRun,
   AiSearchVisibilitySettings,
@@ -1540,10 +1545,38 @@ export const api = {
     return (await res.json()) as WebsiteChatThreadResponse;
   },
 
+  async getPublicChatAutoResponses() {
+    const res = await fetch('/api/public/chat/auto-responses');
+    if (!res.ok) {
+      throw new Error(`Failed to load quick answers (HTTP ${res.status})`);
+    }
+    return (await res.json()) as ChatAutoResponseDashboardResponse;
+  },
+
+  async startPublicChatSession(payload: {
+    visitor_token: string;
+    visitor_name: string;
+    visitor_phone: string;
+    visitor_email: string;
+    page_path?: string;
+  }) {
+    const res = await fetch('/api/public/chat/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(err.error || `Failed to start chat session (HTTP ${res.status})`);
+    }
+    return (await res.json()) as PublicChatStartResponse;
+  },
+
   async updatePublicChatProfile(payload: {
     visitor_token: string;
-    visitor_name?: string;
-    visitor_email?: string;
+    visitor_name: string;
+    visitor_phone: string;
+    visitor_email: string;
     page_path?: string;
   }) {
     const res = await fetch('/api/public/chat/profile', {
@@ -1561,9 +1594,11 @@ export const api = {
   async sendPublicChatMessage(payload: {
     visitor_token: string;
     visitor_name?: string;
+    visitor_phone?: string;
     visitor_email?: string;
     page_path?: string;
     body: string;
+    request_human?: boolean;
   }) {
     const res = await fetch('/api/public/chat/message', {
       method: 'POST',
@@ -1577,6 +1612,7 @@ export const api = {
     return (await res.json()) as {
       session: WebsiteChatSession;
       message: WebsiteChatMessage;
+      autoReplyMessage?: WebsiteChatMessage;
       adminOnline: boolean;
     };
   },
@@ -1585,8 +1621,59 @@ export const api = {
     return request<{
       sessions: WebsiteChatSession[];
       unansweredCount: number;
+      emptyCount: number;
       adminOnline: boolean;
     }>('/api/admin/chat/sessions');
+  },
+
+  async purgeEmptyAdminChatSessions() {
+    return request<PurgeEmptyChatSessionsResponse>('/api/admin/chat/purge-empty', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async getAdminChatAutoResponses() {
+    return request<ChatAutoResponseDashboardResponse>('/api/admin/chat/auto-responses');
+  },
+
+  async createAdminChatAutoResponse(payload: Partial<ChatAutoResponseTemplate>) {
+    return request<{ template: ChatAutoResponseTemplate; templates: ChatAutoResponseTemplate[] }>(
+      '/api/admin/chat/auto-responses',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async updateAdminChatAutoResponse(id: string, payload: Partial<ChatAutoResponseTemplate>) {
+    return request<{ template: ChatAutoResponseTemplate; templates: ChatAutoResponseTemplate[] }>(
+      `/api/admin/chat/auto-responses/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async deleteAdminChatAutoResponse(id: string) {
+    return request<{ deletedId: string; templates: ChatAutoResponseTemplate[] }>(
+      `/api/admin/chat/auto-responses/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE'
+      }
+    );
+  },
+
+  async saveAdminChatAutoResponseSettings(payload: Partial<ChatAutoResponseSettings>) {
+    return request<{ settings: ChatAutoResponseSettings }>(
+      '/api/admin/chat/auto-responses/settings',
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      }
+    );
   },
 
   async getAdminChatThread(sessionId: string) {

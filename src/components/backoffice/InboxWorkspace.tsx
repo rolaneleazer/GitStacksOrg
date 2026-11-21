@@ -9,6 +9,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  Trash2,
   UserPlus,
   X,
   XCircle
@@ -111,6 +112,9 @@ export function InboxWorkspace({
   // Live Website Chat state
   const [chatSessions, setChatSessions] = useState<WebsiteChatSession[]>([]);
   const [unansweredChatCount, setUnansweredChatCount] = useState(0);
+  const [emptyChatCount, setEmptyChatCount] = useState(0);
+  const [showEmptyChats, setShowEmptyChats] = useState(false);
+  const [purgingEmptyChats, setPurgingEmptyChats] = useState(false);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<WebsiteChatMessage[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -146,6 +150,7 @@ export function InboxWorkspace({
       const res = await api.listAdminChatSessions();
       setChatSessions(res.sessions);
       setUnansweredChatCount(res.unansweredCount);
+      setEmptyChatCount(res.emptyCount ?? 0);
       setSelectedChatId((prev) => prev || res.sessions[0]?.id || null);
     } catch {
       // keep existing state on transient error
@@ -381,6 +386,36 @@ export function InboxWorkspace({
     }
   };
 
+  const handlePurgeEmptyChats = async () => {
+    setPurgingEmptyChats(true);
+    setChatNotice(null);
+    try {
+      const res = await api.purgeEmptyAdminChatSessions();
+      setChatNotice(
+        res.purgedCount > 0
+          ? `Purged ${res.purgedCount} empty anonymous visitor session(s) from database.`
+          : 'No empty anonymous visitor sessions found to purge.'
+      );
+      await loadChatSessions(false);
+    } catch (err) {
+      setChatNotice(err instanceof Error ? err.message : 'Failed to purge empty chat sessions.');
+    } finally {
+      setPurgingEmptyChats(false);
+    }
+  };
+
+  const visibleChatSessions = useMemo(() => {
+    if (showEmptyChats) return chatSessions;
+    return chatSessions.filter((sess) => {
+      const nameClean = (sess.visitor_name || '').trim().toLowerCase();
+      const hasContact =
+        Boolean((sess.visitor_email || '').trim()) ||
+        Boolean((sess.visitor_phone || '').trim()) ||
+        (Boolean(nameClean) && nameClean !== 'website visitor');
+      return Boolean(sess.last_visitor_msg_at || sess.last_admin_reply_at || hasContact);
+    });
+  }, [chatSessions, showEmptyChats]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -411,7 +446,7 @@ export function InboxWorkspace({
             }`}
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            <span>Live Website Chat ({chatSessions.length})</span>
+            <span>Live Website Chat ({visibleChatSessions.length})</span>
             {unansweredChatCount > 0 && (
               <span className="font-mono text-[10px] font-bold text-[#DC2626]">
                 · {unansweredChatCount} new
@@ -529,6 +564,34 @@ export function InboxWorkspace({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {emptyChatCount > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmptyChats((v) => !v)}
+                    className="min-h-[38px] inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap"
+                  >
+                    <span>
+                      {showEmptyChats
+                        ? `Hide Empty (${emptyChatCount})`
+                        : `Show Empty (${emptyChatCount})`}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={purgingEmptyChats}
+                    onClick={handlePurgeEmptyChats}
+                    className="min-h-[38px] inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100 disabled:opacity-60 whitespace-nowrap"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>
+                      {purgingEmptyChats
+                        ? 'Purging...'
+                        : `Purge Empty Sessions (${emptyChatCount})`}
+                    </span>
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => loadChatSessions(false)}
@@ -568,12 +631,16 @@ export function InboxWorkspace({
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
             {/* Visitor Session List */}
             <div className="rounded-xl border border-slate-200 bg-white divide-y divide-slate-200 lg:col-span-5 max-h-[540px] overflow-y-auto">
-              {chatSessions.length === 0 ? (
-                <div className="p-8 text-center text-xs text-slate-500">
-                  No floating Home Page chat conversations yet. Open the Home Page and send a test inquiry in the bottom-right Live Chat box.
+              {visibleChatSessions.length === 0 ? (
+                <div className="p-8 text-center text-xs text-slate-500 space-y-2">
+                  <p>
+                    {emptyChatCount > 0 && !showEmptyChats
+                      ? `All ${emptyChatCount} empty legacy anonymous sessions are hidden. Click "Purge Empty Sessions" above to clean your database.`
+                      : 'No verified Home Page chat conversations yet. Visitors now submit Full Name, Contact Number, and Email before opening a chat.'}
+                  </p>
                 </div>
               ) : (
-                chatSessions.map((sess) => {
+                visibleChatSessions.map((sess) => {
                   const active = selectedChatId === sess.id;
                   return (
                     <button
@@ -601,6 +668,7 @@ export function InboxWorkspace({
                         </span>
                       </div>
                       <div className="mt-0.5 text-[11px] font-mono text-slate-500 truncate">
+                        {sess.visitor_phone ? `${sess.visitor_phone} · ` : ''}
                         {sess.visitor_email || 'No email provided'} · {sess.page_path}
                       </div>
                       {sess.last_message_preview && (
@@ -629,6 +697,7 @@ export function InboxWorkspace({
                         {activeChatSession.visitor_name}
                       </h3>
                       <div className="font-mono text-[11px] text-slate-500 truncate">
+                        {activeChatSession.visitor_phone ? `${activeChatSession.visitor_phone} · ` : ''}
                         {activeChatSession.visitor_email || 'Anonymous Visitor'} · Path:{' '}
                         {activeChatSession.page_path}
                       </div>

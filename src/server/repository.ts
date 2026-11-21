@@ -76,6 +76,9 @@ import type {
   UserWorkflowItem,
   WebsiteChatMessage,
   WebsiteChatSession,
+  ChatAutoResponseTemplate,
+  ChatAutoResponseSettings,
+  PurgeEmptyChatSessionsResponse,
   AiSearchVisibilityRun,
   AiSearchVisibilitySettings,
   CyberSecurityFinding,
@@ -133,8 +136,11 @@ const DEMO_USER_FULL_COLUMNS = 'id, full_name, email, company, phone, password_h
 const INBOX_EMAIL_LOG_COLUMNS = 'id, recipient_email, subject, body, channel, category, related_id, provider_message_id, status, error_detail, sent_by, sent_at';
 const CLOUDFLARE_SNAPSHOT_COLUMNS = 'id, zone_id, zone_name, bucket_hour, requests, bytes, cached_requests, status_1xx, status_2xx, status_3xx, status_4xx, status_5xx, top_paths, top_countries, created_at, updated_at';
 const CLOUDFLARE_FORECAST_COLUMNS = 'zone_id, zone_name, model_used, horizon_days, range_analyzed, forecast_payload, generated_at';
-const WEBSITE_CHAT_SESSION_COLUMNS = 'id, visitor_token, visitor_name, visitor_email, page_path, status, last_visitor_msg_at, last_admin_reply_at, escalated_at, converted_lead_id, created_at, updated_at';
+const WEBSITE_CHAT_SESSION_LEGACY_COLUMNS = 'id, visitor_token, visitor_name, visitor_email, page_path, status, last_visitor_msg_at, last_admin_reply_at, escalated_at, converted_lead_id, created_at, updated_at';
+const WEBSITE_CHAT_SESSION_COLUMNS = 'id, visitor_token, visitor_name, visitor_phone, visitor_email, page_path, status, last_visitor_msg_at, last_admin_reply_at, escalated_at, converted_lead_id, created_at, updated_at';
 const WEBSITE_CHAT_MESSAGE_COLUMNS = 'id, session_id, sender_role, sender_name, body, created_at';
+const CHAT_AUTO_RESPONSE_COLUMNS = 'id, question_label, answer_body, keywords, category, sort_order, is_active, show_as_quick_chip, escalate_prompt_enabled, usage_count, created_at, updated_at';
+const CHAT_AUTO_RESPONSE_SETTINGS_COLUMNS = 'id, require_intake_before_chat, intake_headline, intake_subheadline, welcome_message_after_intake, auto_reply_on_keyword_match, escalation_button_label, updated_by, updated_at';
 const ADMIN_NOTIFICATION_SETTINGS_COLUMNS = 'id, enabled, recipient_email, admin_login_url, notify_on_live_chat, live_chat_mode, offline_delay_minutes, chat_cooldown_minutes, notify_on_inquiry, notify_on_demo_signup, updated_by, updated_at';
 const PRODUCT_QA_LOG_COLUMNS = 'id, level, source, module_name, page_path, code_location, error_name, message, stack_trace, http_status, request_method, request_path, session_id, user_agent, fingerprint, ai_root_cause, ai_fix_suggestion, status, created_at';
 const PRODUCT_QA_REPORT_COLUMNS = 'id, report_date, trigger_type, recipient_email, subject, health_score, total_logs, error_count, warn_count, top_module, top_page, executive_summary, module_breakdown, page_breakdown, recommended_actions, pdf_filename, status, provider_message_id, error_detail, created_at';
@@ -175,6 +181,8 @@ interface LocalDatabase {
   cloudflare_ai_forecasts?: CloudflareAiForecast[];
   website_chat_sessions?: WebsiteChatSession[];
   website_chat_messages?: WebsiteChatMessage[];
+  chat_auto_responses?: ChatAutoResponseTemplate[];
+  chat_auto_response_settings?: ChatAutoResponseSettings;
   admin_notification_settings?: AdminNotificationSettings;
   product_qa_logs?: ProductQaLog[];
   product_qa_reports?: ProductQaReport[];
@@ -4246,21 +4254,66 @@ export async function upsertCloudflareAiForecast(
 
 // --- Floating Home Page Website Live Chat ---
 
+let visitorPhoneColumnUnsupported = false;
+
+function normalizeChatSessionRow(row: Partial<WebsiteChatSession> & Record<string, unknown>): WebsiteChatSession {
+  return {
+    id: String(row.id || ''),
+    visitor_token: String(row.visitor_token || ''),
+    visitor_name: String(row.visitor_name || 'Website Visitor'),
+    visitor_phone: typeof row.visitor_phone === 'string' ? row.visitor_phone : '',
+    visitor_email: typeof row.visitor_email === 'string' ? row.visitor_email : '',
+    page_path: typeof row.page_path === 'string' ? row.page_path : '/',
+    status: (row.status as WebsiteChatSession['status']) || 'open',
+    last_visitor_msg_at: (row.last_visitor_msg_at as string | null) ?? null,
+    last_admin_reply_at: (row.last_admin_reply_at as string | null) ?? null,
+    escalated_at: (row.escalated_at as string | null) ?? null,
+    converted_lead_id: (row.converted_lead_id as string | null) ?? null,
+    created_at: String(row.created_at || new Date().toISOString()),
+    updated_at: String(row.updated_at || new Date().toISOString())
+  };
+}
+
+function isMissingVisitorPhoneColumnError(error: { message?: string; code?: string } | null | undefined): boolean {
+  const msg = String(error?.message || '').toLowerCase();
+  return (
+    msg.includes('visitor_phone') &&
+    (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find'))
+  );
+}
+
 export async function findWebsiteChatSessionByToken(
   visitorToken: string
 ): Promise<WebsiteChatSession | null> {
   if (isSupabaseConfigured()) {
+    const cols = visitorPhoneColumnUnsupported
+      ? WEBSITE_CHAT_SESSION_LEGACY_COLUMNS
+      : WEBSITE_CHAT_SESSION_COLUMNS;
     const { data, error } = await getSupabaseClient()
       .from('website_chat_sessions')
-      .select(WEBSITE_CHAT_SESSION_COLUMNS)
+      .select(cols)
       .eq('visitor_token', visitorToken)
       .limit(1);
-    if (!error && data && data[0]) return data[0] as unknown as WebsiteChatSession;
+    if (error && isMissingVisitorPhoneColumnError(error)) {
+      visitorPhoneColumnUnsupported = true;
+      const retry = await getSupabaseClient()
+        .from('website_chat_sessions')
+        .select(WEBSITE_CHAT_SESSION_LEGACY_COLUMNS)
+        .eq('visitor_token', visitorToken)
+        .limit(1);
+      if (!retry.error && retry.data && retry.data[0]) {
+        return normalizeChatSessionRow(retry.data[0] as unknown as Record<string, unknown>);
+      }
+    }
+    if (!error && data && data[0]) {
+      return normalizeChatSessionRow(data[0] as unknown as Record<string, unknown>);
+    }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
   const db = await readLocalDb();
-  return (db.website_chat_sessions || []).find((s) => s.visitor_token === visitorToken) || null;
+  const found = (db.website_chat_sessions || []).find((s) => s.visitor_token === visitorToken);
+  return found ? normalizeChatSessionRow(found as unknown as Record<string, unknown>) : null;
 }
 
 export async function findWebsiteChatSessionById(
@@ -4268,67 +4321,169 @@ export async function findWebsiteChatSessionById(
   userToken?: string
 ): Promise<WebsiteChatSession | null> {
   if (isSupabaseConfigured()) {
+    const cols = visitorPhoneColumnUnsupported
+      ? WEBSITE_CHAT_SESSION_LEGACY_COLUMNS
+      : WEBSITE_CHAT_SESSION_COLUMNS;
     const { data, error } = await getSupabaseClient(userToken)
       .from('website_chat_sessions')
-      .select(WEBSITE_CHAT_SESSION_COLUMNS)
+      .select(cols)
       .eq('id', sessionId)
       .limit(1);
-    if (!error && data && data[0]) return data[0] as unknown as WebsiteChatSession;
+    if (error && isMissingVisitorPhoneColumnError(error)) {
+      visitorPhoneColumnUnsupported = true;
+      const retry = await getSupabaseClient(userToken)
+        .from('website_chat_sessions')
+        .select(WEBSITE_CHAT_SESSION_LEGACY_COLUMNS)
+        .eq('id', sessionId)
+        .limit(1);
+      if (!retry.error && retry.data && retry.data[0]) {
+        return normalizeChatSessionRow(retry.data[0] as unknown as Record<string, unknown>);
+      }
+    }
+    if (!error && data && data[0]) {
+      return normalizeChatSessionRow(data[0] as unknown as Record<string, unknown>);
+    }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
   const db = await readLocalDb();
-  return (db.website_chat_sessions || []).find((s) => s.id === sessionId) || null;
+  const found = (db.website_chat_sessions || []).find((s) => s.id === sessionId);
+  return found ? normalizeChatSessionRow(found as unknown as Record<string, unknown>) : null;
 }
 
 export async function upsertWebsiteChatSession(
   session: WebsiteChatSession,
   userToken?: string
 ): Promise<WebsiteChatSession> {
+  const normalizedInput = normalizeChatSessionRow(session as unknown as Record<string, unknown>);
   if (isSupabaseConfigured()) {
+    const payload: Record<string, unknown> = { ...normalizedInput };
+    if (visitorPhoneColumnUnsupported) {
+      delete payload.visitor_phone;
+    }
     const { data, error } = await getSupabaseClient(userToken)
       .from('website_chat_sessions')
-      .upsert(session, { onConflict: 'id' })
+      .upsert(payload, { onConflict: 'id' })
       .select()
       .single();
-    if (!error && data) return data as WebsiteChatSession;
+    if (error && isMissingVisitorPhoneColumnError(error)) {
+      visitorPhoneColumnUnsupported = true;
+      delete payload.visitor_phone;
+      const retry = await getSupabaseClient(userToken)
+        .from('website_chat_sessions')
+        .upsert(payload, { onConflict: 'id' })
+        .select()
+        .single();
+      if (!retry.error && retry.data) {
+        return {
+          ...normalizeChatSessionRow(retry.data as unknown as Record<string, unknown>),
+          visitor_phone: normalizedInput.visitor_phone
+        };
+      }
+    }
+    if (!error && data) {
+      return normalizeChatSessionRow(data as unknown as Record<string, unknown>);
+    }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
   const db = await readLocalDb();
   const list = db.website_chat_sessions || [];
-  const idx = list.findIndex((s) => s.id === session.id || s.visitor_token === session.visitor_token);
-  if (idx >= 0) list[idx] = session;
-  else list.unshift(session);
+  const idx = list.findIndex(
+    (s) => s.id === normalizedInput.id || s.visitor_token === normalizedInput.visitor_token
+  );
+  if (idx >= 0) list[idx] = normalizedInput;
+  else list.unshift(normalizedInput);
   db.website_chat_sessions = list.slice(0, 300);
   await writeLocalDb(db);
-  return session;
+  return normalizedInput;
 }
 
 export async function listWebsiteChatSessions(userToken?: string): Promise<WebsiteChatSession[]> {
   let sessions: WebsiteChatSession[] = [];
   if (isSupabaseConfigured()) {
+    const cols = visitorPhoneColumnUnsupported
+      ? WEBSITE_CHAT_SESSION_LEGACY_COLUMNS
+      : WEBSITE_CHAT_SESSION_COLUMNS;
     const { data, error } = await getSupabaseClient(userToken)
       .from('website_chat_sessions')
-      .select(WEBSITE_CHAT_SESSION_COLUMNS)
+      .select(cols)
       .order('updated_at', { ascending: false })
-      .limit(50);
-    if (!error && Array.isArray(data)) {
-      sessions = data as unknown as WebsiteChatSession[];
+      .limit(100);
+    if (error && isMissingVisitorPhoneColumnError(error)) {
+      visitorPhoneColumnUnsupported = true;
+      const retry = await getSupabaseClient(userToken)
+        .from('website_chat_sessions')
+        .select(WEBSITE_CHAT_SESSION_LEGACY_COLUMNS)
+        .order('updated_at', { ascending: false })
+        .limit(100);
+      if (!retry.error && Array.isArray(retry.data)) {
+        sessions = retry.data.map((r) => normalizeChatSessionRow(r as unknown as Record<string, unknown>));
+      }
+    } else if (!error && Array.isArray(data)) {
+      sessions = data.map((r) => normalizeChatSessionRow(r as unknown as Record<string, unknown>));
     } else if (error && !isFallbackableDbError(error)) {
       throw new Error(error.message);
     } else {
       const db = await readLocalDb();
-      sessions = [...(db.website_chat_sessions || [])];
+      sessions = (db.website_chat_sessions || []).map((r) =>
+        normalizeChatSessionRow(r as unknown as Record<string, unknown>)
+      );
     }
   } else {
     const db = await readLocalDb();
-    sessions = [...(db.website_chat_sessions || [])];
+    sessions = (db.website_chat_sessions || []).map((r) =>
+      normalizeChatSessionRow(r as unknown as Record<string, unknown>)
+    );
   }
 
   return sessions.sort(
     (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   );
+}
+
+export function isEmptyAnonymousChatSession(session: WebsiteChatSession): boolean {
+  const nameClean = (session.visitor_name || '').trim().toLowerCase();
+  const hasContact =
+    Boolean((session.visitor_email || '').trim()) ||
+    Boolean((session.visitor_phone || '').trim()) ||
+    (Boolean(nameClean) && nameClean !== 'website visitor');
+  return !session.last_visitor_msg_at && !session.last_admin_reply_at && !hasContact;
+}
+
+export async function purgeEmptyWebsiteChatSessions(
+  userToken?: string
+): Promise<PurgeEmptyChatSessionsResponse> {
+  const allSessions = await listWebsiteChatSessions(userToken);
+  const emptyIds = allSessions.filter(isEmptyAnonymousChatSession).map((s) => s.id);
+  if (emptyIds.length === 0) {
+    return { purgedCount: 0, remainingCount: allSessions.length };
+  }
+
+  if (isSupabaseConfigured()) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('website_chat_sessions')
+      .delete()
+      .in('id', emptyIds);
+    if (error && !isFallbackableDbError(error)) {
+      throw new Error(error.message);
+    }
+  }
+
+  const db = await readLocalDb();
+  const emptySet = new Set(emptyIds);
+  if (Array.isArray(db.website_chat_sessions)) {
+    db.website_chat_sessions = db.website_chat_sessions.filter((s) => !emptySet.has(s.id));
+  }
+  if (Array.isArray(db.website_chat_messages)) {
+    db.website_chat_messages = db.website_chat_messages.filter((m) => !emptySet.has(m.session_id));
+  }
+  await writeLocalDb(db);
+
+  return {
+    purgedCount: emptyIds.length,
+    remainingCount: Math.max(0, allSessions.length - emptyIds.length)
+  };
 }
 
 export async function listWebsiteChatMessages(
@@ -5293,3 +5448,330 @@ export async function getGtmDashboardSummary(
     2
   );
 }
+
+// --- Chat Auto-Response Templates & Global Pre-Chat Intake Settings ---
+
+export const DEFAULT_CHAT_AUTO_RESPONSE_SETTINGS: ChatAutoResponseSettings = {
+  id: 'default',
+  require_intake_before_chat: true,
+  intake_headline: 'Verify your contact details to start',
+  intake_subheadline:
+    'Please provide your Full Name, Contact Number, and Email Address to unlock instant FAQ answers and live engineering support.',
+  welcome_message_after_intake:
+    'Thanks for verifying your details! Select any quick question below for an instant answer, or type a message to connect directly with our engineering desk.',
+  auto_reply_on_keyword_match: true,
+  escalation_button_label: 'Talk to Live Engineer',
+  updated_by: 'system',
+  updated_at: '2026-11-21T00:00:00Z'
+};
+
+export const DEFAULT_CHAT_AUTO_RESPONSES: ChatAutoResponseTemplate[] = [
+  {
+    id: 'faq-ai-integration',
+    question_label: 'What AI integration & MLOps services do you offer?',
+    answer_body:
+      'GitStack builds production AI agent pipelines, RAG knowledge systems, LLM API orchestration (OpenAI, Gemini, Anthropic), and automated MLOps observability on AWS, GCP, and Cloudflare. Share your stack details below to book a technical architecture review.',
+    keywords: ['ai', 'agent', 'llm', 'mlops', 'rag', 'gemini', 'openai', 'services'],
+    category: 'Services',
+    sort_order: 1,
+    is_active: true,
+    show_as_quick_chip: true,
+    escalate_prompt_enabled: true,
+    usage_count: 0,
+    created_at: '2026-11-21T00:00:00Z',
+    updated_at: '2026-11-21T00:00:00Z'
+  },
+  {
+    id: 'faq-pricing-engagement',
+    question_label: 'How do pricing & engagement models work?',
+    answer_body:
+      'We offer fixed-scope Architecture Sprints (starting at 2–4 weeks), dedicated monthly engineering retainers, and full-cycle SaaS MVP builds. Once you share your timeline and scope, our principal team sends a transparent milestone breakdown via info@git-stack.org.',
+    keywords: ['price', 'pricing', 'cost', 'budget', 'quote', 'rate', 'retainer'],
+    category: 'Pricing',
+    sort_order: 2,
+    is_active: true,
+    show_as_quick_chip: true,
+    escalate_prompt_enabled: true,
+    usage_count: 0,
+    created_at: '2026-11-21T00:00:00Z',
+    updated_at: '2026-11-21T00:00:00Z'
+  },
+  {
+    id: 'faq-delivery-timeline',
+    question_label: 'How fast can we launch an MVP or AI workflow?',
+    answer_body:
+      'Most AI automation workflows and internal Back Office dashboards ship their first production milestone in 2–3 weeks. Full multi-tenant SaaS platforms typically reach staging in 4–6 weeks with automated CI/CD and telemetry included.',
+    keywords: ['timeline', 'how long', 'weeks', 'launch', 'mvp', 'fast', 'schedule'],
+    category: 'Timeline',
+    sort_order: 3,
+    is_active: true,
+    show_as_quick_chip: true,
+    escalate_prompt_enabled: true,
+    usage_count: 0,
+    created_at: '2026-11-21T00:00:00Z',
+    updated_at: '2026-11-21T00:00:00Z'
+  },
+  {
+    id: 'faq-security-cloud',
+    question_label: 'Do you support private cloud & enterprise security audits?',
+    answer_body:
+      'Yes. We deploy inside your own AWS, GCP, Azure, or Supabase VPCs with zero third-party data retention, strict RBAC/RLS policies, encrypted API vaults, and full audit logging.',
+    keywords: ['security', 'vpc', 'privacy', 'compliance', 'soc2', 'aws', 'supabase', 'cloud'],
+    category: 'Security',
+    sort_order: 4,
+    is_active: true,
+    show_as_quick_chip: true,
+    escalate_prompt_enabled: true,
+    usage_count: 0,
+    created_at: '2026-11-21T00:00:00Z',
+    updated_at: '2026-11-21T00:00:00Z'
+  },
+  {
+    id: 'faq-contact-consultation',
+    question_label: 'How can I reach your team directly?',
+    answer_body:
+      'You can reach Rolan Molano and the GitStack Engineering Desk directly at info@git-stack.org, or type your project details right here in live chat—if an engineer is away for over 2 minutes, your transcript escalates straight to our Lark Mail inbox.',
+    keywords: ['contact', 'email', 'phone', 'call', 'consultation', 'book', 'rolan', 'support'],
+    category: 'Contact',
+    sort_order: 5,
+    is_active: true,
+    show_as_quick_chip: true,
+    escalate_prompt_enabled: true,
+    usage_count: 0,
+    created_at: '2026-11-21T00:00:00Z',
+    updated_at: '2026-11-21T00:00:00Z'
+  }
+];
+
+function normalizeAutoResponseRow(row: Partial<ChatAutoResponseTemplate>): ChatAutoResponseTemplate {
+  return {
+    id: String(row.id || `faq-${crypto.randomUUID().slice(0, 8)}`),
+    question_label: String(row.question_label || '').trim(),
+    answer_body: String(row.answer_body || '').trim(),
+    keywords: Array.isArray(row.keywords)
+      ? row.keywords.map((k) => String(k).trim().toLowerCase()).filter(Boolean)
+      : [],
+    category: String(row.category || 'General').trim() || 'General',
+    sort_order: Number(row.sort_order ?? 0),
+    is_active: row.is_active !== false,
+    show_as_quick_chip: row.show_as_quick_chip !== false,
+    escalate_prompt_enabled: row.escalate_prompt_enabled !== false,
+    usage_count: Number(row.usage_count ?? 0),
+    created_at: String(row.created_at || new Date().toISOString()),
+    updated_at: String(row.updated_at || new Date().toISOString())
+  };
+}
+
+export async function listChatAutoResponses(
+  options?: { activeOnly?: boolean; userToken?: string }
+): Promise<ChatAutoResponseTemplate[]> {
+  const mult = getCacheTtlMultiplier();
+  const templates = await getCachedOrFetch<ChatAutoResponseTemplate[]>(
+    'chat:auto-responses:all',
+    300_000 * mult,
+    async () => {
+      if (isSupabaseConfigured()) {
+        const { data, error } = await getSupabaseClient(options?.userToken)
+          .from('chat_auto_responses')
+          .select(CHAT_AUTO_RESPONSE_COLUMNS)
+          .order('sort_order', { ascending: true })
+          .order('updated_at', { ascending: false });
+        if (!error && Array.isArray(data)) {
+          if (data.length === 0) {
+            return [...DEFAULT_CHAT_AUTO_RESPONSES];
+          }
+          return data.map((row) => normalizeAutoResponseRow(row as Partial<ChatAutoResponseTemplate>));
+        }
+        if (error && !isFallbackableDbError(error)) {
+          const msg = String(error.message || '').toLowerCase();
+          if (!msg.includes('chat_auto_responses') && !msg.includes('does not exist')) {
+            throw new Error(error.message);
+          }
+        }
+      }
+
+      const db = await readLocalDb();
+      const stored = Array.isArray(db.chat_auto_responses) && db.chat_auto_responses.length > 0
+        ? db.chat_auto_responses
+        : DEFAULT_CHAT_AUTO_RESPONSES;
+      return stored
+        .map((row) => normalizeAutoResponseRow(row))
+        .sort((a, b) => a.sort_order - b.sort_order);
+    },
+    30
+  );
+
+  const sorted = [...templates].sort((a, b) => a.sort_order - b.sort_order);
+  return options?.activeOnly ? sorted.filter((t) => t.is_active) : sorted;
+}
+
+export async function upsertChatAutoResponse(
+  template: ChatAutoResponseTemplate,
+  userToken?: string
+): Promise<ChatAutoResponseTemplate> {
+  const normalized = normalizeAutoResponseRow({
+    ...template,
+    updated_at: new Date().toISOString()
+  });
+
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('chat_auto_responses')
+      .upsert(normalized, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) {
+      invalidateCache('chat:auto-responses');
+      return normalizeAutoResponseRow(data as Partial<ChatAutoResponseTemplate>);
+    }
+    if (error && !isFallbackableDbError(error)) {
+      const msg = String(error.message || '').toLowerCase();
+      if (!msg.includes('chat_auto_responses') && !msg.includes('does not exist')) {
+        throw new Error(error.message);
+      }
+    }
+  }
+
+  const db = await readLocalDb();
+  const list =
+    Array.isArray(db.chat_auto_responses) && db.chat_auto_responses.length > 0
+      ? [...db.chat_auto_responses]
+      : [...DEFAULT_CHAT_AUTO_RESPONSES];
+  const idx = list.findIndex((t) => t.id === normalized.id);
+  if (idx >= 0) list[idx] = normalized;
+  else list.push(normalized);
+  db.chat_auto_responses = list.sort((a, b) => a.sort_order - b.sort_order);
+  await writeLocalDb(db);
+  invalidateCache('chat:auto-responses');
+  return normalized;
+}
+
+export async function deleteChatAutoResponse(id: string, userToken?: string): Promise<void> {
+  if (isSupabaseConfigured()) {
+    const { error } = await getSupabaseClient(userToken)
+      .from('chat_auto_responses')
+      .delete()
+      .eq('id', id);
+    if (error && !isFallbackableDbError(error)) {
+      const msg = String(error.message || '').toLowerCase();
+      if (!msg.includes('chat_auto_responses') && !msg.includes('does not exist')) {
+        throw new Error(error.message);
+      }
+    }
+  }
+
+  const db = await readLocalDb();
+  const list =
+    Array.isArray(db.chat_auto_responses) && db.chat_auto_responses.length > 0
+      ? db.chat_auto_responses
+      : [...DEFAULT_CHAT_AUTO_RESPONSES];
+  db.chat_auto_responses = list.filter((t) => t.id !== id);
+  await writeLocalDb(db);
+  invalidateCache('chat:auto-responses');
+}
+
+export async function getChatAutoResponseSettings(
+  userToken?: string
+): Promise<ChatAutoResponseSettings> {
+  const mult = getCacheTtlMultiplier();
+  return getCachedOrFetch<ChatAutoResponseSettings>(
+    'chat:auto-responses:settings',
+    300_000 * mult,
+    async () => {
+      if (isSupabaseConfigured()) {
+        const { data, error } = await getSupabaseClient(userToken)
+          .from('chat_auto_response_settings')
+          .select(CHAT_AUTO_RESPONSE_SETTINGS_COLUMNS)
+          .eq('id', 'default')
+          .limit(1);
+        if (!error && data && data[0]) {
+          return {
+            ...DEFAULT_CHAT_AUTO_RESPONSE_SETTINGS,
+            ...(data[0] as Partial<ChatAutoResponseSettings>)
+          };
+        }
+        if (error && !isFallbackableDbError(error)) {
+          const msg = String(error.message || '').toLowerCase();
+          if (!msg.includes('chat_auto_response_settings') && !msg.includes('does not exist')) {
+            throw new Error(error.message);
+          }
+        }
+      }
+
+      const db = await readLocalDb();
+      return {
+        ...DEFAULT_CHAT_AUTO_RESPONSE_SETTINGS,
+        ...(db.chat_auto_response_settings || {})
+      };
+    },
+    30
+  );
+}
+
+export async function saveChatAutoResponseSettings(
+  settings: ChatAutoResponseSettings,
+  userToken?: string
+): Promise<ChatAutoResponseSettings> {
+  const normalized: ChatAutoResponseSettings = {
+    ...DEFAULT_CHAT_AUTO_RESPONSE_SETTINGS,
+    ...settings,
+    id: 'default',
+    updated_at: new Date().toISOString()
+  };
+
+  if (isSupabaseConfigured()) {
+    const { data, error } = await getSupabaseClient(userToken)
+      .from('chat_auto_response_settings')
+      .upsert(normalized, { onConflict: 'id' })
+      .select()
+      .single();
+    if (!error && data) {
+      invalidateCache('chat:auto-responses');
+      return {
+        ...DEFAULT_CHAT_AUTO_RESPONSE_SETTINGS,
+        ...(data as Partial<ChatAutoResponseSettings>)
+      };
+    }
+    if (error && !isFallbackableDbError(error)) {
+      const msg = String(error.message || '').toLowerCase();
+      if (!msg.includes('chat_auto_response_settings') && !msg.includes('does not exist')) {
+        throw new Error(error.message);
+      }
+    }
+  }
+
+  const db = await readLocalDb();
+  db.chat_auto_response_settings = normalized;
+  await writeLocalDb(db);
+  invalidateCache('chat:auto-responses');
+  return normalized;
+}
+
+export function matchChatAutoResponseByText(
+  messageText: string,
+  templates: ChatAutoResponseTemplate[]
+): ChatAutoResponseTemplate | null {
+  const q = messageText.trim().toLowerCase();
+  if (!q || q.length < 2) return null;
+  const active = templates.filter((t) => t.is_active);
+  // Exact question label match first
+  const exact = active.find((t) => t.question_label.trim().toLowerCase() === q);
+  if (exact) return exact;
+
+  let best: { tpl: ChatAutoResponseTemplate; score: number } | null = null;
+  const words = new Set(q.split(/[^a-z0-9]+/).filter((w) => w.length >= 2));
+  for (const tpl of active) {
+    let score = 0;
+    for (const kw of tpl.keywords || []) {
+      const cleanKw = kw.trim().toLowerCase();
+      if (!cleanKw) continue;
+      if (words.has(cleanKw)) score += 3;
+      else if (cleanKw.length >= 4 && q.includes(cleanKw)) score += 2;
+    }
+    if (score > 0 && (!best || score > best.score)) {
+      best = { tpl, score };
+    }
+  }
+  return best && best.score >= 3 ? best.tpl : null;
+}
+

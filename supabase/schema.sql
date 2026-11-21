@@ -876,6 +876,7 @@ CREATE TABLE IF NOT EXISTS public.website_chat_sessions (
   id TEXT PRIMARY KEY,
   visitor_token TEXT NOT NULL UNIQUE,
   visitor_name TEXT NOT NULL DEFAULT 'Website Visitor',
+  visitor_phone TEXT NOT NULL DEFAULT '',
   visitor_email TEXT NOT NULL DEFAULT '',
   page_path TEXT NOT NULL DEFAULT '/',
   status TEXT NOT NULL CHECK (status IN ('open', 'replied', 'resolved')) DEFAULT 'open',
@@ -887,6 +888,8 @@ CREATE TABLE IF NOT EXISTS public.website_chat_sessions (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.website_chat_sessions ADD COLUMN IF NOT EXISTS visitor_phone TEXT NOT NULL DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated ON public.website_chat_sessions (updated_at DESC);
 
 GRANT ALL ON public.website_chat_sessions TO anon, authenticated, service_role;
@@ -897,6 +900,64 @@ CREATE POLICY "Public and team manage website chat sessions"
   ON public.website_chat_sessions FOR ALL
   USING (true)
   WITH CHECK (true);
+
+-- 26B. Chat Auto-Response Templates & Global Intake Settings
+CREATE TABLE IF NOT EXISTS public.chat_auto_responses (
+  id TEXT PRIMARY KEY,
+  question_label TEXT NOT NULL,
+  answer_body TEXT NOT NULL,
+  keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+  category TEXT NOT NULL DEFAULT 'General',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  show_as_quick_chip BOOLEAN NOT NULL DEFAULT TRUE,
+  escalate_prompt_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_auto_responses_order ON public.chat_auto_responses (sort_order ASC, updated_at DESC);
+
+GRANT ALL ON public.chat_auto_responses TO anon, authenticated, service_role;
+ALTER TABLE public.chat_auto_responses ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read chat auto responses" ON public.chat_auto_responses;
+CREATE POLICY "Public read chat auto responses"
+  ON public.chat_auto_responses FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS "Team manage chat auto responses" ON public.chat_auto_responses;
+CREATE POLICY "Team manage chat auto responses"
+  ON public.chat_auto_responses FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+CREATE TABLE IF NOT EXISTS public.chat_auto_response_settings (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  require_intake_before_chat BOOLEAN NOT NULL DEFAULT TRUE,
+  intake_headline TEXT NOT NULL DEFAULT 'Verify your contact details to start',
+  intake_subheadline TEXT NOT NULL DEFAULT 'Please share your full name, contact number, and email address before chatting or viewing quick answers.',
+  welcome_message_after_intake TEXT NOT NULL DEFAULT 'Thanks for verifying your details! Select any quick question below for an instant answer, or type a custom message for our engineering desk.',
+  auto_reply_on_keyword_match BOOLEAN NOT NULL DEFAULT TRUE,
+  escalation_button_label TEXT NOT NULL DEFAULT 'Talk to Live Engineer',
+  updated_by TEXT NOT NULL DEFAULT 'system',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT ALL ON public.chat_auto_response_settings TO anon, authenticated, service_role;
+ALTER TABLE public.chat_auto_response_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public read chat auto response settings" ON public.chat_auto_response_settings;
+CREATE POLICY "Public read chat auto response settings"
+  ON public.chat_auto_response_settings FOR SELECT
+  USING (true);
+
+DROP POLICY IF EXISTS "Team manage chat auto response settings" ON public.chat_auto_response_settings;
+CREATE POLICY "Team manage chat auto response settings"
+  ON public.chat_auto_response_settings FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- 27. Floating Home Page Live Chat Messages
 CREATE TABLE IF NOT EXISTS public.website_chat_messages (

@@ -75,6 +75,7 @@ const MODULE_ICONS: Record<WorkspaceModuleId, React.ComponentType<{ className?: 
   articles: FileText,
   crm: Briefcase,
   inbox: Mail,
+  chat_auto_response: Sparkles,
   chat: MessageSquare,
   demo_users: UserCheck,
   buymeacoffee: Coffee,
@@ -773,7 +774,41 @@ export function DemoBackOfficeShowcase({ onCtaClick }: DemoBackOfficeShowcasePro
       );
     }
 
-    // 7. LIVE Q&A CHAT SIMULATOR
+    // 7. LIVE Q&A CHAT & AUTO-RESPONSE SIMULATOR
+    if (activeModule === 'chat_auto_response') {
+      return (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="font-display text-sm font-bold text-slate-900">
+                Simulated Chat Auto-Response &amp; Intake Gate
+              </h3>
+              <p className="text-xs text-slate-500">
+                Visitors must submit Full Name, Contact Number, and Email before unlocking quick FAQ chips. Zero production DB writes happen in this demo.
+              </p>
+            </div>
+            <span className="rounded-md bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+              Demo Showcase Mode
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="rounded-lg border border-slate-200 p-3.5 space-y-1">
+              <div className="font-semibold text-slate-900">How do pricing &amp; engagement models work?</div>
+              <p className="text-[11px] text-slate-600">
+                Fixed-scope Architecture Sprints (2–4 weeks), monthly retainers, and full-cycle SaaS MVP builds.
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3.5 space-y-1">
+              <div className="font-semibold text-slate-900">What AI integration services do you offer?</div>
+              <p className="text-[11px] text-slate-600">
+                Production AI agent pipelines, RAG systems, LLM orchestration, and MLOps telemetry.
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (activeModule === 'chat') {
       return (
         <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">

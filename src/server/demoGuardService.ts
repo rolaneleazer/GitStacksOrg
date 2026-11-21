@@ -306,6 +306,7 @@ async function runAdminModuleParityProbes(
     const probes: Array<{ moduleId: WorkspaceModuleId; endpoint: string }> = [
       { moduleId: 'agents', endpoint: '/api/admin/bootstrap' },
       { moduleId: 'crm', endpoint: '/api/admin/crm/leads' },
+      { moduleId: 'chat_auto_response', endpoint: '/api/admin/chat/auto-responses' },
       { moduleId: 'contact_registry', endpoint: '/api/admin/contact-registry' },
       { moduleId: 'search_console', endpoint: '/api/admin/search-console' },
       { moduleId: 'marketing', endpoint: '/api/admin/marketing' },

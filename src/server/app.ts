@@ -83,7 +83,9 @@ import type {
   UserWorkflowItem,
   WebsiteChatMessage,
   WebsiteChatSession,
-  WebsiteChatStatus
+  WebsiteChatStatus,
+  ChatAutoResponseSettings,
+  ChatAutoResponseTemplate
 } from '../shared/types.ts';
 import { getChatWatcherLastRunAt, isSessionUnanswered, runOfflineChatInquiryCheck } from './chatWatcher.ts';
 import { fetchCloudflareZoneAnalytics } from './cloudflare.ts';
@@ -313,6 +315,14 @@ import {
   upsertPageContent,
   upsertPost,
   upsertWebsiteChatSession,
+  purgeEmptyWebsiteChatSessions,
+  isEmptyAnonymousChatSession,
+  listChatAutoResponses,
+  upsertChatAutoResponse,
+  deleteChatAutoResponse,
+  getChatAutoResponseSettings,
+  saveChatAutoResponseSettings,
+  matchChatAutoResponseByText,
   verifyDemoPassword,
   verifyDemoSessionToken,
   verifyEditorToken,
@@ -4707,59 +4717,175 @@ export async function createApp(): Promise<Express> {
     }
   );
 
-  // --- Public Floating Home Page Live Chat & Admin Inbox Real-Time Replies ---
+  // --- Public Floating Home Page Live Chat (Contact-Gated) & Admin Auto-Response Engine ---
 
+  function validateVisitorIntakeFields(input: {
+    visitor_name?: string;
+    visitor_phone?: string;
+    visitor_email?: string;
+  }): { ok: true; name: string; phone: string; email: string } | { ok: false; error: string } {
+    const name = (input.visitor_name || '').trim().slice(0, 80);
+    const phone = (input.visitor_phone || '').trim().slice(0, 40);
+    const email = (input.visitor_email || '').trim().toLowerCase().slice(0, 140);
+    if (name.length < 2 || name.toLowerCase() === 'website visitor') {
+      return { ok: false, error: 'Please enter your full name.' };
+    }
+    const digitCount = phone.replace(/\D/g, '').length;
+    if (digitCount < 7) {
+      return { ok: false, error: 'Please enter a valid contact number (at least 7 digits).' };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { ok: false, error: 'Please enter a valid email address.' };
+    }
+    return { ok: true, name, phone, email };
+  }
+
+  function hasVerifiedContact(session: WebsiteChatSession | null | undefined): boolean {
+    if (!session) return false;
+    const nameClean = (session.visitor_name || '').trim().toLowerCase();
+    const hasName = nameClean.length >= 2 && nameClean !== 'website visitor';
+    const hasPhone = (session.visitor_phone || '').replace(/\D/g, '').length >= 7;
+    const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((session.visitor_email || '').trim());
+    return hasName && hasEmail && (hasPhone || Boolean(session.last_visitor_msg_at));
+  }
+
+  app.get('/api/public/chat/auto-responses', async (_req, res) => {
+    try {
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+      const [templates, settings] = await Promise.all([
+        listChatAutoResponses({ activeOnly: true }),
+        getChatAutoResponseSettings()
+      ]);
+      res.json({ templates, settings });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load FAQ templates' });
+    }
+  });
+
+  // Strict read-only session check — NEVER inserts an empty anonymous row on page browse
   app.get('/api/public/chat/session', async (req, res) => {
     try {
+      res.setHeader('Cache-Control', 'private, no-store');
       const rawToken =
         typeof req.query.visitor_token === 'string' ? req.query.visitor_token.trim() : '';
-      const pagePath = typeof req.query.page_path === 'string' ? req.query.page_path.trim() : '/';
-      const visitorToken = rawToken.slice(0, 120) || `vchat-${crypto.randomUUID()}`;
-      let session = await findWebsiteChatSessionByToken(visitorToken);
-      const now = new Date().toISOString();
+      const visitorToken = rawToken.slice(0, 120);
+      const [autoResponses, chatSettings] = await Promise.all([
+        listChatAutoResponses({ activeOnly: true }),
+        getChatAutoResponseSettings()
+      ]);
 
-      if (!session) {
-        session = await upsertWebsiteChatSession({
-          id: `wcs-${crypto.randomUUID().slice(0, 10)}`,
-          visitor_token: visitorToken,
-          visitor_name: 'Website Visitor',
-          visitor_email: '',
-          page_path: pagePath || '/',
-          status: 'open',
-          last_visitor_msg_at: null,
-          last_admin_reply_at: null,
-          escalated_at: null,
-          converted_lead_id: null,
-          created_at: now,
-          updated_at: now
+      if (!visitorToken) {
+        return res.json({
+          session: null,
+          messages: [],
+          adminOnline: isAdminOnline(),
+          autoResponses,
+          chatSettings
         });
       }
+
+      const session = await findWebsiteChatSessionByToken(visitorToken);
+      if (!session) {
+        return res.json({
+          session: null,
+          messages: [],
+          adminOnline: isAdminOnline(),
+          autoResponses,
+          chatSettings
+        });
+      }
+
       const messages = await listWebsiteChatMessages(session.id);
-      res.json({ session, messages, adminOnline: isAdminOnline() });
+      res.json({
+        session,
+        messages,
+        adminOnline: isAdminOnline(),
+        autoResponses,
+        chatSettings
+      });
     } catch (err) {
-      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to open chat session' });
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load chat session' });
+    }
+  });
+
+  app.post('/api/public/chat/start', async (req, res) => {
+    try {
+      const { visitor_token, visitor_name, visitor_phone, visitor_email, page_path } = (req.body || {}) as {
+        visitor_token?: string;
+        visitor_name?: string;
+        visitor_phone?: string;
+        visitor_email?: string;
+        page_path?: string;
+      };
+      const check = validateVisitorIntakeFields({ visitor_name, visitor_phone, visitor_email });
+      if (!check.ok) {
+        return res.status(400).json({ error: check.error });
+      }
+
+      const token = (visitor_token || '').trim().slice(0, 120) || `vchat-${crypto.randomUUID()}`;
+      const now = new Date().toISOString();
+      const existing = await findWebsiteChatSessionByToken(token);
+
+      const session = await upsertWebsiteChatSession({
+        id: existing?.id || `wcs-${crypto.randomUUID().slice(0, 10)}`,
+        visitor_token: token,
+        visitor_name: check.name,
+        visitor_phone: check.phone,
+        visitor_email: check.email,
+        page_path: page_path?.trim().slice(0, 140) || existing?.page_path || '/',
+        status: existing?.status || 'open',
+        last_visitor_msg_at: existing?.last_visitor_msg_at || null,
+        last_admin_reply_at: existing?.last_admin_reply_at || null,
+        escalated_at: existing?.escalated_at || null,
+        converted_lead_id: existing?.converted_lead_id || null,
+        created_at: existing?.created_at || now,
+        updated_at: now
+      });
+
+      const [messages, autoResponses, chatSettings] = await Promise.all([
+        listWebsiteChatMessages(session.id),
+        listChatAutoResponses({ activeOnly: true }),
+        getChatAutoResponseSettings()
+      ]);
+
+      broadcastToAdmins('chat:session_updated', { session });
+      res.status(existing ? 200 : 201).json({
+        session,
+        messages,
+        adminOnline: isAdminOnline(),
+        autoResponses,
+        chatSettings
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to start verified chat session' });
     }
   });
 
   app.post('/api/public/chat/profile', async (req, res) => {
     try {
-      const { visitor_token, visitor_name, visitor_email, page_path } = (req.body || {}) as {
+      const { visitor_token, visitor_name, visitor_phone, visitor_email, page_path } = (req.body || {}) as {
         visitor_token?: string;
         visitor_name?: string;
+        visitor_phone?: string;
         visitor_email?: string;
         page_path?: string;
       };
       if (!visitor_token?.trim()) {
         return res.status(400).json({ error: 'visitor_token is required.' });
       }
+      const check = validateVisitorIntakeFields({ visitor_name, visitor_phone, visitor_email });
+      if (!check.ok) {
+        return res.status(400).json({ error: check.error });
+      }
       const existing = await findWebsiteChatSessionByToken(visitor_token.trim());
       if (!existing) {
-        return res.status(404).json({ error: 'Chat session not found.' });
+        return res.status(404).json({ error: 'Chat session not found. Please start chat with your contact details.' });
       }
       const updated = await upsertWebsiteChatSession({
         ...existing,
-        visitor_name: visitor_name?.trim().slice(0, 80) || existing.visitor_name,
-        visitor_email: visitor_email?.trim().toLowerCase().slice(0, 140) ?? existing.visitor_email,
+        visitor_name: check.name,
+        visitor_phone: check.phone,
+        visitor_email: check.email,
         page_path: page_path?.trim().slice(0, 140) || existing.page_path,
         updated_at: new Date().toISOString()
       });
@@ -4772,27 +4898,64 @@ export async function createApp(): Promise<Express> {
 
   app.post('/api/public/chat/message', async (req, res) => {
     try {
-      const { visitor_token, visitor_name, visitor_email, page_path, body } = (req.body || {}) as {
+      const {
+        visitor_token,
+        visitor_name,
+        visitor_phone,
+        visitor_email,
+        page_path,
+        body,
+        request_human
+      } = (req.body || {}) as {
         visitor_token?: string;
         visitor_name?: string;
+        visitor_phone?: string;
         visitor_email?: string;
         page_path?: string;
         body?: string;
+        request_human?: boolean;
       };
       const cleanBody = (body || '').trim();
       if (!cleanBody) {
         return res.status(400).json({ error: 'Message text cannot be empty.' });
       }
-      const token = (visitor_token || '').trim().slice(0, 120) || `vchat-${crypto.randomUUID()}`;
+      const token = (visitor_token || '').trim().slice(0, 120);
+      if (!token) {
+        return res.status(400).json({ error: 'Please verify your Full Name, Contact Number, and Email first.' });
+      }
       const now = new Date().toISOString();
 
       let session = await findWebsiteChatSessionByToken(token);
+      const chatSettings = await getChatAutoResponseSettings();
+
+      const bodyHasIntake = Boolean(
+        visitor_name?.trim() && visitor_phone?.trim() && visitor_email?.trim()
+      );
+      let resolvedName = session?.visitor_name || '';
+      let resolvedPhone = session?.visitor_phone || '';
+      let resolvedEmail = session?.visitor_email || '';
+
+      if (bodyHasIntake) {
+        const check = validateVisitorIntakeFields({ visitor_name, visitor_phone, visitor_email });
+        if (!check.ok) {
+          return res.status(400).json({ error: check.error });
+        }
+        resolvedName = check.name;
+        resolvedPhone = check.phone;
+        resolvedEmail = check.email;
+      } else if (chatSettings.require_intake_before_chat && !hasVerifiedContact(session)) {
+        return res.status(400).json({
+          error: 'Please complete your Full Name, Contact Number, and Email Address before sending a message.'
+        });
+      }
+
       if (!session) {
         session = {
           id: `wcs-${crypto.randomUUID().slice(0, 10)}`,
           visitor_token: token,
-          visitor_name: visitor_name?.trim().slice(0, 80) || 'Website Visitor',
-          visitor_email: visitor_email?.trim().toLowerCase().slice(0, 140) || '',
+          visitor_name: resolvedName || 'Website Visitor',
+          visitor_phone: resolvedPhone || '',
+          visitor_email: resolvedEmail || '',
           page_path: page_path?.trim().slice(0, 140) || '/',
           status: 'open',
           last_visitor_msg_at: now,
@@ -4805,12 +4968,12 @@ export async function createApp(): Promise<Express> {
       } else {
         session = {
           ...session,
-          visitor_name: visitor_name?.trim().slice(0, 80) || session.visitor_name,
-          visitor_email: visitor_email?.trim().toLowerCase().slice(0, 140) || session.visitor_email,
+          visitor_name: resolvedName || session.visitor_name,
+          visitor_phone: resolvedPhone || session.visitor_phone,
+          visitor_email: resolvedEmail || session.visitor_email,
           page_path: page_path?.trim().slice(0, 140) || session.page_path,
           status: 'open',
           last_visitor_msg_at: now,
-          // Reset escalated_at on a fresh visitor follow-up after a previous reply/escalation cycle if resolved
           escalated_at:
             session.status === 'resolved' || session.last_admin_reply_at ? null : session.escalated_at,
           updated_at: now
@@ -4830,6 +4993,25 @@ export async function createApp(): Promise<Express> {
       broadcastToAdmins('chat:message', { session, message });
       broadcastToAdmins('chat:session_updated', { session, message });
 
+      // Optional automated keyword-matched reply
+      let autoReplyMessage: WebsiteChatMessage | undefined;
+      if (!request_human && chatSettings.auto_reply_on_keyword_match) {
+        const activeTemplates = await listChatAutoResponses({ activeOnly: true });
+        const matched = matchChatAutoResponseByText(cleanBody, activeTemplates);
+        if (matched) {
+          const replyTime = new Date(Date.now() + 25).toISOString();
+          autoReplyMessage = await appendWebsiteChatMessage({
+            id: `wcm-${crypto.randomUUID().slice(0, 10)}`,
+            session_id: session.id,
+            sender_role: 'agent',
+            sender_name: `GitStack Auto-Response · ${matched.category}`,
+            body: matched.answer_body,
+            created_at: replyTime
+          });
+          broadcastToAdmins('chat:message', { session, message: autoReplyMessage });
+        }
+      }
+
       const originHeader =
         typeof req.headers.origin === 'string' && /^https?:\/\//i.test(req.headers.origin)
           ? req.headers.origin
@@ -4843,7 +5025,12 @@ export async function createApp(): Promise<Express> {
         originUrl: originHeader
       }).catch(() => null);
 
-      res.status(201).json({ session, message, adminOnline: isAdminOnline() });
+      res.status(201).json({
+        session,
+        message,
+        autoReplyMessage,
+        adminOnline: isAdminOnline()
+      });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to send chat message' });
     }
@@ -4873,10 +5060,200 @@ export async function createApp(): Promise<Express> {
         res.json({
           sessions: enriched,
           unansweredCount: enriched.filter((s) => s.unread_for_admin).length,
+          emptyCount: enriched.filter((s) => isEmptyAnonymousChatSession(s)).length,
           adminOnline: isAdminOnline()
         });
       } catch (err) {
         res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load chat sessions' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/chat/purge-empty',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const result = await purgeEmptyWebsiteChatSessions(token);
+        broadcastToAdmins('chat:session_updated', { purged: result.purgedCount });
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to purge empty chat sessions' });
+      }
+    }
+  );
+
+  app.get(
+    '/api/admin/chat/auto-responses',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const [templates, settings] = await Promise.all([
+          listChatAutoResponses({ userToken: token }),
+          getChatAutoResponseSettings(token)
+        ]);
+        res.json({ templates, settings });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load chat auto-responses' });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/chat/auto-responses',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const body = (req.body || {}) as Partial<ChatAutoResponseTemplate>;
+        const question = (body.question_label || '').trim();
+        const answer = (body.answer_body || '').trim();
+        if (!question || !answer) {
+          return res.status(400).json({ error: 'Question label and nominated answer are required.' });
+        }
+        const now = new Date().toISOString();
+        const saved = await upsertChatAutoResponse(
+          {
+            id: body.id?.trim() || `faq-${crypto.randomUUID().slice(0, 8)}`,
+            question_label: question.slice(0, 180),
+            answer_body: answer.slice(0, 3000),
+            keywords: Array.isArray(body.keywords)
+              ? body.keywords
+              : typeof body.keywords === 'string'
+                ? String(body.keywords)
+                    .split(',')
+                    .map((k) => k.trim().toLowerCase())
+                    .filter(Boolean)
+                : [],
+            category: (body.category || 'General').trim().slice(0, 50) || 'General',
+            sort_order: Number(body.sort_order ?? 10),
+            is_active: body.is_active !== false,
+            show_as_quick_chip: body.show_as_quick_chip !== false,
+            escalate_prompt_enabled: body.escalate_prompt_enabled !== false,
+            usage_count: Number(body.usage_count ?? 0),
+            created_at: body.created_at || now,
+            updated_at: now
+          },
+          token
+        );
+        const templates = await listChatAutoResponses({ userToken: token });
+        res.status(201).json({ template: saved, templates });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save auto-response template' });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/chat/auto-responses/settings',
+    requireRoles('super_admin', 'editor'),
+    async (req: AuthReq, res) => {
+      try {
+        const token = getBearerToken(req);
+        const existing = await getChatAutoResponseSettings(token);
+        const payload = (req.body || {}) as Partial<ChatAutoResponseSettings>;
+        const updated = await saveChatAutoResponseSettings(
+          {
+            ...existing,
+            require_intake_before_chat:
+              typeof payload.require_intake_before_chat === 'boolean'
+                ? payload.require_intake_before_chat
+                : existing.require_intake_before_chat,
+            intake_headline:
+              typeof payload.intake_headline === 'string' && payload.intake_headline.trim()
+                ? payload.intake_headline.trim().slice(0, 160)
+                : existing.intake_headline,
+            intake_subheadline:
+              typeof payload.intake_subheadline === 'string' && payload.intake_subheadline.trim()
+                ? payload.intake_subheadline.trim().slice(0, 400)
+                : existing.intake_subheadline,
+            welcome_message_after_intake:
+              typeof payload.welcome_message_after_intake === 'string' &&
+              payload.welcome_message_after_intake.trim()
+                ? payload.welcome_message_after_intake.trim().slice(0, 600)
+                : existing.welcome_message_after_intake,
+            auto_reply_on_keyword_match:
+              typeof payload.auto_reply_on_keyword_match === 'boolean'
+                ? payload.auto_reply_on_keyword_match
+                : existing.auto_reply_on_keyword_match,
+            escalation_button_label:
+              typeof payload.escalation_button_label === 'string' &&
+              payload.escalation_button_label.trim()
+                ? payload.escalation_button_label.trim().slice(0, 60)
+                : existing.escalation_button_label,
+            updated_by: req.editor?.email || 'admin',
+            updated_at: new Date().toISOString()
+          },
+          token
+        );
+        res.json({ settings: updated });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save auto-response settings' });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/chat/auto-responses/:id',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const body = (req.body || {}) as Partial<ChatAutoResponseTemplate>;
+        const existingList = await listChatAutoResponses({ userToken: token });
+        const existing = existingList.find((t) => t.id === req.params.id);
+        const question = (body.question_label ?? existing?.question_label ?? '').trim();
+        const answer = (body.answer_body ?? existing?.answer_body ?? '').trim();
+        if (!question || !answer) {
+          return res.status(400).json({ error: 'Question label and nominated answer are required.' });
+        }
+        const now = new Date().toISOString();
+        const saved = await upsertChatAutoResponse(
+          {
+            id: req.params.id,
+            question_label: question.slice(0, 180),
+            answer_body: answer.slice(0, 3000),
+            keywords: Array.isArray(body.keywords)
+              ? body.keywords
+              : existing?.keywords || [],
+            category: (body.category ?? existing?.category ?? 'General').trim().slice(0, 50) || 'General',
+            sort_order: Number(body.sort_order ?? existing?.sort_order ?? 10),
+            is_active: body.is_active !== undefined ? Boolean(body.is_active) : (existing?.is_active ?? true),
+            show_as_quick_chip:
+              body.show_as_quick_chip !== undefined
+                ? Boolean(body.show_as_quick_chip)
+                : (existing?.show_as_quick_chip ?? true),
+            escalate_prompt_enabled:
+              body.escalate_prompt_enabled !== undefined
+                ? Boolean(body.escalate_prompt_enabled)
+                : (existing?.escalate_prompt_enabled ?? true),
+            usage_count: Number(body.usage_count ?? existing?.usage_count ?? 0),
+            created_at: existing?.created_at || now,
+            updated_at: now
+          },
+          token
+        );
+        const templates = await listChatAutoResponses({ userToken: token });
+        res.json({ template: saved, templates });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update auto-response template' });
+      }
+    }
+  );
+
+  app.delete(
+    '/api/admin/chat/auto-responses/:id',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        await deleteChatAutoResponse(req.params.id, token);
+        const templates = await listChatAutoResponses({ userToken: token });
+        res.json({ deletedId: req.params.id, templates });
+      } catch (err) {
+        res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to delete auto-response template' });
       }
     }
   );
@@ -5056,7 +5433,7 @@ export async function createApp(): Promise<Express> {
           company_domain: emailDomain !== 'website-visitor.local' ? emailDomain : '',
           website_url: '',
           github_url: '',
-          phone: '',
+          phone: session.visitor_phone || '',
           location: '',
           rating: null,
           source_detail: `Floating Home Page Chat (${session.page_path})`,
@@ -5065,7 +5442,7 @@ export async function createApp(): Promise<Express> {
           tech_stack: [],
           research_brief: transcript.slice(0, 500) || 'Inbound Home Page live chat conversation.',
           recommended_service: 'AI Integration',
-          fit_score: session.visitor_email ? 82 : 64,
+          fit_score: session.visitor_email ? (session.visitor_phone ? 88 : 82) : 64,
           deal_value: 20000,
           stage: 'discovered',
           proposal_subject: '',

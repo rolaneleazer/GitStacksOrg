@@ -207,6 +207,7 @@ export async function dispatchLiveChatLarkNotification(params: {
       'A website visitor just sent a Live Chat inquiry on GitStack:',
       '',
       `Visitor Name: ${params.session.visitor_name}`,
+      `Contact Number: ${params.session.visitor_phone || 'Not provided'}`,
       `Visitor Email: ${params.session.visitor_email || 'Not provided yet'}`,
       `Active Page: ${params.session.page_path}`,
       `Received At: ${new Date(params.message.created_at).toLocaleString('en-US', { timeZone: 'UTC' })} UTC`,

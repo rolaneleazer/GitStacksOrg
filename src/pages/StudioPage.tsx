@@ -48,6 +48,7 @@ import { AnalyticsDashboard } from '../components/backoffice/AnalyticsDashboard.
 import type { DateRangeSelection } from '../components/backoffice/AnalyticsSharedSections.tsx';
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { BuyMeACoffeeHubPanel } from '../components/backoffice/BuyMeACoffeeHubPanel.tsx';
+import { ChatAutoResponsePanel } from '../components/backoffice/ChatAutoResponsePanel.tsx';
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
 import { ContactRegistryPanel } from '../components/backoffice/ContactRegistryPanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
@@ -136,6 +137,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'branding',
     'buymeacoffee',
     'inbox',
+    'chat_auto_response',
     'notifications',
     'chat',
     'workflows',
@@ -163,6 +165,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'pages',
     'contact_registry',
     'articles',
+    'chat_auto_response',
     'notifications',
     'demo_users',
     'workflows',
@@ -181,6 +184,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
   ],
   support_agent: [
     'inbox',
+    'chat_auto_response',
     'notifications',
     'chat',
     'workflows',
@@ -1261,6 +1265,7 @@ export function StudioPage({
     { id: 'branding', defaultLabel: 'Branding & Theme', icon: Palette },
     { id: 'buymeacoffee', defaultLabel: 'Buy Me a Coffee Hub', icon: Coffee },
     { id: 'inbox', defaultLabel: 'Lark Mail & Lead Inbox', icon: Mail, count: inquiries.length },
+    { id: 'chat_auto_response', defaultLabel: 'Chat Auto-Response', icon: Sparkles },
     { id: 'notifications', defaultLabel: 'Notifications & Alerts', icon: Bell },
     {
       id: 'chat',
@@ -1487,6 +1492,9 @@ export function StudioPage({
               onExportSubscribersCsv={handleExportSubscribersCsv}
             />
           )}
+
+          {/* PANEL 3A: CHAT AUTO-RESPONSE & QUICK-SELECT FAQ ENGINE */}
+          {currentTab === 'chat_auto_response' && <ChatAutoResponsePanel />}
 
           {/* PANEL 3B: LARK MAIL NOTIFICATION MODULE */}
           {currentTab === 'notifications' && (

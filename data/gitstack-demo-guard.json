@@ -1,0 +1,156 @@
+{
+  "autoWatchEnabled": true,
+  "autoEmailEnabled": true,
+  "recipientEmail": "",
+  "lastScanAt": "2026-11-21T00:28:13.609Z",
+  "baseline": {
+    "sealedAt": "2026-11-21T00:28:13.587Z",
+    "sealedBy": "admin@git-stack.org",
+    "overallHash": "330b3b02977e8472f8e90b0d",
+    "fileHashes": {
+      "src/pages/DemoPage.tsx": "0133aaa82d551742",
+      "src/components/demo/DemoBackOfficeShowcase.tsx": "b8b00cbb619de06f",
+      "src/components/demo/InventorySyncDemo.tsx": "6c8e90d6cf022283",
+      "src/components/demo/EInvoicePortalDemo.tsx": "4d9041e01b300599",
+      "src/components/demo/AiConciergeDemo.tsx": "32c200b4786f235c",
+      "src/components/demo/FlowCrmChaserDemo.tsx": "7cdce507b81cb223",
+      "src/shared/demoSandboxData.ts": "baa99db8fef3bb5d"
+    },
+    "isolationSignature": "strict-readonly-v1"
+  },
+  "driftItems": [
+    {
+      "file": "src/pages/DemoPage.tsx",
+      "expectedHash": "0133aaa82d551742",
+      "actualHash": "0133aaa82d551742",
+      "status": "matched"
+    },
+    {
+      "file": "src/components/demo/DemoBackOfficeShowcase.tsx",
+      "expectedHash": "b8b00cbb619de06f",
+      "actualHash": "b8b00cbb619de06f",
+      "status": "matched"
+    },
+    {
+      "file": "src/components/demo/InventorySyncDemo.tsx",
+      "expectedHash": "6c8e90d6cf022283",
+      "actualHash": "6c8e90d6cf022283",
+      "status": "matched"
+    },
+    {
+      "file": "src/components/demo/EInvoicePortalDemo.tsx",
+      "expectedHash": "4d9041e01b300599",
+      "actualHash": "4d9041e01b300599",
+      "status": "matched"
+    },
+    {
+      "file": "src/components/demo/AiConciergeDemo.tsx",
+      "expectedHash": "32c200b4786f235c",
+      "actualHash": "32c200b4786f235c",
+      "status": "matched"
+    },
+    {
+      "file": "src/components/demo/FlowCrmChaserDemo.tsx",
+      "expectedHash": "7cdce507b81cb223",
+      "actualHash": "7cdce507b81cb223",
+      "status": "matched"
+    },
+    {
+      "file": "src/shared/demoSandboxData.ts",
+      "expectedHash": "baa99db8fef3bb5d",
+      "actualHash": "baa99db8fef3bb5d",
+      "status": "matched"
+    }
+  ],
+  "isolationChecks": [
+    {
+      "id": "iso-no-admin-api",
+      "label": "Zero Production Admin / Write API Calls in Demo UI",
+      "status": "pass",
+      "metric": "0 Admin Refs",
+      "detail": "Static bundle audit confirmed zero /api/admin/*, /api/lark/*, or /api/growth/* calls inside Demo components."
+    },
+    {
+      "id": "iso-no-token-storage",
+      "label": "Zero Admin Session Token or Vault Secret Access",
+      "status": "pass",
+      "metric": "Isolated Memory",
+      "detail": "Demo Showcase cannot read studio Admin Bearer tokens, Supabase service keys, or SMTP credentials."
+    },
+    {
+      "id": "iso-dom-theme",
+      "label": "Production Theme & DOM Global Style Isolation",
+      "status": "pass",
+      "metric": "Scoped State",
+      "detail": "Branding color switches in Live Demo are scoped purely to the sandbox preview container."
+    },
+    {
+      "id": "iso-runtime-firewall",
+      "label": "Runtime Express Demo-Origin Mutation Trap",
+      "status": "pass",
+      "metric": "Armed (0 Breaches)",
+      "detail": "Express middleware actively inspects demo-origin traffic and blocks any unauthorized write or admin route access."
+    },
+    {
+      "id": "iso-readonly-framing",
+      "label": "Explicit Read-Only Simulation Boundary UI",
+      "status": "pass",
+      "metric": "Verified",
+      "detail": "Live Demo displays explicit simulation notices so prospects know edits stay strictly client-side."
+    }
+  ],
+  "adminParityChecks": [
+    {
+      "moduleId": "articles",
+      "moduleLabel": "Articles & Gatekeeper",
+      "endpoint": "listPosts(true)",
+      "status": "pass",
+      "httpStatus": 200,
+      "durationMs": 3,
+      "detail": "Backend module data layer verified in 3ms."
+    },
+    {
+      "moduleId": "pages",
+      "moduleLabel": "Page Content Editor",
+      "endpoint": "getAllPageContents()",
+      "status": "pass",
+      "httpStatus": 200,
+      "durationMs": 3,
+      "detail": "Backend module data layer verified in 3ms."
+    },
+    {
+      "moduleId": "crm",
+      "moduleLabel": "CRM & Prospecting",
+      "endpoint": "listCrmLeads()",
+      "status": "pass",
+      "httpStatus": 200,
+      "durationMs": 2,
+      "detail": "Backend module data layer verified in 2ms."
+    },
+    {
+      "moduleId": "adsense",
+      "moduleLabel": "Settings & Integrations",
+      "endpoint": "getAdSenseSettings()",
+      "status": "pass",
+      "httpStatus": 200,
+      "durationMs": 3,
+      "detail": "Backend module data layer verified in 3ms."
+    }
+  ],
+  "alerts": [
+    {
+      "id": "dga-75f866c8-1",
+      "severity": "info",
+      "kind": "baseline_sealed",
+      "title": "Demo Guard Baseline Approved & Sealed",
+      "detail": "New cryptographic baseline (330b3b02977e8472f8e90b0d) sealed by admin@git-stack.org across 7 watched Live Demo files.",
+      "affectedTarget": "All Live Demo Modules",
+      "emailSent": false,
+      "emailRecipient": "gitstackitsolution@gmail.com",
+      "emailStatus": "Sealed by operator",
+      "createdAt": "2026-11-21T00:28:13.587Z",
+      "acknowledged": true
+    }
+  ],
+  "blockedMutationCount": 0
+}

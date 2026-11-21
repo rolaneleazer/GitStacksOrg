@@ -5,6 +5,7 @@ import {
   normalizeSeoMetadata,
   slugify
 } from '../shared/qualityGate.ts';
+import { generateArticleCoverImage } from './coverImageService.ts';
 import {
   formatGeminiFallbackReason,
   isGeminiQuotaCoolingDown,
@@ -39,6 +40,8 @@ export interface GeneratedArticleDraft {
   policyNotes: string[];
   faqs: { question: string; answer: string }[];
   sources: { title: string; url: string }[];
+  coverImage?: string;
+  coverAlt?: string;
   notice?: string;
 }
 
@@ -813,7 +816,19 @@ Return a strictly valid JSON object:
         .trim();
       const parsed = JSON.parse(rawText || '{}') as Partial<GeneratedArticleDraft>;
       if (parsed.title && parsed.content) {
-        return finalizeGeneratedDraft(parsed, topic, niche, country, sources);
+        const finalized = finalizeGeneratedDraft(parsed, topic, niche, country, sources);
+        const generatedCover = await generateArticleCoverImage({
+          title: finalized.title,
+          category: finalized.category,
+          primaryKeyword: finalized.primaryKeyword,
+          slug: finalized.slug,
+          userToken
+        }).catch(() => null);
+        if (generatedCover) {
+          finalized.coverImage = generatedCover.url;
+          finalized.coverAlt = generatedCover.alt;
+        }
+        return finalized;
       }
     } catch (err) {
       markGeminiQuotaCooldownIfNeeded(err);
@@ -935,7 +950,7 @@ Engineering leaders can review our [GitStack Services](https://git-stack.org/ser
 
   const fallbackSummary = `Comprehensive 1,600+ word architectural blueprint for ${shortTopic} covering production connection pooling, transactional outbox reliability, security auditability, FinOps benchmarks, and SEO visibility for ${country} teams.`;
 
-  return finalizeGeneratedDraft(
+  const finalizedFallback = finalizeGeneratedDraft(
     {
       title: topic,
       slug: cleanSlug,
@@ -954,4 +969,18 @@ Engineering leaders can review our [GitStack Services](https://git-stack.org/ser
     sources,
     draftNotice
   );
+
+  const generatedCover = await generateArticleCoverImage({
+    title: finalizedFallback.title,
+    category: finalizedFallback.category,
+    primaryKeyword: finalizedFallback.primaryKeyword,
+    slug: finalizedFallback.slug,
+    userToken
+  }).catch(() => null);
+  if (generatedCover) {
+    finalizedFallback.coverImage = generatedCover.url;
+    finalizedFallback.coverAlt = generatedCover.alt;
+  }
+
+  return finalizedFallback;
 }

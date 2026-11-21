@@ -6,6 +6,7 @@ import {
   Compass,
   ExternalLink,
   Flame,
+  Image as ImageIcon,
   PenTool,
   Plus,
   RefreshCw,
@@ -19,6 +20,7 @@ import {
 import React, { useMemo, useState } from 'react';
 import { api } from '../../lib/api.ts';
 import type { GeneratedArticleDraft, TrendingTopicItem } from '../../server/trendScout.ts';
+import { EDITORIAL_COVER_POOL, pickUniqueCoverForArticle } from '../../shared/editorialCovers.ts';
 import {
   evaluateArticleQuality,
   extractFaqsFromMarkdown,
@@ -34,7 +36,6 @@ interface AiTrendContentStudioProps {
 
 const DEFAULT_AUTHOR_BIO =
   'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.';
-const DEFAULT_COVER_IMAGE = '/src/assets/images/cloud_infra_architecture_1794645172181.jpg';
 
 function mapDraftCategory(category?: string): ServiceCategory {
   const c = (category || '').toLowerCase();
@@ -83,6 +84,9 @@ export function AiTrendContentStudio({
   const [editPrimaryKeyword, setEditPrimaryKeyword] = useState('enterprise architecture');
   const [editFaqs, setEditFaqs] = useState<ArticleFAQ[]>([]);
   const [editReferences, setEditReferences] = useState<ArticleReference[]>([]);
+  const [editCoverImage, setEditCoverImage] = useState(EDITORIAL_COVER_POOL[0].url);
+  const [editCoverAlt, setEditCoverAlt] = useState(EDITORIAL_COVER_POOL[0].altTemplate);
+  const [generatingCover, setGeneratingCover] = useState(false);
   const [editContent, setEditContent] = useState('');
 
   const [showGatekeeperDetails, setShowGatekeeperDetails] = useState(false);
@@ -100,8 +104,8 @@ export function AiTrendContentStudio({
         author_name: editAuthor,
         author_role: editAuthorRole,
         author_bio: editAuthorBio,
-        cover_image: DEFAULT_COVER_IMAGE,
-        cover_alt: editTitle || 'GitStack cloud architecture diagram',
+        cover_image: editCoverImage,
+        cover_alt: editCoverAlt || editTitle || 'GitStack architecture visual',
         meta_title: editMetaTitle || editTitle,
         meta_description: editMetaDescription,
         primary_keyword: editPrimaryKeyword,
@@ -115,6 +119,8 @@ export function AiTrendContentStudio({
       editAuthor,
       editAuthorRole,
       editAuthorBio,
+      editCoverImage,
+      editCoverAlt,
       editMetaTitle,
       editMetaDescription,
       editPrimaryKeyword,
@@ -225,10 +231,16 @@ export function AiTrendContentStudio({
               }
             ].slice(0, 3);
 
+      const resolvedCategory = mapDraftCategory(res.category);
+      const fallbackCover = pickUniqueCoverForArticle({
+        title: res.title,
+        category: resolvedCategory,
+        keyword: seo.primary_keyword
+      });
       setDraft(res);
       setEditTitle(res.title);
       setEditSlug(res.slug || slugify(res.title));
-      setEditCategory(mapDraftCategory(res.category));
+      setEditCategory(resolvedCategory);
       setEditAuthor(res.authorName || 'Rolan Molano');
       setEditAuthorRole('Principal Cloud Architect · 13+ Years Distributed Systems Experience');
       setEditAuthorBio(DEFAULT_AUTHOR_BIO);
@@ -238,6 +250,8 @@ export function AiTrendContentStudio({
       setEditPrimaryKeyword(seo.primary_keyword);
       setEditFaqs(initialFaqs);
       setEditReferences(initialRefs);
+      setEditCoverImage(res.coverImage || fallbackCover.url);
+      setEditCoverAlt(res.coverAlt || fallbackCover.alt);
       setEditContent(res.content);
       setShowGatekeeperDetails(false);
 
@@ -356,8 +370,8 @@ export function AiTrendContentStudio({
         author_role:
           editAuthorRole.trim() || 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
         author_bio: editAuthorBio.trim() || DEFAULT_AUTHOR_BIO,
-        cover_image: DEFAULT_COVER_IMAGE,
-        cover_alt: editTitle.trim(),
+        cover_image: editCoverImage,
+        cover_alt: editCoverAlt.trim() || editTitle.trim(),
         meta_title: (editMetaTitle || editTitle).trim(),
         meta_description: editMetaDescription.trim(),
         primary_keyword: editPrimaryKeyword.trim() || 'enterprise architecture',
@@ -880,6 +894,88 @@ export function AiTrendContentStudio({
                       onChange={(e) => setEditAuthorRole(e.target.value)}
                       className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-800"
                     />
+                  </div>
+                </div>
+
+                {/* Unique Cover Visual & AI Cover Generator */}
+                <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
+                      <ImageIcon className="h-3.5 w-3.5 text-[var(--gs-primary)]" />
+                      <span>Unique Article Cover Visual</span>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={generatingCover || !editTitle.trim()}
+                      onClick={async () => {
+                        setGeneratingCover(true);
+                        try {
+                          const coverRes = await api.generateArticleCover({
+                            title: editTitle,
+                            category: editCategory,
+                            primaryKeyword: editPrimaryKeyword,
+                            slug: editSlug,
+                            excludeUrls: [editCoverImage]
+                          });
+                          setEditCoverImage(coverRes.url);
+                          setEditCoverAlt(coverRes.alt);
+                        } catch {
+                          const altPick = pickUniqueCoverForArticle({
+                            title: editTitle,
+                            category: editCategory,
+                            keyword: editPrimaryKeyword,
+                            excludeUrls: [editCoverImage]
+                          });
+                          setEditCoverImage(altPick.url);
+                          setEditCoverAlt(altPick.alt);
+                        } finally {
+                          setGeneratingCover(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
+                    >
+                      <Sparkles className="h-3 w-3 text-[var(--gs-primary)]" />
+                      <span>{generatingCover ? 'Generating Cover...' : 'Generate Unique AI Cover'}</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                    <div className="sm:col-span-4 aspect-video rounded-md overflow-hidden border border-slate-200 bg-slate-100">
+                      <img
+                        src={editCoverImage}
+                        alt={editCoverAlt || editTitle}
+                        referrerPolicy="no-referrer"
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="sm:col-span-8 space-y-2">
+                      <select
+                        value={editCoverImage}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditCoverImage(val);
+                          const preset = EDITORIAL_COVER_POOL.find((p) => p.url === val);
+                          if (preset) setEditCoverAlt(`${editTitle || preset.label} — ${preset.label}`);
+                        }}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800"
+                      >
+                        {!EDITORIAL_COVER_POOL.some((p) => p.url === editCoverImage) && (
+                          <option value={editCoverImage}>AI-Generated Unique Cover</option>
+                        )}
+                        {EDITORIAL_COVER_POOL.map((p) => (
+                          <option key={p.id} value={p.url}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={editCoverAlt}
+                        onChange={(e) => setEditCoverAlt(e.target.value)}
+                        placeholder="Image alt description"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700"
+                      />
+                    </div>
                   </div>
                 </div>
 

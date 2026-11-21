@@ -56,7 +56,8 @@ const CATEGORY_LABELS: Record<InboxEmailLog['category'], string> = {
   qa_critical_alert: 'QA Critical Error Alert',
   ai_seo_daily_report: 'AI & SEO Daily Visibility Report',
   cybersec_daily_report: 'Cybersecurity Daily PDF Report',
-  cybersec_alert: 'Cybersecurity Threat Alert'
+  cybersec_alert: 'Cybersecurity Threat Alert',
+  demo_guard_alert: 'Demo Guard Isolation Alert'
 };
 
 export function InboxWorkspace({

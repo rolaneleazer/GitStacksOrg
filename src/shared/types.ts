@@ -229,7 +229,8 @@ export type AgentId =
   | 'cybersecurity'
   | 'qa'
   | 'adsense'
-  | 'traffic';
+  | 'traffic'
+  | 'demo_guard';
 
 export interface AgentRuleCheck {
   id: string;
@@ -1082,7 +1083,8 @@ export interface InboxEmailLog {
     | 'qa_critical_alert'
     | 'ai_seo_daily_report'
     | 'cybersec_daily_report'
-    | 'cybersec_alert';
+    | 'cybersec_alert'
+    | 'demo_guard_alert';
   related_id?: string | null;
   provider_message_id: string;
   status: 'sent' | 'failed';
@@ -2131,6 +2133,7 @@ export interface TrendApprovalBundle {
     quality_score: number;
     geo_score: number;
     publish_eligible: boolean;
+    cover_image?: string;
     faqs: ArticleFAQ[];
     references: ArticleReference[];
   };
@@ -2195,6 +2198,7 @@ export type WorkspaceModuleId =
   | 'resources'
   | 'qa'
   | 'cybersecurity'
+  | 'demo_guard'
   | 'articles'
   | 'users'
   | 'demo_users'
@@ -2253,4 +2257,77 @@ export interface ContactScanSummary {
   uniqueNames: Array<{ value: string; count: number; scopes: ContactRegistryScope[] }>;
   entries: ContactRegistryEntry[];
 }
+
+// --- Real-Time Demo Guard & Admin Parity Monitor Types ---
+
+export type DemoGuardCheckStatus = 'pass' | 'warning' | 'fail';
+
+export interface DemoGuardDriftItem {
+  file: string;
+  expectedHash: string;
+  actualHash: string;
+  status: 'matched' | 'modified' | 'missing';
+}
+
+export interface DemoGuardIsolationCheck {
+  id: string;
+  label: string;
+  status: DemoGuardCheckStatus;
+  detail: string;
+  metric: string;
+}
+
+export interface DemoGuardAdminParityCheck {
+  moduleId: WorkspaceModuleId;
+  moduleLabel: string;
+  endpoint: string;
+  status: DemoGuardCheckStatus;
+  httpStatus: number;
+  durationMs: number;
+  detail: string;
+}
+
+export interface DemoGuardAlertItem {
+  id: string;
+  severity: 'critical' | 'warning' | 'info';
+  kind:
+    | 'code_drift'
+    | 'isolation_leak'
+    | 'admin_parity_fail'
+    | 'baseline_sealed'
+    | 'audit_passed';
+  title: string;
+  detail: string;
+  affectedTarget: string;
+  emailSent: boolean;
+  emailRecipient: string;
+  emailStatus: string;
+  createdAt: string;
+  acknowledged: boolean;
+}
+
+export interface DemoGuardBaselineSnapshot {
+  sealedAt: string;
+  sealedBy: string;
+  overallHash: string;
+  fileHashes: Record<string, string>;
+  isolationSignature: string;
+}
+
+export interface DemoGuardDashboardResponse {
+  overallStatus: 'healthy' | 'warning' | 'critical';
+  demoScore: number;
+  adminParityScore: number;
+  lastScanAt: string | null;
+  baseline: DemoGuardBaselineSnapshot;
+  driftItems: DemoGuardDriftItem[];
+  isolationChecks: DemoGuardIsolationCheck[];
+  adminParityChecks: DemoGuardAdminParityCheck[];
+  alerts: DemoGuardAlertItem[];
+  unacknowledgedCount: number;
+  recipientEmail: string;
+  autoWatchEnabled: boolean;
+  autoEmailEnabled: boolean;
+}
+
 

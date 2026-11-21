@@ -503,6 +503,24 @@ export function GoogleTrendsPanel({
                           {selectedBundle.articleDraft.references.length} verified sources
                         </span>
                       </div>
+                      {selectedBundle.articleDraft.cover_image && (
+                        <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-2.5">
+                          <img
+                            src={selectedBundle.articleDraft.cover_image}
+                            alt={selectedBundle.articleDraft.title}
+                            referrerPolicy="no-referrer"
+                            className="h-14 w-24 rounded object-cover border border-slate-200 shrink-0"
+                          />
+                          <div className="min-w-0 text-[11px] text-slate-600">
+                            <div className="font-semibold text-slate-800">
+                              Unique Topic Cover Assigned
+                            </div>
+                            <div className="font-mono truncate">
+                              {selectedBundle.articleDraft.cover_image}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <input
                         type="text"
                         value={editTitle}
@@ -520,9 +538,21 @@ export function GoogleTrendsPanel({
                     {/* Social Media Posts (FB + TikTok) */}
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <div className="text-xs font-bold text-[#1877F2]">
-                          2. Facebook Page Promotional Post
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-[#1877F2]">
+                            2. Facebook Page Promotional Post
+                          </span>
                         </div>
+                        {selectedBundle.facebookPost.coverImage && (
+                          <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                            <img
+                              src={selectedBundle.facebookPost.coverImage}
+                              alt={selectedBundle.facebookPost.headline}
+                              referrerPolicy="no-referrer"
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                        )}
                         <textarea
                           rows={5}
                           value={editFbCaption}
@@ -535,9 +565,21 @@ export function GoogleTrendsPanel({
                       </div>
 
                       <div className="space-y-2">
-                        <div className="text-xs font-bold text-slate-900">
-                          3. TikTok Short Caption &amp; Hook
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-slate-900">
+                            3. TikTok Short Caption &amp; Hook
+                          </span>
                         </div>
+                        {selectedBundle.tiktokPost.coverImage && (
+                          <div className="aspect-video w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                            <img
+                              src={selectedBundle.tiktokPost.coverImage}
+                              alt={selectedBundle.tiktokPost.hook}
+                              referrerPolicy="no-referrer"
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                        )}
                         <textarea
                           rows={5}
                           value={editTtCaption}

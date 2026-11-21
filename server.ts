@@ -7,6 +7,7 @@ import { getExpressApp } from './src/server/app.ts';
 import { startChatWatcherLoop } from './src/server/chatWatcher.ts';
 import { startCloudflareAutoSnapshotLoop } from './src/server/cloudflareHistory.ts';
 import { startCyberSecurityLoop } from './src/server/cyberSecurity.ts';
+import { startDemoGuardLoop } from './src/server/demoGuardService.ts';
 import { startQaMonitorLoop } from './src/server/qaMonitor.ts';
 import { attachRealtimeHub } from './src/server/realtime.ts';
 import { verifyEditorToken } from './src/server/repository.ts';
@@ -44,6 +45,7 @@ async function startServer() {
   startQaMonitorLoop();
   startAiSearchVisibilityLoop();
   startCyberSecurityLoop();
+  startDemoGuardLoop();
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`GitStack server running on http://0.0.0.0:${PORT}`);

@@ -644,3 +644,250 @@ export function simulateDemoAiResearch(lead: CrmLead): CrmLead {
     updated_at: now
   };
 }
+
+export interface DemoBackOfficeSearchUrl {
+  url: string;
+  title: string;
+  metaDescription: string;
+  primaryKeyword: string;
+  seoScore: number;
+  googleIndexed: boolean;
+  bingIndexed: boolean;
+  aiSearchReady: boolean;
+  monthlyClicks: number;
+  avgPosition: number;
+  aiSuggestions: string[];
+}
+
+export interface DemoBackOfficeSocialPost {
+  id: string;
+  dayLabel: string;
+  platform: 'facebook' | 'tiktok';
+  headline: string;
+  caption: string;
+  hashtags: string[];
+  ctaUrl: string;
+  status: 'scheduled' | 'simulated_published';
+  coverImage: string;
+}
+
+export interface DemoBackOfficeTrendBundle {
+  id: string;
+  trendTitle: string;
+  region: string;
+  trafficLabel: string;
+  status: 'pending_approval' | 'approved_simulated' | 'rejected_simulated';
+  articleTitle: string;
+  articleCategory: ServiceCategory;
+  wordCount: number;
+  qualityScore: number;
+  fbHeadline: string;
+  ttHook: string;
+  coverImage: string;
+}
+
+export interface DemoBackOfficeContactEntry {
+  id: string;
+  scope: 'page' | 'article' | 'module';
+  scopeTitle: string;
+  kind: 'email' | 'phone' | 'name';
+  fieldLabel: string;
+  value: string;
+}
+
+export function createInitialDemoBackOfficeState() {
+  return {
+    brandName: 'GitStack Sandbox Corp',
+    brandColor: '#4338CA',
+    homeHeroTitle: 'Enterprise AI Integration & Cloud Systems Built for Scale',
+    homeHeroSubtitle:
+      'Production-hardened RAG copilots, automated BIR EIS compliance, and cloud FinOps infrastructure delivered in 14-day sprints.',
+    searchUrls: [
+      {
+        url: 'https://sandbox.git-stack.org/',
+        title: 'GitStack | Enterprise AI Integration & Custom Cloud Engineering',
+        metaDescription:
+          'Turnkey AI RAG pipelines, MLOps automation, BIR EIS invoicing, and dedicated AWS/PostgreSQL systems.',
+        primaryKeyword: 'enterprise AI integration',
+        seoScore: 96,
+        googleIndexed: true,
+        bingIndexed: true,
+        aiSearchReady: true,
+        monthlyClicks: 1840,
+        avgPosition: 2.4,
+        aiSuggestions: [
+          'Add concrete ROI case study metrics (e.g., 42% faster invoice settlement) above the fold.',
+          'Keep SoftwareApplication JSON-LD linked to /demo for direct rich snippet eligibility.'
+        ]
+      },
+      {
+        url: 'https://sandbox.git-stack.org/insights/enterprise-rag-pipelines',
+        title: 'Architecting Production RAG Pipelines with Zero-Trust RBAC | GitStack',
+        metaDescription:
+          'Blueprint for hybrid BM25 + vector retrieval, tenant ACL filtering, and sub-350ms p95 citation checks.',
+        primaryKeyword: 'production RAG pipelines',
+        seoScore: 94,
+        googleIndexed: true,
+        bingIndexed: true,
+        aiSearchReady: true,
+        monthlyClicks: 1120,
+        avgPosition: 3.1,
+        aiSuggestions: [
+          'Expand benchmark table with cross-encoder latency numbers for 100k chunks.',
+          'Link internally to /demo interactive AI Concierge sandbox for conversion uplift.'
+        ]
+      },
+      {
+        url: 'https://sandbox.git-stack.org/demo',
+        title: 'Live B2B SaaS Product Demos & Interactive Back Office | GitStack',
+        metaDescription:
+          'Test-drive Inventory Sync, BIR E-Invoicing, AI Support Concierge, FlowCRM, and Back Office OS.',
+        primaryKeyword: 'B2B SaaS interactive demo',
+        seoScore: 91,
+        googleIndexed: true,
+        bingIndexed: false,
+        aiSearchReady: true,
+        monthlyClicks: 640,
+        avgPosition: 5.8,
+        aiSuggestions: [
+          'Submit updated /sitemap.xml to Bing Webmaster Tools to accelerate demo URL indexing.',
+          'Include explicit FAQPage JSON-LD covering 24-hour sandbox security guarantees.'
+        ]
+      }
+    ] as DemoBackOfficeSearchUrl[],
+    socialSchedule: [
+      {
+        id: 'demo-soc-1',
+        dayLabel: 'Mon · Day 1',
+        platform: 'facebook',
+        headline: 'Stop Overselling Across Shopee, Lazada & TikTok Shop',
+        caption:
+          'See how real-time webhook inventory locking prevents negative stockouts during 11.11 & payday flash sales. Try the interactive demo free.',
+        hashtags: ['#OmnichannelERP', '#PhilippinesSME', '#GitStack'],
+        ctaUrl: 'https://sandbox.git-stack.org/demo#inventory_sync',
+        status: 'scheduled',
+        coverImage: '/src/assets/images/cover_custom_software_1795220240531.jpg'
+      },
+      {
+        id: 'demo-soc-2',
+        dayLabel: 'Tue · Day 2',
+        platform: 'tiktok',
+        headline: '60-Second BIR EIS JSON Signing Breakdown',
+        caption:
+          'Automated 12% VAT validation + JWS cryptographic signing straight from your POS/ERP without manual spreadsheet uploads.',
+        hashtags: ['#BIREIS', '#FinTechPH', '#SoftwareEngineering'],
+        ctaUrl: 'https://sandbox.git-stack.org/demo#einvoice',
+        status: 'scheduled',
+        coverImage: '/src/assets/images/cover_trend_social_1795220240530.jpg'
+      },
+      {
+        id: 'demo-soc-3',
+        dayLabel: 'Wed · Day 3',
+        platform: 'facebook',
+        headline: 'Cut LLM API Spend by 55% With Tiered Semantic Caching',
+        caption:
+          'Why routing simple support queries to smaller models before calling frontier reasoning models protects SaaS margins.',
+        hashtags: ['#AIEngineering', '#LLMOps', '#CloudFinOps'],
+        ctaUrl: 'https://sandbox.git-stack.org/demo#ai_concierge',
+        status: 'simulated_published',
+        coverImage: '/src/assets/images/cover_data_analytics_1795220240573.jpg'
+      }
+    ] as DemoBackOfficeSocialPost[],
+    trendQueue: [
+      {
+        id: 'demo-trb-1',
+        trendTitle: 'BIR EIS 2026 Automated Electronic Invoicing API',
+        region: 'PH',
+        trafficLabel: 'Breakout · +420%',
+        status: 'pending_approval',
+        articleTitle: 'Implementing Compliant BIR EIS JWS Signing Pipelines in Node.js',
+        articleCategory: 'Custom Software',
+        wordCount: 1180,
+        qualityScore: 95,
+        fbHeadline: 'Ready for BIR Electronic Invoicing Audits?',
+        ttHook: '3 bugs that break BIR EIS JSON transmission before launch',
+        coverImage: '/src/assets/images/cover_technical_consulting_1795220239502.jpg'
+      },
+      {
+        id: 'demo-trb-2',
+        trendTitle: 'Zero-Trust Row-Level Security for Enterprise AI Agents',
+        region: 'GLOBAL',
+        trafficLabel: 'Surging · +210%',
+        status: 'pending_approval',
+        articleTitle: 'Pre-Retrieval Tenant ACLs for Multi-Department AI Copilots',
+        articleCategory: 'AI Integration',
+        wordCount: 1340,
+        qualityScore: 97,
+        fbHeadline: 'Stop AI Copilots From Leaking Restricted Payroll Files',
+        ttHook: 'How enterprise teams lock down RAG vector search in 4 lines',
+        coverImage: '/src/assets/images/cover_security_devops_1795220240902.jpg'
+      }
+    ] as DemoBackOfficeTrendBundle[],
+    contactRegistry: [
+      {
+        id: 'demo-cnt-1',
+        scope: 'page',
+        scopeTitle: 'Public Contact & Legal Pages',
+        kind: 'email',
+        fieldLabel: 'Sandbox Sales Inquiries',
+        value: 'sandbox-demo@git-stack.org'
+      },
+      {
+        id: 'demo-cnt-2',
+        scope: 'page',
+        scopeTitle: 'Public Contact & Legal Pages',
+        kind: 'phone',
+        fieldLabel: 'Simulated Hotline',
+        value: '+1 (555) 019-2834'
+      },
+      {
+        id: 'demo-cnt-3',
+        scope: 'article',
+        scopeTitle: 'Technical Insights Authors',
+        kind: 'name',
+        fieldLabel: 'Sample Principal Architect',
+        value: 'Alex Rivera (Demo Author)'
+      },
+      {
+        id: 'demo-cnt-4',
+        scope: 'module',
+        scopeTitle: 'Alert Notification Target',
+        kind: 'email',
+        fieldLabel: 'Demo Notification Target',
+        value: 'alerts-sandbox@git-stack.org'
+      }
+    ] as DemoBackOfficeContactEntry[],
+    analyticsMetrics: {
+      periodLabel: 'Last 30 Days (Synthetic Sample)',
+      pageviews: 18420,
+      uniqueVisitors: 6290,
+      conversionRate: '4.6%',
+      cloudflareRequests24h: 48210,
+      cloudflareCacheHit: '89.4%',
+      gtmEventsLogged: 3140
+    },
+    chatMessages: [
+      {
+        id: 'demo-msg-1',
+        sender: 'visitor',
+        author: 'Carla Mendoza (Retail Ops)',
+        text: 'Can your Inventory Sync handle 40+ SKUs across two Shopee stores cleanly?',
+        time: '10:14 AM'
+      },
+      {
+        id: 'demo-msg-2',
+        sender: 'operator',
+        author: 'Sandbox Operator',
+        text: 'Yes—multi-store OAuth tokens isolate per-shop inventory pools with sub-second lock reconciliation.',
+        time: '10:16 AM'
+      }
+    ],
+    guardStatus: {
+      isolationVerified: true,
+      adminCallsBlocked: 0,
+      baselineHash: 'sha256:9f84b2...sandbox',
+      message: 'Live Demo Back Office running strictly inside browser memory. Zero live database writes.'
+    }
+  };
+}
+

@@ -137,7 +137,8 @@ const LOUNGE_SLOTS: { dx: number; dy: number }[] = [
   { dx: 0.3, dy: 0.5 },
   { dx: -0.3, dy: 1.1 },
   { dx: 0.9, dy: -0.1 },
-  { dx: -0.2, dy: -1.1 }
+  { dx: -0.2, dy: -1.1 },
+  { dx: 0.9, dy: 0.9 }
 ];
 
 // Continuous multi-waypoint patrol paths for 1-second live walking across the HQ floor
@@ -211,6 +212,16 @@ const AGENT_PATROL_CIRCUITS: Record<AgentId, { x: number; y: number }[]> = {
     { x: 7.8, y: 5.0 },
     { x: 8.9, y: 4.9 },
     { x: 10.4, y: 5.3 }
+  ],
+  demo_guard: [
+    { x: 8.5, y: 2.9 },
+    { x: 9.4, y: 2.8 },
+    { x: 10.2, y: 2.2 },
+    { x: 9.5, y: 1.5 },
+    { x: 8.4, y: 1.7 },
+    { x: 7.9, y: 2.4 },
+    { x: 8.1, y: 3.1 },
+    { x: 8.5, y: 2.9 }
   ]
 };
 

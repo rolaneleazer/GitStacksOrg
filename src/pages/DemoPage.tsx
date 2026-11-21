@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { AiConciergeDemo } from '../components/demo/AiConciergeDemo.tsx';
+import { DemoBackOfficeShowcase } from '../components/demo/DemoBackOfficeShowcase.tsx';
 import { EInvoicePortalDemo } from '../components/demo/EInvoicePortalDemo.tsx';
 import { FlowCrmChaserDemo } from '../components/demo/FlowCrmChaserDemo.tsx';
 import { InventorySyncDemo } from '../components/demo/InventorySyncDemo.tsx';
@@ -44,7 +45,12 @@ interface DemoPageProps {
   onNavigate: (path: string) => void;
 }
 
-export type DemoProductKey = 'inventory_sync' | 'einvoice' | 'ai_concierge' | 'flowcrm';
+export type DemoProductKey =
+  | 'inventory_sync'
+  | 'einvoice'
+  | 'ai_concierge'
+  | 'flowcrm'
+  | 'back_office';
 
 interface DemoProductMeta {
   key: DemoProductKey;
@@ -92,6 +98,16 @@ const DEMO_PRODUCTS: DemoProductMeta[] = [
     badge: 'Revenue Operations',
     icon: TrendingUp,
     accentColor: 'text-violet-600'
+  },
+  {
+    key: 'back_office',
+    title: 'GitStack Back Office OS',
+    shortLabel: 'Back Office OS',
+    tagline:
+      'Clickable 27-module Operations, SEO, Social, CRM, Analytics & AI Agent Command Center (mock read-only simulation)',
+    badge: 'SaaS Operations OS',
+    icon: Layers,
+    accentColor: 'text-emerald-600'
   }
 ];
 
@@ -156,6 +172,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
       if (tabParam === 'concierge' || tabParam === 'ai') return 'ai_concierge';
       if (tabParam === 'crm' || tabParam === 'flowcrm') return 'flowcrm';
       if (tabParam === 'inventory' || tabParam === 'sync') return 'inventory_sync';
+      if (tabParam === 'backoffice' || tabParam === 'back_office') return 'back_office';
     }
     return 'inventory_sync';
   };
@@ -167,7 +184,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
     applySeoMetadata({
       title: 'Interactive B2B SaaS Product Demos | GitStack',
       description:
-        'Test-drive 4 turnkey SME software systems engineered by GitStack: Omnichannel Inventory Sync, BIR EIS E-Invoicing, AI Concierge Lead Gen, and FlowCRM with Automated Invoice Chaser. Requires 24-hour business evaluation pass.',
+        'Test-drive 5 turnkey SME software systems engineered by GitStack: Omnichannel Inventory Sync, BIR EIS E-Invoicing, AI Concierge Lead Gen, FlowCRM with Automated Invoice Chaser, and Back Office OS. Requires 24-hour business evaluation pass.',
       path: '/demo'
     });
   }, []);
@@ -503,12 +520,12 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-2xl mx-auto">
             Interactive sandbox environments are reserved for business evaluators. Create your
             corporate evaluation account to receive a <strong>24-hour evaluation pass</strong> to test-drive
-            all 4 turnkey enterprise systems.
+            all 5 turnkey enterprise systems.
           </p>
         </div>
 
-        {/* 4 Systems Preview Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* 5 Systems Preview Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {DEMO_PRODUCTS.map((prod) => {
             const Icon = prod.icon;
             return (
@@ -809,7 +826,7 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
 
           {/* 2. MASTER PRODUCT TAB SWITCHER */}
           <div className="pt-2">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
               {DEMO_PRODUCTS.map((prod) => {
                 const Icon = prod.icon;
                 const active = activeProduct === prod.key;
@@ -865,6 +882,9 @@ export function DemoPage({ onNavigate }: DemoPageProps) {
           )}
           {activeProduct === 'flowcrm' && (
             <FlowCrmChaserDemo onCtaClick={handleCtaClick} />
+          )}
+          {activeProduct === 'back_office' && (
+            <DemoBackOfficeShowcase onCtaClick={handleCtaClick} />
           )}
         </div>
 

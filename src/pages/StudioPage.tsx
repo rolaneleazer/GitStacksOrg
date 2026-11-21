@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Tags,
@@ -52,6 +53,7 @@ import { ContactRegistryPanel } from '../components/backoffice/ContactRegistryPa
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
 import { CyberSecurityPanel } from '../components/backoffice/CyberSecurityPanel.tsx';
 import { DataExplorerPanel } from '../components/backoffice/DataExplorerPanel.tsx';
+import { DemoGuardPanel } from '../components/backoffice/DemoGuardPanel.tsx';
 import { DemoUsersDashboardPanel } from '../components/backoffice/DemoUsersDashboardPanel.tsx';
 import { GoogleTrendsPanel } from '../components/backoffice/GoogleTrendsPanel.tsx';
 import { InboxWorkspace } from '../components/backoffice/InboxWorkspace.tsx';
@@ -78,6 +80,7 @@ import {
   getStoredToken
 } from '../lib/api.ts';
 import { applySeoMetadata } from '../lib/seo.ts';
+import { EDITORIAL_COVER_POOL, pickUniqueCoverForArticle } from '../shared/editorialCovers.ts';
 import { buildArticleJsonLd, evaluateArticleQuality, slugify } from '../shared/qualityGate.ts';
 import { DEFAULT_ADSENSE_SETTINGS } from '../shared/seedData.ts';
 import type {
@@ -146,6 +149,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'resources',
     'qa',
     'cybersecurity',
+    'demo_guard',
     'articles',
     'users',
     'demo_users',
@@ -172,6 +176,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'resources',
     'qa',
     'cybersecurity',
+    'demo_guard',
     'profile'
   ],
   support_agent: [
@@ -193,26 +198,19 @@ const ROLE_LABELS: Record<UserRole, string> = {
   support_agent: 'Support Agent'
 };
 
-const COVER_PRESETS = [
-  {
-    label: 'Optical Prism (AI & Systems)',
-    url: '/src/assets/images/insight_cover_ai_agents_1794645171607.jpg'
-  },
-  {
-    label: 'Isometric ML Pipeline',
-    url: '/src/assets/images/ai_ml_pipeline_visual_1794645170877.jpg'
-  },
-  {
-    label: 'Cloud Engineering Desk',
-    url: '/src/assets/images/cloud_infra_architecture_1794645172181.jpg'
-  },
-  {
-    label: 'GitStack Architecture Studio',
-    url: '/src/assets/images/hero_gitstack_architecture_1794645171609.jpg'
-  }
-];
+const COVER_PRESETS = EDITORIAL_COVER_POOL.map((p) => ({
+  label: p.label,
+  url: p.url
+}));
 
-function createEmptyDraft(): Partial<Article> {
+function createEmptyDraft(existingPosts: Article[] = []): Partial<Article> {
+  const uniqueCover = pickUniqueCoverForArticle({
+    title: 'Enterprise Architecture Blueprint: Production Reliability & Cloud FinOps Guide',
+    category: 'AI Integration',
+    keyword: 'enterprise cloud architecture',
+    usedCovers: existingPosts.map((p) => p.cover_image).filter(Boolean)
+  });
+
   return {
     title: 'Enterprise Architecture Blueprint: Production Reliability & Cloud FinOps Guide',
     slug: 'enterprise-architecture-blueprint-production-reliability-finops',
@@ -223,9 +221,8 @@ function createEmptyDraft(): Partial<Article> {
     author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
       'Principal Cloud Architect with 13+ years of experience designing high-throughput backend systems, MLOps pipelines, and enterprise compliance architectures.',
-    cover_image: COVER_PRESETS[0].url,
-    cover_alt:
-      'Geometric optical glass prisms refracting cobalt blue light on a white studio surface',
+    cover_image: uniqueCover.url,
+    cover_alt: uniqueCover.alt,
     meta_title: 'Enterprise Cloud Architecture & FinOps Blueprint | GitStack',
     meta_description:
       'Step-by-step GitStack production architecture guide covering connection pooling, transactional outbox pipelines, observability, and cloud FinOps controls.',
@@ -369,9 +366,11 @@ export function StudioPage({
   const [adSenseForm, setAdSenseForm] = useState<AdSenseSettings>(DEFAULT_ADSENSE_SETTINGS);
 
   // Editor state
-  const [draft, setDraft] = useState<Partial<Article>>(createEmptyDraft);
+  const [draft, setDraft] = useState<Partial<Article>>(() => createEmptyDraft());
   const [previewMode, setPreviewMode] = useState<'write' | 'preview' | 'schema'>('write');
   const [savingPost, setSavingPost] = useState(false);
+  const [generatingArticleCover, setGeneratingArticleCover] = useState(false);
+  const [deduplicatingCovers, setDeduplicatingCovers] = useState(false);
   const [postMessage, setPostMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [savingAdSense, setSavingAdSense] = useState(false);
@@ -702,7 +701,7 @@ export function StudioPage({
   const handleDeleteArticle = async (id: string) => {
     try {
       await api.deletePost(id);
-      if (draft.id === id) setDraft(createEmptyDraft());
+      if (draft.id === id) setDraft(createEmptyDraft(posts.filter((p) => p.id !== id)));
       await loadWorkspaceData(analyticsRange);
       onArticlesChanged();
     } catch (err) {
@@ -1237,7 +1236,7 @@ export function StudioPage({
   }
 
   const allNavItems: StudioNavDescriptor[] = [
-    { id: 'agents', defaultLabel: 'Overview & 7 Agents', icon: Bot, count: agents.length || 7 },
+    { id: 'agents', defaultLabel: 'Overview & 8 Agents', icon: Bot, count: agents.length || 8 },
     { id: 'crm', defaultLabel: 'CRM & Prospecting', icon: Briefcase },
     { id: 'pages', defaultLabel: 'Page Content Editor', icon: FileEdit },
     { id: 'contact_registry', defaultLabel: 'Emails, Phones & Names', icon: Contact2 },
@@ -1267,6 +1266,7 @@ export function StudioPage({
     { id: 'resources', defaultLabel: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'qa', defaultLabel: 'Product QA & Logs', icon: Bug },
     { id: 'cybersecurity', defaultLabel: 'Cybersecurity & AI Sentinel', icon: Shield },
+    { id: 'demo_guard', defaultLabel: 'Demo Guard & Alerts', icon: ShieldAlert },
     { id: 'articles', defaultLabel: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', defaultLabel: 'User Access', icon: UserCog, count: teamUsers.length },
     { id: 'demo_users', defaultLabel: 'Demo Users & Leads', icon: UserCheck },
@@ -1601,6 +1601,15 @@ export function StudioPage({
             />
           )}
 
+          {/* PANEL 5E: LIVE DEMO GUARD, ISOLATION SENTINEL & ADMIN PARITY */}
+          {currentTab === 'demo_guard' && (
+            <DemoGuardPanel
+              onJumpToSettings={
+                currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
+              }
+            />
+          )}
+
           {/* PANEL 8: USER ACCESS MANAGEMENT (SUPER ADMIN) */}
           {currentTab === 'users' && (
             <UserAccessPanel
@@ -1677,17 +1686,53 @@ export function StudioPage({
                     <h2 className="font-display text-sm font-bold text-slate-900">
                       Managed Engineering Guides ({posts.length})
                     </h2>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDraft(createEmptyDraft());
-                        setPostMessage(null);
-                      }}
-                      className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>New Guide</span>
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={deduplicatingCovers || posts.length === 0}
+                        onClick={async () => {
+                          setDeduplicatingCovers(true);
+                          setPostMessage(null);
+                          try {
+                            const res = await api.deduplicateArticleCovers();
+                            setPosts(res.posts);
+                            onArticlesChanged();
+                            setPostMessage({
+                              type: 'ok',
+                              text:
+                                res.updatedCount > 0
+                                  ? `Assigned distinct topic cover visuals across ${res.updatedCount} article(s).`
+                                  : 'All articles already use distinct cover images.'
+                            });
+                          } catch (err) {
+                            setPostMessage({
+                              type: 'err',
+                              text:
+                                err instanceof Error
+                                  ? err.message
+                                  : 'Unable to deduplicate article covers.'
+                            });
+                          } finally {
+                            setDeduplicatingCovers(false);
+                          }
+                        }}
+                        className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <Sparkles className="h-3.5 w-3.5 text-[var(--gs-primary)]" />
+                        <span>{deduplicatingCovers ? 'Assigning Covers...' : 'Deduplicate Covers'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraft(createEmptyDraft(posts));
+                          setPostMessage(null);
+                        }}
+                        className="min-h-[40px] inline-flex items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)]"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>New Guide</span>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-4 divide-y divide-slate-200 border-t border-slate-200">
@@ -2009,36 +2054,103 @@ export function StudioPage({
                             className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
                           />
                         </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700">
-                            Cover Image
-                          </label>
-                          <select
-                            value={draft.cover_image || COVER_PRESETS[0].url}
-                            onChange={(e) =>
-                              setDraft((d) => ({ ...d, cover_image: e.target.value }))
-                            }
-                            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
-                          >
-                            {COVER_PRESETS.map((c) => (
-                              <option key={c.url} value={c.url}>
-                                {c.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700">
-                            Image Alt Description
-                          </label>
-                          <input
-                            type="text"
-                            value={draft.cover_alt || ''}
-                            onChange={(e) =>
-                              setDraft((d) => ({ ...d, cover_alt: e.target.value }))
-                            }
-                            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
-                          />
+                        <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-slate-800">
+                              Unique Cover Image &amp; AI Generator
+                            </span>
+                            <button
+                              type="button"
+                              disabled={generatingArticleCover || !draft.title?.trim()}
+                              onClick={async () => {
+                                setGeneratingArticleCover(true);
+                                try {
+                                  const res = await api.generateArticleCover({
+                                    title: draft.title || 'GitStack Architecture Guide',
+                                    category: draft.category,
+                                    primaryKeyword: draft.primary_keyword,
+                                    slug: draft.slug,
+                                    excludeUrls: [
+                                      ...(draft.cover_image ? [draft.cover_image] : []),
+                                      ...posts
+                                        .filter((p) => p.id !== draft.id)
+                                        .map((p) => p.cover_image)
+                                        .filter(Boolean)
+                                    ]
+                                  });
+                                  setDraft((d) => ({
+                                    ...d,
+                                    cover_image: res.url,
+                                    cover_alt: res.alt
+                                  }));
+                                } catch {
+                                  const altPick = pickUniqueCoverForArticle({
+                                    title: draft.title || 'GitStack Architecture Guide',
+                                    category: draft.category,
+                                    keyword: draft.primary_keyword,
+                                    usedCovers: posts.map((p) => p.cover_image).filter(Boolean),
+                                    excludeUrls: draft.cover_image ? [draft.cover_image] : []
+                                  });
+                                  setDraft((d) => ({
+                                    ...d,
+                                    cover_image: altPick.url,
+                                    cover_alt: altPick.alt
+                                  }));
+                                } finally {
+                                  setGeneratingArticleCover(false);
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-50"
+                            >
+                              <Sparkles className="h-3 w-3 text-[var(--gs-primary)]" />
+                              <span>
+                                {generatingArticleCover
+                                  ? 'Generating AI Cover...'
+                                  : 'Generate Unique AI Cover'}
+                              </span>
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                            <div className="sm:col-span-4 aspect-video rounded-md overflow-hidden border border-slate-200 bg-slate-100">
+                              <img
+                                src={draft.cover_image || COVER_PRESETS[0].url}
+                                alt={draft.cover_alt || draft.title || 'Cover preview'}
+                                referrerPolicy="no-referrer"
+                                className="h-full w-full object-cover"
+                              />
+                            </div>
+                            <div className="sm:col-span-8 grid grid-cols-1 gap-2">
+                              <select
+                                value={draft.cover_image || COVER_PRESETS[0].url}
+                                onChange={(e) =>
+                                  setDraft((d) => ({ ...d, cover_image: e.target.value }))
+                                }
+                                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
+                              >
+                                {draft.cover_image &&
+                                  !COVER_PRESETS.some((c) => c.url === draft.cover_image) && (
+                                    <option value={draft.cover_image}>
+                                      AI-Generated Unique Cover ({draft.cover_image.split('/').pop()})
+                                    </option>
+                                  )}
+                                {COVER_PRESETS.map((c) => (
+                                  <option key={c.url} value={c.url}>
+                                    {c.label}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                value={draft.cover_alt || ''}
+                                onChange={(e) =>
+                                  setDraft((d) => ({ ...d, cover_alt: e.target.value }))
+                                }
+                                placeholder="Image Alt Description"
+                                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
 

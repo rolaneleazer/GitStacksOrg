@@ -23,6 +23,7 @@ export const ALL_WORKSPACE_MODULE_IDS: WorkspaceModuleId[] = [
   'resources',
   'qa',
   'cybersecurity',
+  'demo_guard',
   'data_explorer',
   'users',
   'adsense',
@@ -52,6 +53,7 @@ export const DEFAULT_MODULE_LABELS: Record<WorkspaceModuleId, string> = {
   resources: 'Vercel & Supabase Monitor',
   qa: 'Product QA & Logs',
   cybersecurity: 'Cybersecurity & AI Sentinel',
+  demo_guard: 'Demo Guard & Alerts',
   data_explorer: 'Data & Tables',
   users: 'User Access',
   adsense: 'Settings & Integrations',
@@ -94,7 +96,7 @@ export function createDefaultWorkspaceCategories(): WorkspaceCategoryConfig[] {
       id: 'cat-system',
       name: 'Platform, Security & Admin',
       collapsed: false,
-      moduleIds: ['resources', 'qa', 'cybersecurity', 'data_explorer', 'users', 'adsense', 'profile']
+      moduleIds: ['resources', 'qa', 'cybersecurity', 'demo_guard', 'data_explorer', 'users', 'adsense', 'profile']
     }
   ];
 }

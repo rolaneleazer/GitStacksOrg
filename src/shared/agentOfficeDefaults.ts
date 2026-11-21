@@ -55,7 +55,7 @@ export const OFFICE_ROOMS: OfficeRoomZone[] = [
   {
     id: 'security',
     label: 'CYBER & CLOUD LAB',
-    agentIds: ['cybersecurity', 'qa'],
+    agentIds: ['cybersecurity', 'qa', 'demo_guard'],
     x: 8.1,
     y: 0.6,
     w: 3.3,
@@ -165,17 +165,31 @@ export const DEFAULT_AGENT_OFFICE_PROFILES: AgentOfficeProfile[] = [
     work_status: 'working',
     current_mission: 'Track <24h client inquiry triage SLA and Lark Mail consultation invites',
     updated_at: '2026-11-15T00:00:00Z'
+  },
+  {
+    agent_id: 'demo_guard',
+    display_name: 'Sentry (Demo Guard)',
+    custom_role: 'Live Demo Isolation & Admin Parity Sentinel',
+    avatar_icon: 'bot',
+    accent_color: '#0F766E',
+    desk_label: 'Cyber & Cloud Lab',
+    desk_x: 8.5,
+    desk_y: 2.9,
+    work_status: 'working',
+    current_mission: 'Watch /demo code & behavior for zero production mutations and verify Admin module parity in real time',
+    updated_at: '2026-11-15T00:00:00Z'
   }
 ];
 
 export const AGENT_COLLABORATION_MAP: Record<AgentId, AgentId[]> = {
-  ceo: ['adsense', 'booking', 'cybersecurity', 'traffic'],
+  ceo: ['adsense', 'booking', 'cybersecurity', 'traffic', 'demo_guard'],
   marketing: ['traffic', 'booking', 'qa'],
   booking: ['ceo', 'marketing', 'cybersecurity'],
-  cybersecurity: ['ceo', 'qa', 'adsense'],
-  qa: ['adsense', 'marketing', 'cybersecurity'],
+  cybersecurity: ['ceo', 'qa', 'adsense', 'demo_guard'],
+  qa: ['adsense', 'marketing', 'cybersecurity', 'demo_guard'],
   adsense: ['qa', 'ceo', 'traffic'],
-  traffic: ['marketing', 'adsense', 'ceo']
+  traffic: ['marketing', 'adsense', 'ceo'],
+  demo_guard: ['cybersecurity', 'qa', 'ceo']
 };
 
 export const SEED_AGENT_CONVERSATIONS: AgentConversationEntry[] = [
@@ -255,6 +269,17 @@ export const SEED_AGENT_CONVERSATIONS: AgentConversationEntry[] = [
       'llms.txt, llms-full.txt, and sitemap.xml are live and returning HTTP 200. Watching GA4 consent activation.',
     finding_status: 'info',
     created_at: '2026-11-15T01:22:00Z'
+  },
+  {
+    id: 'ac-seed-8',
+    agent_id: 'demo_guard',
+    peer_agent_id: 'cybersecurity',
+    sender_type: 'agent',
+    sender_name: 'Sentry (Demo Guard)',
+    message:
+      'Live Demo Back Office Showcase is cryptographically fingerprinted and isolated (zero admin mutations). Real Admin modules verified online.',
+    finding_status: 'nominal',
+    created_at: '2026-11-15T01:24:00Z'
   }
 ];
 
@@ -264,7 +289,7 @@ export const DEFAULT_AGENT_REPORT_SETTINGS: AgentReportSettings = {
   recipient_email: 'gitstackitsolution@gmail.com',
   send_hour_utc: 8,
   preferred_channel: 'lark_smtp',
-  include_agents: ['ceo', 'marketing', 'booking', 'cybersecurity', 'qa', 'adsense', 'traffic'],
+  include_agents: ['ceo', 'marketing', 'booking', 'cybersecurity', 'qa', 'adsense', 'traffic', 'demo_guard'],
   last_sent_at: null,
   updated_at: '2026-11-15T00:00:00Z'
 };

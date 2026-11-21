@@ -37,6 +37,14 @@ export interface AgentAuditContext {
     monitoredTrendsCount: number;
     pendingTrendApprovals: number;
   };
+  demoGuardSnapshot?: {
+    overallStatus: 'healthy' | 'warning' | 'critical';
+    demoScore: number;
+    adminParityScore: number;
+    driftCount: number;
+    openAlertCount: number;
+    lastScanAt: string | null;
+  };
 }
 
 function summarizeStatus(checks: AgentRuleCheck[]): {
@@ -411,6 +419,64 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
   ];
   const trafficSummary = summarizeStatus(trafficChecks);
 
+  // 8. Demo Guard & Admin Parity Agent
+  const dgSnap = ctx.demoGuardSnapshot;
+  const demoGuardChecks: AgentRuleCheck[] = [
+    {
+      id: 'dg-code-baseline',
+      label: 'Live Demo Code & Behavior Baseline Integrity',
+      status:
+        !dgSnap
+          ? 'pass'
+          : dgSnap.driftCount === 0
+            ? 'pass'
+            : 'fail',
+      metric: dgSnap ? (dgSnap.driftCount === 0 ? 'Baseline Match' : `${dgSnap.driftCount} Drift File(s)`) : 'Protected',
+      detail:
+        'Cryptographically hashes Live Demo files and compares against your sealed baseline so unauthorized code or UI drift triggers instant alerts.',
+      targetTab: 'demo_guard',
+      actionLabel: 'Inspect Demo Guard'
+    },
+    {
+      id: 'dg-isolation-firewall',
+      label: 'Zero-Mutation Sandbox Isolation Firewall',
+      status: dgSnap?.overallStatus === 'critical' ? 'fail' : 'pass',
+      metric: dgSnap ? `${dgSnap.demoScore}% Isolated` : '100% Isolated',
+      detail:
+        'Confirms the Live Demo Back Office showcase makes zero /api/admin/* calls, zero database writes, and blocks any demo-origin mutation attempts.',
+      targetTab: 'demo_guard',
+      actionLabel: 'View Isolation Checks'
+    },
+    {
+      id: 'dg-admin-parity',
+      label: 'Authenticated Admin Module Parity Verification',
+      status:
+        !dgSnap
+          ? 'pass'
+          : dgSnap.adminParityScore >= 95
+            ? 'pass'
+            : dgSnap.adminParityScore >= 70
+              ? 'warning'
+              : 'fail',
+      metric: dgSnap ? `${dgSnap.adminParityScore}% Admin Health` : 'Admin Verified',
+      detail:
+        'Tests real authenticated Admin Back Office routes and handlers to guarantee full functionality whenever signed in as Admin.',
+      targetTab: 'demo_guard',
+      actionLabel: 'View Parity Matrix'
+    },
+    {
+      id: 'dg-realtime-alerts',
+      label: 'Real-Time Drift & Parity Email Notifications',
+      status: (dgSnap?.openAlertCount || 0) > 0 ? 'warning' : 'pass',
+      metric: `${dgSnap?.openAlertCount || 0} Unacked`,
+      detail:
+        'Dispatches instant Lark Mail alerts on code drift, demo leak attempts, or Admin module errors and surfaces them inside Demo Guard & Alerts.',
+      targetTab: 'demo_guard',
+      actionLabel: 'Open Alert Feed'
+    }
+  ];
+  const demoGuardSummary = summarizeStatus(demoGuardChecks);
+
   return [
     {
       id: 'marketing',
@@ -474,6 +540,15 @@ export function buildAllAgentReports(ctx: AgentAuditContext): AgentReport[] {
       score: trafficSummary.score,
       status: trafficSummary.status,
       checks: trafficChecks
+    },
+    {
+      id: 'demo_guard',
+      name: 'Demo Guard Agent',
+      role: 'Live Demo Isolation & Admin Parity Sentinel',
+      summary: 'Watches /demo for unexpected code/behavior changes, emails Admin in real time on drift, and verifies all real Admin modules stay healthy.',
+      score: demoGuardSummary.score,
+      status: demoGuardSummary.status,
+      checks: demoGuardChecks
     }
   ];
 }

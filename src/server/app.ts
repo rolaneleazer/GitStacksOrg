@@ -11,6 +11,7 @@ import {
   DEFAULT_AGENT_OFFICE_PROFILES
 } from '../shared/agentOfficeDefaults.ts';
 import { resolveDateRangeBounds } from '../shared/dateRanges.ts';
+import { pickUniqueCoverForArticle } from '../shared/editorialCovers.ts';
 import { validatePageContentForAdSense } from '../shared/pageDefaults.ts';
 import { evaluateArticleQuality, slugify } from '../shared/qualityGate.ts';
 import { DEFAULT_BRANDING, normalizeHexColor } from '../shared/themePresets.ts';
@@ -123,6 +124,21 @@ import {
   scanAllContactsAndIdentities,
   updateContactRegistryEntry
 } from './contactRegistryService.ts';
+import {
+  deduplicateArticleCovers,
+  generateArticleCoverImage,
+  readGeneratedCoverFile
+} from './coverImageService.ts';
+import {
+  acknowledgeDemoGuardAlert,
+  createDemoIsolationMiddleware,
+  getDemoGuardAgentSnapshot,
+  getDemoGuardDashboard,
+  runDemoGuardAndAdminParityScan,
+  sealDemoGuardBaseline,
+  sendDemoGuardTestEmailAlert,
+  updateDemoGuardSettings
+} from './demoGuardService.ts';
 import {
   buildFacebookOAuthUrl,
   buildTikTokOAuthUrl,
@@ -488,6 +504,20 @@ async function ensureDatabaseReadyOnBoot(): Promise<void> {
 export async function createApp(): Promise<Express> {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
+
+  // Runtime Demo Isolation Firewall: blocks any request originating from /demo trying to hit admin or write endpoints
+  app.use(createDemoIsolationMiddleware());
+
+  // Serve AI-generated article cover visuals cleanly without bloating post JSON
+  app.get('/generated-covers/:filename', async (req, res) => {
+    const file = await readGeneratedCoverFile(req.params.filename);
+    if (!file) {
+      return res.status(404).type('text/plain').send('Generated cover not found');
+    }
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.send(file.buffer);
+  });
 
   // Automatic Backend API 5xx Telemetry Capture for Live QA Agent
   app.use((req, res, next) => {
@@ -918,6 +948,17 @@ export async function createApp(): Promise<Express> {
       if (!payload.title || !payload.content_markdown) {
         return res.status(400).json({ error: 'Title and article content are required.' });
       }
+      const token = getBearerToken(req);
+      const existingPosts = await listPosts(true, token).catch(() => []);
+      const pickedFallbackCover = !payload.cover_image?.trim()
+        ? pickUniqueCoverForArticle({
+            title: payload.title.trim(),
+            category: payload.category,
+            keyword: payload.primary_keyword,
+            usedCovers: existingPosts.map((p) => p.cover_image).filter(Boolean)
+          })
+        : null;
+
       const draftInput = {
         title: payload.title.trim(),
         summary_tldr: (payload.summary_tldr || '').trim(),
@@ -925,8 +966,8 @@ export async function createApp(): Promise<Express> {
         author_name: (payload.author_name || 'Rolan Molano').trim(),
         author_role: (payload.author_role || 'Principal Cloud Architect · 13+ Years Distributed Systems Experience').trim(),
         author_bio: (payload.author_bio || 'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.').trim(),
-        cover_image: (payload.cover_image || '/src/assets/images/insight_cover_ai_agents_1794645171607.jpg').trim(),
-        cover_alt: (payload.cover_alt || '').trim(),
+        cover_image: (payload.cover_image || pickedFallbackCover?.url || '/src/assets/images/cover_custom_software_1795220240531.jpg').trim(),
+        cover_alt: (payload.cover_alt || pickedFallbackCover?.alt || '').trim(),
         meta_title: (payload.meta_title || payload.title).trim(),
         meta_description: (payload.meta_description || '').trim(),
         primary_keyword: (payload.primary_keyword || '').trim(),
@@ -947,9 +988,7 @@ export async function createApp(): Promise<Express> {
 
       const now = new Date().toISOString();
       const baseSlug = slugify(payload.slug || draftInput.title);
-      const token = getBearerToken(req);
 
-      const existingPosts = await listPosts(true, token).catch(() => []);
       const normalizedTitle = draftInput.title.toLowerCase();
       const duplicate = existingPosts.find(
         (p) =>
@@ -992,6 +1031,13 @@ export async function createApp(): Promise<Express> {
       if (!payload.title || !payload.content_markdown) {
         return res.status(400).json({ error: 'Title and article content are required.' });
       }
+      const pickedFallbackCover = !payload.cover_image?.trim()
+        ? pickUniqueCoverForArticle({
+            title: payload.title.trim(),
+            category: payload.category,
+            keyword: payload.primary_keyword
+          })
+        : null;
       const draftInput = {
         title: payload.title.trim(),
         summary_tldr: (payload.summary_tldr || '').trim(),
@@ -999,8 +1045,8 @@ export async function createApp(): Promise<Express> {
         author_name: (payload.author_name || 'Rolan Molano').trim(),
         author_role: (payload.author_role || 'Principal Cloud Architect · 13+ Years Distributed Systems Experience').trim(),
         author_bio: (payload.author_bio || 'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.').trim(),
-        cover_image: (payload.cover_image || '/src/assets/images/insight_cover_ai_agents_1794645171607.jpg').trim(),
-        cover_alt: (payload.cover_alt || '').trim(),
+        cover_image: (payload.cover_image || pickedFallbackCover?.url || '/src/assets/images/cover_custom_software_1795220240531.jpg').trim(),
+        cover_alt: (payload.cover_alt || pickedFallbackCover?.alt || '').trim(),
         meta_title: (payload.meta_title || payload.title).trim(),
         meta_description: (payload.meta_description || '').trim(),
         primary_keyword: (payload.primary_keyword || '').trim(),
@@ -1630,8 +1676,9 @@ export async function createApp(): Promise<Express> {
       checkSupabaseTablesReady()
     ]);
 
-    const [socialStatus] = await Promise.all([
-      getSocialConnectionsStatus(token).catch(() => null)
+    const [socialStatus, demoGuardSnapshot] = await Promise.all([
+      getSocialConnectionsStatus(token).catch(() => null),
+      getDemoGuardAgentSnapshot().catch(() => undefined)
     ]);
     const growthSnapshot = await getAgentGrowthSnapshot(
       Boolean(socialStatus?.facebook.connected),
@@ -1651,7 +1698,8 @@ export async function createApp(): Promise<Express> {
       chatThreads,
       analytics,
       supabaseTablesReady,
-      growthSnapshot
+      growthSnapshot,
+      demoGuardSnapshot
     });
 
     return { agents, tasks, profiles, siteAudit };
@@ -6445,6 +6493,123 @@ export async function createApp(): Promise<Express> {
     } catch (err) {
       res.status(400).json({
         error: err instanceof Error ? err.message : 'Bulk replace failed.'
+      });
+    }
+  });
+
+  // --- Unique Article Cover AI Generation & Deduplication ---
+
+  app.post('/api/admin/articles/generate-cover', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const body = (req.body || {}) as {
+        title?: string;
+        category?: string;
+        primaryKeyword?: string;
+        slug?: string;
+        styleHint?: string;
+        excludeUrls?: string[];
+      };
+      const result = await generateArticleCoverImage({
+        title: (body.title || 'GitStack Technical Architecture Blueprint').trim(),
+        category: body.category,
+        primaryKeyword: body.primaryKeyword,
+        slug: body.slug,
+        styleHint: body.styleHint,
+        excludeUrls: Array.isArray(body.excludeUrls) ? body.excludeUrls : [],
+        preferAi: true,
+        userToken: getBearerToken(req)
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to generate cover visual.'
+      });
+    }
+  });
+
+  app.post('/api/admin/articles/deduplicate-covers', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const summary = await deduplicateArticleCovers(getBearerToken(req));
+      res.json(summary);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to deduplicate article covers.'
+      });
+    }
+  });
+
+  // --- Real-Time Demo Guard & Admin Parity Agent Routes ---
+
+  app.get('/api/admin/demo-guard', requireEditor, async (_req, res) => {
+    try {
+      const dashboard = await getDemoGuardDashboard();
+      res.json(dashboard);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to load Demo Guard dashboard.'
+      });
+    }
+  });
+
+  app.post('/api/admin/demo-guard/scan', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const dashboard = await runDemoGuardAndAdminParityScan({
+        reason: 'manual',
+        adminToken: getBearerToken(req)
+      });
+      res.json(dashboard);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Demo Guard parity scan failed.'
+      });
+    }
+  });
+
+  app.post('/api/admin/demo-guard/seal-baseline', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const dashboard = await sealDemoGuardBaseline(req.editor?.email || 'super_admin');
+      res.json(dashboard);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to seal Demo Guard baseline.'
+      });
+    }
+  });
+
+  app.put('/api/admin/demo-guard/settings', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const body = (req.body || {}) as {
+        autoWatchEnabled?: boolean;
+        autoEmailEnabled?: boolean;
+        recipientEmail?: string;
+      };
+      const dashboard = await updateDemoGuardSettings(body);
+      res.json(dashboard);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to save Demo Guard settings.'
+      });
+    }
+  });
+
+  app.patch('/api/admin/demo-guard/alerts/:id/ack', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const dashboard = await acknowledgeDemoGuardAlert(req.params.id);
+      res.json(dashboard);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to acknowledge alert.'
+      });
+    }
+  });
+
+  app.post('/api/admin/demo-guard/test-alert', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const result = await sendDemoGuardTestEmailAlert(getBearerToken(req));
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to dispatch Demo Guard email alert.'
       });
     }
   });

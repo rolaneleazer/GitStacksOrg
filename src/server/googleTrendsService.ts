@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import crypto from 'node:crypto';
+import { pickDistinctSocialCover } from '../shared/editorialCovers.ts';
 import { evaluateArticleQuality, slugify } from '../shared/qualityGate.ts';
 import type {
   GoogleTrendMonitorItem,
@@ -9,6 +10,7 @@ import type {
   ServiceCategory,
   TrendApprovalBundle
 } from '../shared/types.ts';
+import { generateArticleCoverImage } from './coverImageService.ts';
 import {
   isGeminiQuotaCoolingDown,
   markGeminiQuotaCooldownIfNeeded
@@ -260,6 +262,19 @@ export async function generateTrendConversionBundle(options: {
     ? article.content
     : `${article.content}${ctaBlock}`;
 
+  const mappedCategory = mapCategory(article.category);
+  const articleCover = article.coverImage
+    ? { url: article.coverImage, alt: article.coverAlt || article.title }
+    : await generateArticleCoverImage({
+        title: article.title,
+        category: mappedCategory,
+        primaryKeyword: article.primaryKeyword,
+        slug: article.slug,
+        userToken: options.userToken
+      });
+  const fbCover = pickDistinctSocialCover('facebook', options.trendTitle, [articleCover.url]);
+  const ttCover = pickDistinctSocialCover('tiktok', options.trendTitle, [articleCover.url, fbCover]);
+
   const qualityReport = evaluateArticleQuality({
     title: article.title,
     summary_tldr: article.summary,
@@ -268,8 +283,8 @@ export async function generateTrendConversionBundle(options: {
     author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
       'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.',
-    cover_image: '/src/assets/images/ai_ml_pipeline_visual_1794645170877.jpg',
-    cover_alt: article.title,
+    cover_image: articleCover.url,
+    cover_alt: articleCover.alt || article.title,
     meta_title: article.metaTitle,
     meta_description: article.metaDescription,
     primary_keyword: article.primaryKeyword,
@@ -362,6 +377,7 @@ Article Title: ${article.title}`,
       quality_score: qualityReport.qualityScore,
       geo_score: qualityReport.geoScore,
       publish_eligible: qualityReport.publishEligible,
+      cover_image: articleCover.url,
       faqs: article.faqs,
       references: article.sources
     },
@@ -370,7 +386,7 @@ Article Title: ${article.title}`,
       caption: fbCaption,
       hashtags: fbHashtags,
       ctaUrl: `${baseOrigin}/demo`,
-      coverImage: '/src/assets/images/hero_gitstack_architecture_1794645171609.jpg'
+      coverImage: fbCover
     },
     tiktokPost: {
       hook: ttHook,
@@ -378,7 +394,7 @@ Article Title: ${article.title}`,
       caption: ttCaption,
       hashtags: ttHashtags,
       ctaUrl: `${baseOrigin}/demo`,
-      coverImage: '/src/assets/images/ai_ml_pipeline_visual_1794645170877.jpg'
+      coverImage: ttCover
     },
     publishedArticleSlug: null,
     queuedMarketingIds: [],
@@ -441,6 +457,18 @@ export async function reviewTrendApprovalBundle(options: {
       );
     }
 
+    const resolvedPublishCover =
+      target.articleDraft.cover_image ||
+      (
+        await generateArticleCoverImage({
+          title: editedTitle,
+          category: target.articleDraft.category,
+          primaryKeyword: target.articleDraft.primary_keyword,
+          slug: cleanSlug,
+          userToken: options.userToken
+        })
+      ).url;
+
     const report = evaluateArticleQuality({
       title: editedTitle,
       summary_tldr: target.articleDraft.summary_tldr,
@@ -449,7 +477,7 @@ export async function reviewTrendApprovalBundle(options: {
       author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
       author_bio:
         'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.',
-      cover_image: '/src/assets/images/ai_ml_pipeline_visual_1794645170877.jpg',
+      cover_image: resolvedPublishCover,
       cover_alt: editedTitle,
       meta_title: target.articleDraft.meta_title,
       meta_description: target.articleDraft.meta_description,
@@ -476,7 +504,7 @@ export async function reviewTrendApprovalBundle(options: {
         author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
         author_bio:
           'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.',
-        cover_image: '/src/assets/images/ai_ml_pipeline_visual_1794645170877.jpg',
+        cover_image: resolvedPublishCover,
         cover_alt: editedTitle,
         meta_title: target.articleDraft.meta_title,
         meta_description: target.articleDraft.meta_description,

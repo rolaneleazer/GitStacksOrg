@@ -39,6 +39,7 @@ import type {
   CrmOutreachLog,
   CrmSourcesAnalyticsResponse,
   CsvImportLeadInput,
+  DemoGuardDashboardResponse,
   DemoUsersSummaryStats,
   DirectoryUser,
   DiscoveredProspectCandidate,
@@ -944,6 +945,8 @@ export const api = {
       policyNotes: string[];
       faqs: { question: string; answer: string }[];
       sources: { title: string; url: string }[];
+      coverImage?: string;
+      coverAlt?: string;
       notice?: string;
     }>('/api/generate-article', {
       method: 'POST',
@@ -2215,6 +2218,100 @@ export const api = {
     }>('/api/admin/contact-registry/bulk-replace', {
       method: 'POST',
       body: JSON.stringify(payload)
+    });
+  },
+
+  // --- Unique Article Cover Generation & Deduplication ---
+  async generateArticleCover(payload: {
+    title: string;
+    category?: string;
+    primaryKeyword?: string;
+    slug?: string;
+    styleHint?: string;
+    excludeUrls?: string[];
+  }) {
+    return request<{
+      url: string;
+      alt: string;
+      source: 'gemini_image' | 'editorial_preset';
+      model?: string;
+      note?: string;
+    }>('/api/admin/articles/generate-cover', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deduplicateArticleCovers() {
+    return request<{
+      updatedCount: number;
+      updatedSlugs: string[];
+      posts: Article[];
+    }>('/api/admin/articles/deduplicate-covers', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  // --- Demo Guard Sentinel & Admin Module Parity ---
+  async getDemoGuardDashboard() {
+    return request<DemoGuardDashboardResponse>('/api/admin/demo-guard');
+  },
+
+  async runDemoGuardScan() {
+    return request<{
+      dashboard: DemoGuardDashboardResponse;
+      driftDetected: boolean;
+      isolationFailed: boolean;
+      adminFailed: boolean;
+      emailDispatched: boolean;
+      message: string;
+    }>('/api/admin/demo-guard/scan', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async sealDemoGuardBaseline() {
+    return request<{ dashboard: DemoGuardDashboardResponse; message: string }>(
+      '/api/admin/demo-guard/seal-baseline',
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async updateDemoGuardSettings(payload: {
+    autoWatchEnabled?: boolean;
+    autoEmailEnabled?: boolean;
+    recipientEmail?: string;
+  }) {
+    return request<{ dashboard: DemoGuardDashboardResponse }>('/api/admin/demo-guard/settings', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async ackDemoGuardAlert(alertId: string) {
+    return request<{ dashboard: DemoGuardDashboardResponse }>(
+      `/api/admin/demo-guard/alerts/${encodeURIComponent(alertId)}/ack`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async sendDemoGuardTestAlert() {
+    return request<{
+      delivered: boolean;
+      recipient: string;
+      statusNote: string;
+      dashboard: DemoGuardDashboardResponse;
+    }>('/api/admin/demo-guard/test-alert', {
+      method: 'POST',
+      body: JSON.stringify({})
     });
   }
 };

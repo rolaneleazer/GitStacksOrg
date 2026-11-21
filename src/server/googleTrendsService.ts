@@ -264,7 +264,7 @@ export async function generateTrendConversionBundle(options: {
     title: article.title,
     summary_tldr: article.summary,
     content_markdown: finalMarkdown,
-    author_name: article.authorName || 'Ronel Molina',
+    author_name: article.authorName || 'Rolan Molano',
     author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
       'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.',
@@ -445,7 +445,7 @@ export async function reviewTrendApprovalBundle(options: {
       title: editedTitle,
       summary_tldr: target.articleDraft.summary_tldr,
       content_markdown: editedMarkdown,
-      author_name: 'Ronel Molina',
+      author_name: 'Rolan Molano',
       author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
       author_bio:
         'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.',
@@ -472,7 +472,7 @@ export async function reviewTrendApprovalBundle(options: {
         summary_tldr: target.articleDraft.summary_tldr,
         content_markdown: editedMarkdown,
         category: target.articleDraft.category,
-        author_name: 'Ronel Molina',
+        author_name: 'Rolan Molano',
         author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
         author_bio:
           'Principal Cloud Architect with 13+ years of experience in distributed backend architectures, cloud FinOps, and enterprise compliance.',

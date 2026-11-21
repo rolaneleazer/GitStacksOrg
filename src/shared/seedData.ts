@@ -234,7 +234,7 @@ Before promoting any automated MLOps pipeline into customer-facing production, p
     summary_tldr:
       'Managing multi-region cloud environments safely at scale requires modular Terraform stacks, remote state locking, automated OPA policy-as-code checks in CI, and standardized FinOps cost guardrails.',
     category: 'Cloud Infrastructure',
-    author_name: 'Ronel Molina',
+    author_name: 'Rolan Molano',
     author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
       'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.',

@@ -2555,7 +2555,7 @@
       "frequency": "daily",
       "send_hour_utc": 1,
       "last_sent_at": null,
-      "updated_at": "2026-11-20T06:48:37.361Z"
+      "updated_at": "2026-11-21T00:04:31.839Z"
     },
     "marketing": {
       "module": "marketing",

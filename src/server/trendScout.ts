@@ -707,7 +707,7 @@ function finalizeGeneratedDraft(
     metaDescription: seo.meta_description,
     primaryKeyword: seo.primary_keyword,
     category: raw.category || 'Engineering',
-    authorName: raw.authorName || 'Ronel Molina',
+    authorName: raw.authorName || 'Rolan Molano',
     tags:
       Array.isArray(raw.tags) && raw.tags.length > 0
         ? raw.tags
@@ -785,7 +785,7 @@ Return a strictly valid JSON object:
   "metaDescription": string (125-158 characters meta description),
   "primaryKeyword": string (2-4 words),
   "category": "Engineering" | "Architecture" | "FinTech" | "AI & Cloud",
-  "authorName": "Ronel Molina",
+  "authorName": "Rolan Molano",
   "tags": string[],
   "content": string (full 1,600-2,100 word Markdown article),
   "policyBadge": "AdSense Policy Safe",
@@ -930,7 +930,7 @@ Engineering leaders can review our [GitStack Services](https://git-stack.org/ser
 
 ---
 
-*Written by **Ronel Molina**, Principal Cloud Architect with 13+ years of distributed engineering experience. Published exclusively on GitStack Technical Insights.*
+*Written by **Rolan Molano**, Principal Cloud Architect with 13+ years of distributed engineering experience. Published exclusively on GitStack Technical Insights.*
 `;
 
   const fallbackSummary = `Comprehensive 1,600+ word architectural blueprint for ${shortTopic} covering production connection pooling, transactional outbox reliability, security auditability, FinOps benchmarks, and SEO visibility for ${country} teams.`;
@@ -941,7 +941,7 @@ Engineering leaders can review our [GitStack Services](https://git-stack.org/ser
       slug: cleanSlug,
       summary: fallbackSummary,
       category: 'Engineering',
-      authorName: 'Ronel Molina',
+      authorName: 'Rolan Molano',
       tags: ['Architecture', 'Cloud Infrastructure', 'SEO Pillar', 'SaaS'],
       content: fallbackContent,
       policyBadge: 'AdSense Policy Safe',

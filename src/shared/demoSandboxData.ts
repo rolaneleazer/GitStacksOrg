@@ -273,7 +273,7 @@ export function createInitialDemoLogs(): CrmOutreachLog[] {
       status: 'sent',
       error_detail: '',
       step_label: 'Initial Proposal',
-      sent_by: 'sandbox-demo@gitstack.io',
+      sent_by: 'sandbox-demo@git-stack.org',
       sent_at: now
     },
     {
@@ -287,7 +287,7 @@ export function createInitialDemoLogs(): CrmOutreachLog[] {
       status: 'sent',
       error_detail: '',
       step_label: 'Follow-Up Step 1',
-      sent_by: 'sandbox-demo@gitstack.io',
+      sent_by: 'sandbox-demo@git-stack.org',
       sent_at: now
     }
   ];

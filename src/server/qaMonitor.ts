@@ -642,7 +642,7 @@ const SYSTEM_FEATURE_BLUEPRINTS: FeatureBlueprintDef[] = [
         defaultFingerprint: defHash,
         liveFingerprint: liveHash,
         driftStatusIfDiff: 'major_update',
-        changeDetailIfDiff: `Contact Directory customized (Phone: ${contactPage.contact_phone || '+1 (415) 890-4210'}, Email: ${contactPage.contact_sales_email || 'contact@gitstack.io'}).`,
+        changeDetailIfDiff: `Contact Directory customized (Phone: ${contactPage.contact_phone || '+1 (415) 890-4210'}, Email: ${contactPage.contact_sales_email || 'contact@git-stack.org'}).`,
         testStatus: errCount > 0 ? 'degraded' : 'passing',
         testDetail: `Phone (${contactPage.contact_phone || '+1 (415) 890-4210'}), 3 email channels & intake API online`
       };

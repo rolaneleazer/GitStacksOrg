@@ -2178,6 +2178,7 @@ export type WorkspaceModuleId =
   | 'agents'
   | 'crm'
   | 'pages'
+  | 'contact_registry'
   | 'branding'
   | 'buymeacoffee'
   | 'inbox'
@@ -2215,3 +2216,41 @@ export interface WorkspaceLayoutConfig {
   moduleAliases: Record<string, string>;
   updatedAt: string;
 }
+
+// --- Sitewide Email, Phone & Contact Name Scanner / Editor ---
+
+export type ContactEntityKind = 'email' | 'phone' | 'name';
+export type ContactRegistryScope = 'page' | 'article' | 'module';
+
+export interface ContactRegistryEntry {
+  id: string;
+  scope: ContactRegistryScope;
+  scopeId: string;
+  scopeTitle: string;
+  routeOrTab: string;
+  jumpTab: WorkspaceModuleId;
+  fieldPath: string;
+  fieldLabel: string;
+  kind: ContactEntityKind;
+  value: string;
+  contextSnippet: string;
+  editable: boolean;
+  editHint?: string;
+  updatedAt: string;
+}
+
+export interface ContactScanSummary {
+  scannedAt: string;
+  totalEntries: number;
+  emailsCount: number;
+  phonesCount: number;
+  namesCount: number;
+  pagesScanned: number;
+  articlesScanned: number;
+  modulesScanned: number;
+  uniqueEmails: Array<{ value: string; count: number; scopes: ContactRegistryScope[] }>;
+  uniquePhones: Array<{ value: string; count: number; scopes: ContactRegistryScope[] }>;
+  uniqueNames: Array<{ value: string; count: number; scopes: ContactRegistryScope[] }>;
+  entries: ContactRegistryEntry[];
+}
+

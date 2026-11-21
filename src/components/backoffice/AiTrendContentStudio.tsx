@@ -72,7 +72,7 @@ export function AiTrendContentStudio({
   const [editTitle, setEditTitle] = useState('');
   const [editSlug, setEditSlug] = useState('');
   const [editCategory, setEditCategory] = useState<ServiceCategory>('Custom Software');
-  const [editAuthor, setEditAuthor] = useState('Ronel Molina');
+  const [editAuthor, setEditAuthor] = useState('Rolan Molano');
   const [editAuthorRole, setEditAuthorRole] = useState(
     'Principal Cloud Architect · 13+ Years Distributed Systems Experience'
   );
@@ -229,7 +229,7 @@ export function AiTrendContentStudio({
       setEditTitle(res.title);
       setEditSlug(res.slug || slugify(res.title));
       setEditCategory(mapDraftCategory(res.category));
-      setEditAuthor(res.authorName || 'Ronel Molina');
+      setEditAuthor(res.authorName || 'Rolan Molano');
       setEditAuthorRole('Principal Cloud Architect · 13+ Years Distributed Systems Experience');
       setEditAuthorBio(DEFAULT_AUTHOR_BIO);
       setEditSummary(seo.summary_tldr);
@@ -291,7 +291,7 @@ export function AiTrendContentStudio({
           {
             question: 'How does GitStack verify technical accuracy and compliance readiness?',
             answer:
-              'Every guide pairs human engineering review from Principal Cloud Architect Ronel Molina with verifiable primary documentation and reproducible production code.'
+              'Every guide pairs human engineering review from Principal Cloud Architect Rolan Molano with verifiable primary documentation and reproducible production code.'
           }
         );
       }
@@ -352,7 +352,7 @@ export function AiTrendContentStudio({
         summary_tldr: editSummary.trim(),
         content_markdown: editContent,
         category: editCategory,
-        author_name: editAuthor.trim() || 'Ronel Molina',
+        author_name: editAuthor.trim() || 'Rolan Molano',
         author_role:
           editAuthorRole.trim() || 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
         author_bio: editAuthorBio.trim() || DEFAULT_AUTHOR_BIO,

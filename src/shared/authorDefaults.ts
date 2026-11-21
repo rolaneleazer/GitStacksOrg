@@ -1,5 +1,5 @@
 export const DEFAULT_PRINCIPAL_AUTHOR = {
-  name: 'Ronel Molina',
+  name: 'Rolan Molano',
   role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
   bio: 'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.'
 };
@@ -7,7 +7,7 @@ export const DEFAULT_PRINCIPAL_AUTHOR = {
 export function buildPrincipalAuthorJsonLd(origin: string) {
   return {
     '@type': 'Person',
-    '@id': `${origin}/#author-ronel-molina`,
+    '@id': `${origin}/#author-rolan-molano`,
     name: DEFAULT_PRINCIPAL_AUTHOR.name,
     jobTitle: 'Principal Cloud Architect',
     description: `${DEFAULT_PRINCIPAL_AUTHOR.role}. ${DEFAULT_PRINCIPAL_AUTHOR.bio}`,

@@ -358,9 +358,9 @@ export function PageEditorPanel({
                     </label>
                     <input
                       type="email"
-                      value={current.contact_sales_email ?? 'contact@gitstack.io'}
+                      value={current.contact_sales_email ?? 'contact@git-stack.org'}
                       onChange={(e) => updateField('contact_sales_email', e.target.value)}
-                      placeholder="contact@gitstack.io"
+                      placeholder="contact@git-stack.org"
                       className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 font-mono px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                     />
                   </div>
@@ -383,9 +383,9 @@ export function PageEditorPanel({
                     </label>
                     <input
                       type="email"
-                      value={current.contact_editorial_email ?? 'editorial@gitstack.io'}
+                      value={current.contact_editorial_email ?? 'editorial@git-stack.org'}
                       onChange={(e) => updateField('contact_editorial_email', e.target.value)}
-                      placeholder="editorial@gitstack.io"
+                      placeholder="editorial@git-stack.org"
                       className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 font-mono px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                     />
                   </div>
@@ -408,9 +408,9 @@ export function PageEditorPanel({
                     </label>
                     <input
                       type="email"
-                      value={current.contact_privacy_email ?? 'privacy@gitstack.io'}
+                      value={current.contact_privacy_email ?? 'privacy@git-stack.org'}
                       onChange={(e) => updateField('contact_privacy_email', e.target.value)}
-                      placeholder="privacy@gitstack.io"
+                      placeholder="privacy@git-stack.org"
                       className="mt-1 min-h-[42px] w-full rounded-lg border border-slate-200 font-mono px-3 py-2 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
                     />
                   </div>

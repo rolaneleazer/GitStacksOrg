@@ -191,7 +191,9 @@ function renderLegalDisclosureHtml(): string {
 </section>`;
 }
 
-function renderFooterHtml(brandName: string): string {
+function renderFooterHtml(brandName: string, contactPage?: PageContentConfig): string {
+  const contactEmail = contactPage?.contact_sales_email?.trim() || 'contact@git-stack.org';
+  const contactPhone = contactPage?.contact_phone?.trim();
   return `
 <footer style="border-top:1px solid #e2e8f0;background:#ffffff;padding:40px 24px;margin-top:48px;color:#475569;font-size:14px;">
   <div style="max-width:1152px;margin:0 auto;">
@@ -199,7 +201,7 @@ function renderFooterHtml(brandName: string): string {
       <div>
         <strong>${escapeHtml(brandName)}</strong>
         <p>Enterprise software engineering, cloud infrastructure management, AI integration, and machine learning automation solutions.</p>
-        <p>contact@gitstack.io · 548 Market Street, Suite 42010, San Francisco, CA 94104</p>
+        <p>${escapeHtml(contactEmail)}${contactPhone ? ` · ${escapeHtml(contactPhone)}` : ''} · San Francisco &amp; Global Remote</p>
       </div>
       <div>
         <h3>Engineering Services</h3>
@@ -410,9 +412,9 @@ function buildRouteContent(
   <section>
     <h2>Direct Contact &amp; Office Hours</h2>
     <p><strong>Direct Phone:</strong> ${escapeHtml(cms.contact_phone || '+1 (415) 890-4210')}</p>
-    <p><strong>New Project Inquiries:</strong> ${escapeHtml(cms.contact_sales_email || 'contact@gitstack.io')}</p>
-    <p><strong>Editorial &amp; Press:</strong> ${escapeHtml(cms.contact_editorial_email || 'editorial@gitstack.io')}</p>
-    <p><strong>Privacy &amp; Compliance:</strong> ${escapeHtml(cms.contact_privacy_email || 'privacy@gitstack.io')}</p>
+    <p><strong>New Project Inquiries:</strong> ${escapeHtml(cms.contact_sales_email || 'contact@git-stack.org')}</p>
+    <p><strong>Editorial &amp; Press:</strong> ${escapeHtml(cms.contact_editorial_email || 'editorial@git-stack.org')}</p>
+    <p><strong>Privacy &amp; Compliance:</strong> ${escapeHtml(cms.contact_privacy_email || 'privacy@git-stack.org')}</p>
     <p>${escapeHtml(cms.intro_body)}</p>
   </section>
 </main>`
@@ -420,6 +422,7 @@ function buildRouteContent(
   }
 
   if (cleanPath === '/privacy-policy') {
+    const privacyEmail = pagesMap.contact?.contact_privacy_email?.trim() || 'privacy@git-stack.org';
     return {
       title: `Privacy Policy | ${brand}`,
       description:
@@ -438,7 +441,7 @@ function buildRouteContent(
   <h2>3. Data Storage, Security &amp; Retention</h2>
   <p>Submitted inquiries, comments, and newsletter preferences are stored securely in encrypted PostgreSQL infrastructure. We never sell or rent your email address or project brief to third parties.</p>
   <h2>4. Your Rights (GDPR &amp; CCPA)</h2>
-  <p>You may request access, correction, export, or deletion of your personal data at any time by emailing privacy@gitstack.io.</p>
+  <p>You may request access, correction, export, or deletion of your personal data at any time by emailing ${escapeHtml(privacyEmail)}.</p>
 </main>`
     };
   }
@@ -591,6 +594,25 @@ function buildRouteContent(
   };
 }
 
+export function buildPublicRouteMainHtml(
+  reqPath: string,
+  origin: string,
+  preloaded: {
+    pagesList: PageContentConfig[];
+    postsList: Article[];
+    settings: AdSenseSettings;
+  }
+): string {
+  const cleanPath = reqPath.split('?')[0].replace(/\/+$/, '') || '/';
+  const pagesMap: Record<PageKey, PageContentConfig> = { ...DEFAULT_PAGE_CONTENTS };
+  for (const page of preloaded.pagesList) {
+    pagesMap[page.page_key] = page;
+  }
+  const basePosts = preloaded.postsList.length > 0 ? preloaded.postsList : SEED_ARTICLES;
+  const route = buildRouteContent(cleanPath, origin, pagesMap, basePosts, preloaded.settings);
+  return route.mainHtml;
+}
+
 export async function renderPublicRouteHtml(reqPath: string, origin: string): Promise<string | null> {
   const cleanPath = reqPath.split('?')[0].replace(/\/+$/, '') || '/';
   const template = await loadBaseHtmlTemplate(origin);
@@ -620,7 +642,7 @@ export async function renderPublicRouteHtml(reqPath: string, origin: string): Pr
   const brandName = settings.brand_name?.trim() || DEFAULT_ADSENSE_SETTINGS.brand_name || 'GitStack';
   const canonicalUrl = `${origin}${cleanPath === '/' ? '' : cleanPath}`;
 
-  const ssrBodyHtml = `<div id="root">${renderNavAndHeaderHtml(brandName)}${route.mainHtml}${renderFooterHtml(brandName)}</div>`;
+  const ssrBodyHtml = `<div id="root">${renderNavAndHeaderHtml(brandName)}${route.mainHtml}${renderFooterHtml(brandName, pagesMap.contact)}</div>`;
 
   let html = template;
 

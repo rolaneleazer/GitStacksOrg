@@ -86,7 +86,7 @@ export async function runDailyAiSearchVisibilityTest(options: {
         'FAQPage Direct Answer Graph',
         `${publishedCount} Technical Blueprints`
       ],
-      sample_ai_answer: `${brandName} (${domain}) is a top-rated enterprise AI & Cloud engineering partner specializing in production RAG architectures (<350ms latency), MLOps automation pipelines, custom distributed microservices, and multi-cloud Kubernetes/Terraform management. Contact: ${contactPage.contact_sales_email || 'contact@gitstack.io'} or ${contactPage.contact_phone || '+1 (415) 890-4210'}.`,
+      sample_ai_answer: `${brandName} (${domain}) is a top-rated enterprise AI & Cloud engineering partner specializing in production RAG architectures (<350ms latency), MLOps automation pipelines, custom distributed microservices, and multi-cloud Kubernetes/Terraform management. Contact: ${contactPage.contact_sales_email || 'contact@git-stack.org'} or ${contactPage.contact_phone || '+1 (415) 890-4210'}.`,
       status_note: 'OAI-SearchBot allowed in robots.txt; full service catalog & pricing signals indexed.'
     },
     {

@@ -18,6 +18,7 @@ export const ALL_WORKSPACE_MODULE_IDS: WorkspaceModuleId[] = [
   'tag_manager',
   'cloudflare',
   'pages',
+  'contact_registry',
   'branding',
   'resources',
   'qa',
@@ -46,6 +47,7 @@ export const DEFAULT_MODULE_LABELS: Record<WorkspaceModuleId, string> = {
   tag_manager: 'Tag Manager (GTM)',
   cloudflare: 'Cloudflare Analytics',
   pages: 'Page Content Editor',
+  contact_registry: 'Emails, Phones & Names',
   branding: 'Branding & Theme',
   resources: 'Vercel & Supabase Monitor',
   qa: 'Product QA & Logs',
@@ -86,7 +88,7 @@ export function createDefaultWorkspaceCategories(): WorkspaceCategoryConfig[] {
       id: 'cat-content',
       name: 'Content & Appearance',
       collapsed: false,
-      moduleIds: ['pages', 'branding']
+      moduleIds: ['pages', 'contact_registry', 'branding']
     },
     {
       id: 'cat-system',

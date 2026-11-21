@@ -1,7 +1,7 @@
 import { Menu, X } from 'lucide-react';
 import React, { useState } from 'react';
 import { DEFAULT_BRANDING, resolveThemeTokens } from '../shared/themePresets.ts';
-import type { AdSenseSettings } from '../shared/types.ts';
+import type { AdSenseSettings, PageContentConfig } from '../shared/types.ts';
 import { LegalAdvertisingDisclosure } from './AdSenseTrustSignals.tsx';
 import { BuyMeACoffeeButton } from './BuyMeACoffee.tsx';
 
@@ -178,11 +178,13 @@ export function Header({ currentPath, settings, onNavigate, fullWidth = false }:
 
 export function Footer({
   settings,
+  contactPage,
   onNavigate,
   onOpenCookiePrefs,
   fullWidth = false
 }: {
   settings?: AdSenseSettings | null;
+  contactPage?: PageContentConfig | null;
   onNavigate: (path: string) => void;
   onOpenCookiePrefs: () => void;
   fullWidth?: boolean;
@@ -190,6 +192,8 @@ export function Footer({
   const brandName = settings?.brand_name?.trim() || DEFAULT_BRANDING.brand_name;
   const brandLogoUrl = settings?.brand_logo_url?.trim() || '';
   const brandLogoAlt = settings?.brand_logo_alt?.trim() || brandName;
+  const footerEmail = contactPage?.contact_sales_email?.trim() || 'contact@git-stack.org';
+  const footerPhone = contactPage?.contact_phone?.trim();
 
   const go = (e: React.MouseEvent, path: string) => {
     e.preventDefault();
@@ -225,7 +229,7 @@ export function Footer({
               machine learning automation solutions.
             </p>
             <p className="mt-4 text-xs text-slate-500">
-              contact@gitstack.io · San Francisco &amp; Global Remote
+              {footerEmail}{footerPhone ? ` · ${footerPhone}` : ''} · San Francisco &amp; Global Remote
             </p>
             {settings && settings.bmc_enabled !== false && settings.bmc_footer_enabled !== false && (
               <div className="mt-5 pt-4 border-t border-slate-100">

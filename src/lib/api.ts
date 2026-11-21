@@ -32,6 +32,9 @@ import type {
   CloudflareHistoryRange,
   CloudflareWindowPreset,
   CommentStatus,
+  ContactEntityKind,
+  ContactRegistryScope,
+  ContactScanSummary,
   CrmLead,
   CrmOutreachLog,
   CrmSourcesAnalyticsResponse,
@@ -2174,6 +2177,44 @@ export const api = {
     return request<{ layout: WorkspaceLayoutConfig }>('/api/admin/workspace-layout', {
       method: 'PUT',
       body: JSON.stringify(layout)
+    });
+  },
+
+  // --- Sitewide Email, Phone & Contact Name Scanner / Editor ---
+  async getContactRegistry() {
+    return request<ContactScanSummary>('/api/admin/contact-registry');
+  },
+
+  async updateContactRegistryEntry(payload: {
+    scope: ContactRegistryScope;
+    scopeId: string;
+    fieldPath: string;
+    oldValue: string;
+    newValue: string;
+    kind: ContactEntityKind;
+  }) {
+    return request<{ updated: boolean; detail: string; summary: ContactScanSummary }>(
+      '/api/admin/contact-registry',
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async bulkReplaceContactRegistry(payload: {
+    oldValue: string;
+    newValue: string;
+    scopes?: ContactRegistryScope[];
+    kind?: ContactEntityKind;
+  }) {
+    return request<{
+      updatedCount: number;
+      updatedItems: string[];
+      summary: ContactScanSummary;
+    }>('/api/admin/contact-registry/bulk-replace', {
+      method: 'POST',
+      body: JSON.stringify(payload)
     });
   }
 };

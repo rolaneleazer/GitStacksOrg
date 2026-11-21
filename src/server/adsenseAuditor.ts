@@ -98,7 +98,7 @@ function extractHtmlMetadata(html: string, pageUrl: string) {
   const hasAdDisclosure =
     /legal-disclosure|aboutads\.info|myadcenter\.google\.com|third-party advertising/i.test(lower);
   const hasAuthorSchema =
-    /"@type"\s*:\s*"person"|author-card|ronel\s+molina/i.test(lower);
+    /"@type"\s*:\s*"person"|author-card|rolan\s+molano/i.test(lower);
 
   const imgMatches = html.match(/<img\b[^>]*>/gi) || [];
   const totalImages = imgMatches.length;
@@ -530,7 +530,7 @@ Return a strictly valid JSON object matching this schema:
               category: 'E-E-A-T & Author Signals',
               description:
                 'Include an authoritative author box with credentials and Schema.org Person markup.',
-              codeSnippet: `<div class="author-card border border-slate-200 rounded-xl p-4 bg-slate-50">\n  <div class="font-bold text-slate-900">Written by Ronel Molina</div>\n  <div class="text-xs text-slate-600">Principal Cloud Architect · 13+ Years Distributed Systems Experience</div>\n  <p class="text-xs text-slate-500 mt-1">Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.</p>\n</div>`
+              codeSnippet: `<div class="author-card border border-slate-200 rounded-xl p-4 bg-slate-50">\n  <div class="font-bold text-slate-900">Written by Rolan Molano</div>\n  <div class="text-xs text-slate-600">Principal Cloud Architect · 13+ Years Distributed Systems Experience</div>\n  <p class="text-xs text-slate-500 mt-1">Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.</p>\n</div>`
             }
           ]
         : [])

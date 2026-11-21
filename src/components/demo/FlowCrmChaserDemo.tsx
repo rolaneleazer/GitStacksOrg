@@ -490,7 +490,7 @@ export function FlowCrmChaserDemo({ onCtaClick }: FlowCrmChaserDemoProps) {
                 <br /><br />
                 You can settle directly online with 1-click via GCash, Maya, or Bank Transfer using our secure client portal:
                 <br />
-                <span className="font-mono text-blue-700 underline">https://pay.gitstack.io/portal/{activeReminderDeal.id}</span>
+                <span className="font-mono text-blue-700 underline">https://pay.git-stack.org/portal/{activeReminderDeal.id}</span>
                 <br /><br />
                 Thank you for your partnership!
               </p>
@@ -503,7 +503,7 @@ export function FlowCrmChaserDemo({ onCtaClick }: FlowCrmChaserDemoProps) {
                 <span className="font-mono text-violet-700">{activeReminderDeal.contactMobile}</span>
               </div>
               <p className="text-slate-700 font-mono text-[11px]">
-                "Hi {(activeReminderDeal.clientName || 'Client').split(' ')[0]}! Quick reminder from GitStack: Invoice {activeReminderDeal.invoiceNumber} (₱{(activeReminderDeal.amountPhp ?? 0).toLocaleString()}) is currently overdue. Pay in 10s via GCash/Maya here: https://pay.gitstack.io/{activeReminderDeal.id}"
+                "Hi {(activeReminderDeal.clientName || 'Client').split(' ')[0]}! Quick reminder from GitStack: Invoice {activeReminderDeal.invoiceNumber} (₱{(activeReminderDeal.amountPhp ?? 0).toLocaleString()}) is currently overdue. Pay in 10s via GCash/Maya here: https://pay.git-stack.org/{activeReminderDeal.id}"
               </p>
             </div>
 

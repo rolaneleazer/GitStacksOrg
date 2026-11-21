@@ -207,13 +207,13 @@ export function ContactPage({
                     href={`mailto:${
                       cms.contact_sales_email ||
                       DEFAULT_PAGE_CONTENTS.contact.contact_sales_email ||
-                      'contact@gitstack.io'
+                      'contact@git-stack.org'
                     }`}
                     className="hover:text-[var(--gs-primary)] hover:underline transition-colors"
                   >
                     {cms.contact_sales_email ||
                       DEFAULT_PAGE_CONTENTS.contact.contact_sales_email ||
-                      'contact@gitstack.io'}
+                      'contact@git-stack.org'}
                   </a>
                 </p>
               </div>
@@ -228,13 +228,13 @@ export function ContactPage({
                     href={`mailto:${
                       cms.contact_editorial_email ||
                       DEFAULT_PAGE_CONTENTS.contact.contact_editorial_email ||
-                      'editorial@gitstack.io'
+                      'editorial@git-stack.org'
                     }`}
                     className="hover:text-[var(--gs-primary)] hover:underline transition-colors"
                   >
                     {cms.contact_editorial_email ||
                       DEFAULT_PAGE_CONTENTS.contact.contact_editorial_email ||
-                      'editorial@gitstack.io'}
+                      'editorial@git-stack.org'}
                   </a>
                 </p>
               </div>
@@ -249,13 +249,13 @@ export function ContactPage({
                     href={`mailto:${
                       cms.contact_privacy_email ||
                       DEFAULT_PAGE_CONTENTS.contact.contact_privacy_email ||
-                      'privacy@gitstack.io'
+                      'privacy@git-stack.org'
                     }`}
                     className="hover:text-[var(--gs-primary)] hover:underline transition-colors"
                   >
                     {cms.contact_privacy_email ||
                       DEFAULT_PAGE_CONTENTS.contact.contact_privacy_email ||
-                      'privacy@gitstack.io'}
+                      'privacy@git-stack.org'}
                   </a>
                 </p>
               </div>
@@ -327,7 +327,11 @@ export function EditorialPolicyPage() {
   );
 }
 
-export function PrivacyPolicyPage() {
+export function PrivacyPolicyPage({ pageContent }: { pageContent?: PageContentConfig }) {
+  const privacyEmail =
+    pageContent?.contact_privacy_email?.trim() ||
+    DEFAULT_PAGE_CONTENTS.contact.contact_privacy_email ||
+    'privacy@git-stack.org';
   useEffect(() => {
     applySeoMetadata({
       title: 'Privacy Policy | GitStack',
@@ -381,7 +385,7 @@ export function PrivacyPolicyPage() {
       <h2 className="font-display text-xl font-bold text-slate-900 pt-2">4. Your Rights (GDPR &amp; CCPA)</h2>
       <p>
         You may request access, correction, export, or deletion of your personal data at any time by
-        emailing <span className="font-mono">privacy@gitstack.io</span>.
+        emailing <span className="font-mono">{privacyEmail}</span>.
       </p>
     </LegalShell>
   );

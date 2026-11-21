@@ -728,7 +728,7 @@ export function CyberSecurityPanel({
                 onChange={(e) =>
                   setSettingsDraft({ ...settingsDraft, recipient_email: e.target.value })
                 }
-                placeholder={dashboard?.resolvedRecipientEmail || 'admin@gitstack.io'}
+                placeholder={dashboard?.resolvedRecipientEmail || 'admin@git-stack.org'}
                 className="mt-1.5 min-h-[40px] w-full rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900"
               />
             </div>

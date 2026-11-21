@@ -96,11 +96,11 @@ export const DEFAULT_PAGE_CONTENTS: Record<PageKey, PageContentConfig> = {
     contact_phone_label: 'Direct Phone & Consultation Line',
     contact_phone: '+1 (415) 890-4210',
     contact_sales_label: 'New Project Inquiries',
-    contact_sales_email: 'contact@gitstack.io',
+    contact_sales_email: 'contact@git-stack.org',
     contact_editorial_label: 'Editorial & Press',
-    contact_editorial_email: 'editorial@gitstack.io',
+    contact_editorial_email: 'editorial@git-stack.org',
     contact_privacy_label: 'Privacy & Compliance',
-    contact_privacy_email: 'privacy@gitstack.io',
+    contact_privacy_email: 'privacy@git-stack.org',
     custom_blocks: [],
     updated_at: '2026-11-14T00:00:00Z'
   }

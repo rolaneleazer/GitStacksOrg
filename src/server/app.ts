@@ -119,6 +119,11 @@ import {
   sendSearchConsoleEmailReport
 } from './searchConsoleService.ts';
 import {
+  bulkReplaceContactValue,
+  scanAllContactsAndIdentities,
+  updateContactRegistryEntry
+} from './contactRegistryService.ts';
+import {
   buildFacebookOAuthUrl,
   buildTikTokOAuthUrl,
   exchangeFacebookOAuthCode,
@@ -414,7 +419,7 @@ function buildSiteAuditReport(posts: Article[], settings: AdSenseSettings): Site
       category: 'AdSense Policy',
       label: 'Author E-E-A-T Attribution & Primary Citations',
       status: missingAuthorBio.length === 0 && missingRefs.length === 0 ? 'pass' : 'fail',
-      detail: 'Every published guide includes Ronel Molina / verified author credentials, Schema.org Person markup, and 2+ authoritative HTTPS references.'
+      detail: 'Every published guide includes Rolan Molano / verified author credentials, Schema.org Person markup, and 2+ authoritative HTTPS references.'
     },
     {
       id: 'crawler-endpoints',
@@ -650,11 +655,17 @@ export async function createApp(): Promise<Express> {
   app.get('/llms-full.txt', async (req, res) => {
     try {
       const origin = getOrigin(req);
-      const posts = await listPosts(false, undefined, true);
+      const [posts, pages] = await Promise.all([
+        listPosts(false, undefined, true),
+        listPageContents().catch(() => [])
+      ]);
+      const contactPage = pages.find((p) => p.page_key === 'contact');
+      const salesEmail = contactPage?.contact_sales_email?.trim() || 'contact@git-stack.org';
+      const phone = contactPage?.contact_phone?.trim() || '';
       const sections = [
         '# GitStack Complete Knowledge & Service Corpus',
         `Canonical Origin: ${origin}`,
-        'Contact: contact@gitstack.io',
+        `Contact: ${salesEmail}${phone ? ` · ${phone}` : ''}`,
         '',
         '## Services Overview',
         '1. AI Integration: Enterprise RAG pipelines with hybrid lexical-vector search, RBAC pre-retrieval filtering, LLM guardrails, and continuous evaluation.',
@@ -911,7 +922,7 @@ export async function createApp(): Promise<Express> {
         title: payload.title.trim(),
         summary_tldr: (payload.summary_tldr || '').trim(),
         content_markdown: payload.content_markdown,
-        author_name: (payload.author_name || 'Ronel Molina').trim(),
+        author_name: (payload.author_name || 'Rolan Molano').trim(),
         author_role: (payload.author_role || 'Principal Cloud Architect · 13+ Years Distributed Systems Experience').trim(),
         author_bio: (payload.author_bio || 'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.').trim(),
         cover_image: (payload.cover_image || '/src/assets/images/insight_cover_ai_agents_1794645171607.jpg').trim(),
@@ -985,7 +996,7 @@ export async function createApp(): Promise<Express> {
         title: payload.title.trim(),
         summary_tldr: (payload.summary_tldr || '').trim(),
         content_markdown: payload.content_markdown,
-        author_name: (payload.author_name || 'Ronel Molina').trim(),
+        author_name: (payload.author_name || 'Rolan Molano').trim(),
         author_role: (payload.author_role || 'Principal Cloud Architect · 13+ Years Distributed Systems Experience').trim(),
         author_bio: (payload.author_bio || 'Specializing in high-throughput cloud infrastructure, MLOps automation, and enterprise compliance.').trim(),
         cover_image: (payload.cover_image || '/src/assets/images/insight_cover_ai_agents_1794645171607.jpg').trim(),
@@ -2273,7 +2284,7 @@ export async function createApp(): Promise<Express> {
         source_type: 'internal',
         source_ref_id: null,
         requester_name: (requester_name || (req as AuthReq).editor?.email || 'GitStack Operator').trim(),
-        requester_email: (requester_email || (req as AuthReq).editor?.email || 'contact@gitstack.io').trim(),
+        requester_email: (requester_email || (req as AuthReq).editor?.email || 'admin@git-stack.org').trim(),
         status: 'open',
         last_message_at: now,
         created_at: now
@@ -3231,7 +3242,7 @@ export async function createApp(): Promise<Express> {
       const validTrack: OpenSourceSyncTrack =
         rawTrack === 'ai' || rawTrack === 'cloud' || rawTrack === 'devtools' ? rawTrack : 'all';
       const editorUserId = req.editor?.userId || null;
-      const editorEmail = req.editor?.email || 'system@gitstack.io';
+      const editorEmail = req.editor?.email || 'system@git-stack.org';
 
       const harvested = await harvestTrendingOpenSourceLeads(validTrack, editorUserId, token);
       const merged = await upsertMergeCrmLeads(harvested.leads, token);
@@ -3961,7 +3972,7 @@ export async function createApp(): Promise<Express> {
           reference_code: refId,
           full_name: existing.contact_name,
           company: existing.company_name,
-          work_email: existing.email || `client@${existing.company_domain || 'gitstack.io'}`,
+          work_email: existing.email || (existing.company_domain ? `client@${existing.company_domain}` : 'contact@git-stack.org'),
           service_interest: existing.recommended_service,
           budget_range: `$${existing.deal_value.toLocaleString()}`,
           timeline: 'Immediate Kickoff',
@@ -6358,6 +6369,82 @@ export async function createApp(): Promise<Express> {
     } catch (err) {
       res.status(400).json({
         error: err instanceof Error ? err.message : 'Unable to save workspace layout.'
+      });
+    }
+  });
+
+  // --- Sitewide Email, Phone & Contact Name Scanner / Editor ---
+  app.get('/api/admin/contact-registry', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const summary = await scanAllContactsAndIdentities(getBearerToken(req), getOrigin(req));
+      res.json(summary);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to scan pages, articles, and modules.'
+      });
+    }
+  });
+
+  app.patch('/api/admin/contact-registry', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const body = (req.body || {}) as {
+        scope?: 'page' | 'article' | 'module';
+        scopeId?: string;
+        fieldPath?: string;
+        oldValue?: string;
+        newValue?: string;
+        kind?: 'email' | 'phone' | 'name';
+      };
+      if (!body.scope || !body.scopeId || !body.fieldPath || !body.newValue || !body.kind) {
+        return res.status(400).json({ error: 'Missing required update fields.' });
+      }
+      const actorId = req.editor?.userId || 'operator';
+      const result = await updateContactRegistryEntry(
+        {
+          scope: body.scope,
+          scopeId: body.scopeId,
+          fieldPath: body.fieldPath,
+          oldValue: body.oldValue || '',
+          newValue: body.newValue,
+          kind: body.kind
+        },
+        actorId,
+        getBearerToken(req)
+      );
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to update entry.'
+      });
+    }
+  });
+
+  app.post('/api/admin/contact-registry/bulk-replace', requireEditor, async (req: AuthReq, res) => {
+    try {
+      const body = (req.body || {}) as {
+        oldValue?: string;
+        newValue?: string;
+        scopes?: Array<'page' | 'article' | 'module'>;
+        kind?: 'email' | 'phone' | 'name';
+      };
+      if (!body.oldValue || !body.newValue) {
+        return res.status(400).json({ error: 'Both oldValue and newValue are required.' });
+      }
+      const actorId = req.editor?.userId || 'operator';
+      const result = await bulkReplaceContactValue(
+        {
+          oldValue: body.oldValue,
+          newValue: body.newValue,
+          scopes: body.scopes,
+          kind: body.kind
+        },
+        actorId,
+        getBearerToken(req)
+      );
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Bulk replace failed.'
       });
     }
   });

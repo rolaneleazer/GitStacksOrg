@@ -112,7 +112,7 @@ async function fetchTextSafe(url: string, timeoutMs = 4200): Promise<string> {
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'GitStack-OpenSource-Researcher/1.0 (+https://gitstack.io)'
+        'User-Agent': 'GitStack-OpenSource-Researcher/1.0 (+https://git-stack.org)'
       }
     });
     if (!res.ok) return '';
@@ -669,7 +669,7 @@ export async function runProspectResearchAndProposal(
     '',
     `Best regards,`,
     `GitStack Solutions Team`,
-    `https://gitstack.io`
+    `https://git-stack.org`
   ].join('\n');
 
   return {

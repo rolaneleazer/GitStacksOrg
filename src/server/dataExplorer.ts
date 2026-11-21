@@ -69,7 +69,7 @@ const TABLE_CATALOG_SPECS: TableSeedSpec[] = [
       { name: 'summary_tldr', dataType: 'longtext' },
       { name: 'content_markdown', dataType: 'longtext' },
       { name: 'category', dataType: 'text', defaultValue: 'AI Integration' },
-      { name: 'author_name', dataType: 'text', defaultValue: 'Ronel Molina' },
+      { name: 'author_name', dataType: 'text', defaultValue: 'Rolan Molano' },
       { name: 'author_role', dataType: 'text', defaultValue: 'Principal Cloud Architect' },
       { name: 'author_bio', dataType: 'longtext' },
       { name: 'cover_image', dataType: 'text' },

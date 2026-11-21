@@ -10,6 +10,7 @@ import {
   Cloud,
   Coffee,
   Compass,
+  Contact2,
   Copy,
   Database,
   Download,
@@ -47,6 +48,7 @@ import type { DateRangeSelection } from '../components/backoffice/AnalyticsShare
 import { BrandingThemePanel } from '../components/backoffice/BrandingThemePanel.tsx';
 import { BuyMeACoffeeHubPanel } from '../components/backoffice/BuyMeACoffeeHubPanel.tsx';
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
+import { ContactRegistryPanel } from '../components/backoffice/ContactRegistryPanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
 import { CyberSecurityPanel } from '../components/backoffice/CyberSecurityPanel.tsx';
 import { DataExplorerPanel } from '../components/backoffice/DataExplorerPanel.tsx';
@@ -127,6 +129,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'agents',
     'crm',
     'pages',
+    'contact_registry',
     'branding',
     'buymeacoffee',
     'inbox',
@@ -154,6 +157,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'agents',
     'crm',
     'pages',
+    'contact_registry',
     'articles',
     'notifications',
     'demo_users',
@@ -215,7 +219,7 @@ function createEmptyDraft(): Partial<Article> {
     summary_tldr:
       'Production cloud platforms require transaction connection pooling, idempotent asynchronous event pipelines, and policy-as-code governance to deliver sub-250ms API latency at predictable unit cost.',
     category: 'AI Integration',
-    author_name: 'Ronel Molina',
+    author_name: 'Rolan Molano',
     author_role: 'Principal Cloud Architect · 13+ Years Distributed Systems Experience',
     author_bio:
       'Principal Cloud Architect with 13+ years of experience designing high-throughput backend systems, MLOps pipelines, and enterprise compliance architectures.',
@@ -505,7 +509,7 @@ export function StudioPage({
         setSupabaseTablesReady(res.supabaseTablesReady);
         setSupabaseAutomationMode(res.supabaseAutomationMode || 'manual');
         if (res.storageBackend === 'local-json') {
-          setLoginEmail('admin@gitstack.io');
+          setLoginEmail('admin@git-stack.org');
         }
         if (res.editor) {
           setEditorEmail(res.editor.email);
@@ -1183,7 +1187,7 @@ export function StudioPage({
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-600">
               <div className="font-semibold text-slate-900">Preview Operator Credentials</div>
               <p className="mt-1 font-mono">
-                Email: admin@gitstack.io
+                Email: admin@git-stack.org
                 <br />
                 Password: gitstack-studio-2026
               </p>
@@ -1236,6 +1240,7 @@ export function StudioPage({
     { id: 'agents', defaultLabel: 'Overview & 7 Agents', icon: Bot, count: agents.length || 7 },
     { id: 'crm', defaultLabel: 'CRM & Prospecting', icon: Briefcase },
     { id: 'pages', defaultLabel: 'Page Content Editor', icon: FileEdit },
+    { id: 'contact_registry', defaultLabel: 'Emails, Phones & Names', icon: Contact2 },
     { id: 'branding', defaultLabel: 'Branding & Theme', icon: Palette },
     { id: 'buymeacoffee', defaultLabel: 'Buy Me a Coffee Hub', icon: Coffee },
     { id: 'inbox', defaultLabel: 'Lark Mail & Lead Inbox', icon: Mail, count: inquiries.length },
@@ -1402,6 +1407,18 @@ export function StudioPage({
               pages={pageContents}
               onSavePage={handleSavePageContent}
               onPreviewRoute={onNavigate}
+            />
+          )}
+
+          {/* PANEL 2A: SITEWIDE EMAIL, PHONE & CONTACT NAME REGISTRY */}
+          {currentTab === 'contact_registry' && (
+            <ContactRegistryPanel
+              onJumpToSection={(tabId) => handleJumpToSection(tabId)}
+              onContentMutated={() => {
+                onPagesChanged();
+                onArticlesChanged();
+                loadWorkspaceData(analyticsRange);
+              }}
             />
           )}
 

@@ -1386,15 +1386,15 @@ function mergePageWithDefaults(key: PageKey, stored?: Partial<PageContentConfig>
     merged.contact_sales_label =
       merged.contact_sales_label?.trim() || def.contact_sales_label || 'New Project Inquiries';
     merged.contact_sales_email =
-      merged.contact_sales_email?.trim() || def.contact_sales_email || 'contact@gitstack.io';
+      merged.contact_sales_email?.trim() || def.contact_sales_email || 'contact@git-stack.org';
     merged.contact_editorial_label =
       merged.contact_editorial_label?.trim() || def.contact_editorial_label || 'Editorial & Press';
     merged.contact_editorial_email =
-      merged.contact_editorial_email?.trim() || def.contact_editorial_email || 'editorial@gitstack.io';
+      merged.contact_editorial_email?.trim() || def.contact_editorial_email || 'editorial@git-stack.org';
     merged.contact_privacy_label =
       merged.contact_privacy_label?.trim() || def.contact_privacy_label || 'Privacy & Compliance';
     merged.contact_privacy_email =
-      merged.contact_privacy_email?.trim() || def.contact_privacy_email || 'privacy@gitstack.io';
+      merged.contact_privacy_email?.trim() || def.contact_privacy_email || 'privacy@git-stack.org';
   }
   return merged;
 }

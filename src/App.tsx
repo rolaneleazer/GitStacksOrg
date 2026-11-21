@@ -251,7 +251,7 @@ export default function App() {
       return <EditorialPolicyPage />;
     }
     if (route === '/privacy-policy') {
-      return <PrivacyPolicyPage />;
+      return <PrivacyPolicyPage pageContent={getPageConfig('contact')} />;
     }
     if (route === '/terms') {
       return <TermsPage />;
@@ -311,6 +311,7 @@ export default function App() {
       <main className="flex-1 min-w-0">{renderPage()}</main>
       <Footer
         settings={adSenseSettings}
+        contactPage={getPageConfig('contact')}
         onNavigate={navigate}
         onOpenCookiePrefs={openPreferences}
         fullWidth={route.startsWith('/obama') || route.startsWith('/studio')}

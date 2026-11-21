@@ -15,6 +15,7 @@ import {
   Upload
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useVisibilityInterval } from '../../hooks/useVisibilityInterval.ts';
 import { api } from '../../lib/api.ts';
 import {
   DEFAULT_GITSTACK_GA4_PROPERTIES,
@@ -147,14 +148,12 @@ export function AnalyticsDashboard({
     }
   }, [summary?.realtime]);
 
-  useEffect(() => {
-    if (!autoPoll) return;
-    if (subTab !== 'realtime' && range.preset !== 'realtime') return;
-    const timer = window.setInterval(() => {
-      loadRealtime();
-    }, 8000);
-    return () => window.clearInterval(timer);
-  }, [autoPoll, loadRealtime, range.preset, subTab]);
+  const shouldPollRealtime =
+    autoPoll && (subTab === 'realtime' || range.preset === 'realtime');
+  useVisibilityInterval(
+    loadRealtime,
+    shouldPollRealtime ? 60_000 : null
+  );
 
   const handleRangeChange = (next: DateRangeSelection) => {
     onChangeRange(next);

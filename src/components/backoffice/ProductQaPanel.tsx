@@ -20,6 +20,7 @@ import {
   XCircle
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useVisibilityInterval } from '../../hooks/useVisibilityInterval.ts';
 import { api, getRealtimeWsUrl, getStoredToken } from '../../lib/api.ts';
 import type {
   ProductQaDashboardResponse,
@@ -98,12 +99,12 @@ export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPan
     loadDashboard(false);
   }, [loadDashboard]);
 
-  // Real-time WebSocket stream + 60s fallback polling (WebSocket pushes live errors)
-  useEffect(() => {
-    const pollId = window.setInterval(() => {
-      loadDashboard(true);
-    }, 60_000);
+  // Real-time WebSocket stream + 3-minute visibility-aware fallback polling
+  useVisibilityInterval(() => {
+    loadDashboard(true);
+  }, 180_000);
 
+  useEffect(() => {
     let ws: WebSocket | null = null;
     try {
       const wsUrl = getRealtimeWsUrl();
@@ -132,7 +133,6 @@ export function ProductQaPanel({ currentUserRole, onOpenSettings }: ProductQaPan
     }
 
     return () => {
-      window.clearInterval(pollId);
       if (ws && ws.readyState < 2) ws.close();
     };
   }, [loadDashboard]);

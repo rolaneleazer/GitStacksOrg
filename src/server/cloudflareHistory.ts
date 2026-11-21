@@ -15,6 +15,7 @@ import {
   upsertCloudflareAiForecast,
   upsertCloudflareHourlySnapshots
 } from './repository.ts';
+import { recordLoopOutcome, shouldRunLoopTick } from './quotaShield.ts';
 import { resolveIntegrationConfig, resolveIntegrationSecret } from './vault.ts';
 
 const CF_GRAPHQL_ENDPOINT = 'https://api.cloudflare.com/client/v4/graphql';
@@ -835,11 +836,14 @@ let snapshotTimerStarted = false;
 export function startCloudflareAutoSnapshotLoop(): void {
   if (snapshotTimerStarted) return;
   snapshotTimerStarted = true;
-  // Sync shortly after boot, then every 30 minutes
-  setTimeout(() => {
-    syncCloudflareHistoricalSnapshots().catch(() => null);
-  }, 15_000);
   setInterval(() => {
-    syncCloudflareHistoricalSnapshots().catch(() => null);
-  }, 30 * 60 * 1000);
+    void (async () => {
+      const allowed = await shouldRunLoopTick('cloudflare_snapshot');
+      if (!allowed) return;
+      await syncCloudflareHistoricalSnapshots();
+      recordLoopOutcome('cloudflare_snapshot', 'executed');
+    })().catch(() => {
+      recordLoopOutcome('cloudflare_snapshot', 'error');
+    });
+  }, 60_000);
 }

@@ -8,6 +8,7 @@ import type {
   AiSearchVisibilitySettings
 } from '../shared/types.ts';
 import { resolveLarkAlertTarget } from './notifications.ts';
+import { recordLoopOutcome, shouldRunLoopTick } from './quotaShield.ts';
 import { broadcastToAdmins } from './realtime.ts';
 import {
   addAiSearchVisibilityRun,
@@ -578,23 +579,45 @@ export async function getAiSearchVisibilityDashboard(
   };
 }
 
+let lastAiVisibilityDateUtc = '';
+
 export function startAiSearchVisibilityLoop(): void {
   if (aiVisibilityLoopStarted) return;
   aiVisibilityLoopStarted = true;
   setInterval(async () => {
     try {
-      const settings = await getAiSearchVisibilitySettings();
-      if (!settings.daily_test_enabled) return;
+      const allowed = await shouldRunLoopTick('ai_visibility');
+      if (!allowed) return;
+
       const now = new Date();
       const todayUtc = now.toISOString().slice(0, 10);
-      if (now.getUTCHours() >= settings.daily_hour_utc && settings.last_run_date !== todayUtc) {
+      if (lastAiVisibilityDateUtc === todayUtc) {
+        recordLoopOutcome('ai_visibility', 'skipped_idle');
+        return;
+      }
+
+      const settings = await getAiSearchVisibilitySettings();
+      if (!settings.daily_test_enabled) {
+        recordLoopOutcome('ai_visibility', 'skipped_idle');
+        return;
+      }
+      if (settings.last_run_date === todayUtc) {
+        lastAiVisibilityDateUtc = todayUtc;
+        recordLoopOutcome('ai_visibility', 'skipped_idle');
+        return;
+      }
+      if (now.getUTCHours() >= settings.daily_hour_utc) {
         await runDailyAiSearchVisibilityTest({
           triggerType: 'daily_cron',
           sendEmailReport: true
         }).catch(() => null);
+        lastAiVisibilityDateUtc = todayUtc;
+        recordLoopOutcome('ai_visibility', 'executed');
+      } else {
+        recordLoopOutcome('ai_visibility', 'skipped_idle');
       }
     } catch {
-      // keep background loop resilient
+      recordLoopOutcome('ai_visibility', 'error');
     }
   }, 60_000);
 }

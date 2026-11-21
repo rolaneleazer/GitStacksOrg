@@ -139,15 +139,31 @@ export default function App() {
     api.sendPublicPresence(currentPath, 1);
 
     const reportEngagement = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       const elapsedSec = Math.min(3600, Math.max(1, Math.round((Date.now() - enteredMs) / 1000)));
       api.sendPublicPresence(currentPath, elapsedSec);
     };
 
-    const id = window.setInterval(reportEngagement, 25_000);
+    let id: number | null = window.setInterval(reportEngagement, 90_000);
+    const onVisibilityChange = () => {
+      if (typeof document === 'undefined') return;
+      if (document.hidden) {
+        if (id !== null) {
+          window.clearInterval(id);
+          id = null;
+        }
+      } else {
+        if (id === null) {
+          id = window.setInterval(reportEngagement, 90_000);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('pagehide', reportEngagement);
 
     return () => {
-      window.clearInterval(id);
+      if (id !== null) window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('pagehide', reportEngagement);
       const elapsedSec = Math.min(3600, Math.max(1, Math.round((Date.now() - enteredMs) / 1000)));
       if (elapsedSec >= 2) {

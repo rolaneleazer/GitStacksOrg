@@ -40,12 +40,14 @@ async function startServer() {
   const PORT = Number(process.env.PORT || 3000);
   const server = http.createServer(app);
   attachRealtimeHub(server, verifyEditorToken);
-  startChatWatcherLoop();
-  startCloudflareAutoSnapshotLoop();
-  startQaMonitorLoop();
-  startAiSearchVisibilityLoop();
-  startCyberSecurityLoop();
-  startDemoGuardLoop();
+  if (!process.env.VERCEL) {
+    startChatWatcherLoop();
+    startCloudflareAutoSnapshotLoop();
+    startQaMonitorLoop();
+    startAiSearchVisibilityLoop();
+    startCyberSecurityLoop();
+    startDemoGuardLoop();
+  }
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`GitStack server running on http://0.0.0.0:${PORT}`);

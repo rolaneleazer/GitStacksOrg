@@ -531,9 +531,26 @@ export function StudioPage({
   useEffect(() => {
     if (!authenticated) return;
     api.sendAdminHeartbeat().catch(() => {});
-    const hbInterval = window.setInterval(() => {
+    const pingIfVisible = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       api.sendAdminHeartbeat().catch(() => {});
-    }, 60_000);
+    };
+    let hbInterval: number | null = window.setInterval(pingIfVisible, 120_000);
+    const onVisChange = () => {
+      if (typeof document === 'undefined') return;
+      if (document.hidden) {
+        if (hbInterval !== null) {
+          window.clearInterval(hbInterval);
+          hbInterval = null;
+        }
+      } else {
+        pingIfVisible();
+        if (hbInterval === null) {
+          hbInterval = window.setInterval(pingIfVisible, 120_000);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisChange);
 
     let ws: WebSocket | null = null;
     try {
@@ -550,7 +567,8 @@ export function StudioPage({
     }
 
     return () => {
-      window.clearInterval(hbInterval);
+      if (hbInterval !== null) window.clearInterval(hbInterval);
+      document.removeEventListener('visibilitychange', onVisChange);
       if (ws && ws.readyState < 2) ws.close();
     };
   }, [authenticated]);

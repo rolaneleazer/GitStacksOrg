@@ -17,8 +17,10 @@ import type {
   QaModuleBreakdownItem,
   QaPageBreakdownItem
 } from '../shared/types.ts';
+import { getCachedOrFetch, invalidateCache } from './cache.ts';
 import { resolveLarkAlertTarget } from './notifications.ts';
 import { renderQaEodPdfBuffer } from './qaPdf.ts';
+import { getCacheTtlMultiplier, recordLoopOutcome, shouldRunLoopTick } from './quotaShield.ts';
 import { broadcastToAdmins } from './realtime.ts';
 import {
   addInboxEmailLog,
@@ -935,80 +937,89 @@ const SYSTEM_FEATURE_BLUEPRINTS: FeatureBlueprintDef[] = [
 export async function evaluateSystemFeaturesAndDrift(
   userToken?: string
 ): Promise<QaFeatureCheckItem[]> {
-  const [
-    pages,
-    siteSettings,
-    notifSettings,
-    agents,
-    articles,
-    leads,
-    routingRules,
-    chatSessions,
-    vaultStatuses,
-    logs,
-    qaSettings
-  ] = await Promise.all([
-    getAllPageContents(userToken),
-    getAdSenseSettings(userToken),
-    getAdminNotificationSettings(userToken),
-    listAgentOfficeProfiles(userToken),
-    listArticles(false, userToken),
-    listCrmLeads(userToken),
-    listRoutingRules(userToken),
-    listWebsiteChatSessions(userToken),
-    listIntegrationSecretStatuses(userToken),
-    listProductQaLogs(200, userToken),
-    getProductQaSettings(userToken)
-  ]);
+  const ttlMs = Math.round(120_000 * getCacheTtlMultiplier());
+  return getCachedOrFetch(
+    'qa:feature_drift',
+    ttlMs,
+    async () => {
+      const [
+        pages,
+        siteSettings,
+        notifSettings,
+        agents,
+        articles,
+        leads,
+        routingRules,
+        chatSessions,
+        vaultStatuses,
+        logs,
+        qaSettings
+      ] = await Promise.all([
+        getAllPageContents(userToken),
+        getAdSenseSettings(userToken),
+        getAdminNotificationSettings(userToken),
+        listAgentOfficeProfiles(userToken),
+        listArticles(false, userToken),
+        listCrmLeads(userToken),
+        listRoutingRules(userToken),
+        listWebsiteChatSessions(userToken),
+        listIntegrationSecretStatuses(userToken),
+        listProductQaLogs(200, userToken),
+        getProductQaSettings(userToken)
+      ]);
 
-  const savedBaselines = qaSettings.feature_baselines || {};
-  const nowIso = new Date().toISOString();
+      const savedBaselines = qaSettings.feature_baselines || {};
+      const nowIso = new Date().toISOString();
 
-  return SYSTEM_FEATURE_BLUEPRINTS.map((bp) => {
-    const computed = bp.computeState({
-      pages,
-      siteSettings,
-      notifSettings,
-      agents,
-      articles,
-      leads,
-      routingRules,
-      chatSessions,
-      vaultStatuses,
-      logs
-    });
+      return SYSTEM_FEATURE_BLUEPRINTS.map((bp) => {
+        const computed = bp.computeState({
+          pages,
+          siteSettings,
+          notifSettings,
+          agents,
+          articles,
+          leads,
+          routingRules,
+          chatSessions,
+          vaultStatuses,
+          logs
+        });
 
-    const baselineEntry = savedBaselines[bp.id];
-    const baselineFingerprint = baselineEntry?.fingerprint || computed.defaultFingerprint;
-    const currentFingerprint = computed.liveFingerprint;
-    const isIdentical = baselineFingerprint === currentFingerprint;
-    const driftStatus: QaFeatureDriftStatus = isIdentical ? 'identical' : computed.driftStatusIfDiff;
-    const changeSummary = isIdentical
-      ? 'Identical to planned module specification (no unplanned edits or structural drift).'
-      : computed.changeDetailIfDiff;
+        const baselineEntry = savedBaselines[bp.id];
+        const baselineFingerprint = baselineEntry?.fingerprint || computed.defaultFingerprint;
+        const currentFingerprint = computed.liveFingerprint;
+        const isIdentical = baselineFingerprint === currentFingerprint;
+        const driftStatus: QaFeatureDriftStatus = isIdentical ? 'identical' : computed.driftStatusIfDiff;
+        const changeSummary = isIdentical
+          ? 'Identical to planned module specification (no unplanned edits or structural drift).'
+          : computed.changeDetailIfDiff;
 
-    return {
-      id: bp.id,
-      module_name: bp.module_name,
-      feature_name: bp.feature_name,
-      planned_spec: bp.planned_spec,
-      route_or_endpoint: bp.route_or_endpoint,
-      baseline_fingerprint: baselineFingerprint,
-      current_fingerprint: currentFingerprint,
-      drift_status: driftStatus,
-      change_summary: changeSummary,
-      test_status: computed.testStatus,
-      test_detail: computed.testDetail,
-      last_tested_at: nowIso,
-      last_modified_at: baselineEntry?.accepted_at || nowIso
-    };
-  });
+        return {
+          id: bp.id,
+          module_name: bp.module_name,
+          feature_name: bp.feature_name,
+          planned_spec: bp.planned_spec,
+          route_or_endpoint: bp.route_or_endpoint,
+          baseline_fingerprint: baselineFingerprint,
+          current_fingerprint: currentFingerprint,
+          drift_status: driftStatus,
+          change_summary: changeSummary,
+          test_status: computed.testStatus,
+          test_detail: computed.testDetail,
+          last_tested_at: nowIso,
+          last_modified_at: baselineEntry?.accepted_at || nowIso
+        };
+      });
+    },
+    11
+  );
 }
 
 export async function acceptFeatureBaseline(
   featureId: string,
   userToken?: string
 ): Promise<{ featureChecks: QaFeatureCheckItem[]; settings: ProductQaSettings }> {
+  invalidateCache('qa:');
   const currentChecks = await evaluateSystemFeaturesAndDrift(userToken);
   const qaSettings = await getProductQaSettings(userToken);
   const nextBaselines = { ...(qaSettings.feature_baselines || {}) };
@@ -1038,57 +1049,67 @@ export async function acceptFeatureBaseline(
     { feature_baselines: nextBaselines },
     userToken
   );
+  invalidateCache('qa:');
   const updatedChecks = await evaluateSystemFeaturesAndDrift(userToken);
   return { featureChecks: updatedChecks, settings: savedSettings };
 }
 
 export async function getQaDashboardData(userToken?: string): Promise<ProductQaDashboardResponse> {
-  const [logs, reports, settings, larkTarget, featureChecks] = await Promise.all([
-    listProductQaLogs(250, userToken),
-    listProductQaReports(30, userToken),
-    getProductQaSettings(userToken),
-    resolveLarkAlertTarget(),
-    evaluateSystemFeaturesAndDrift(userToken)
-  ]);
+  const ttlMs = Math.round(60_000 * getCacheTtlMultiplier());
+  return getCachedOrFetch(
+    'qa:dashboard',
+    ttlMs,
+    async () => {
+      const [logs, reports, settings, larkTarget, featureChecks] = await Promise.all([
+        listProductQaLogs(250, userToken),
+        listProductQaReports(30, userToken),
+        getProductQaSettings(userToken),
+        resolveLarkAlertTarget(),
+        evaluateSystemFeaturesAndDrift(userToken)
+      ]);
 
-  const resolvedRecipientEmail =
-    settings.recipient_email && settings.recipient_email.includes('@')
-      ? settings.recipient_email.trim().toLowerCase()
-      : larkTarget.recipientEmail;
+      const resolvedRecipientEmail =
+        settings.recipient_email && settings.recipient_email.includes('@')
+          ? settings.recipient_email.trim().toLowerCase()
+          : larkTarget.recipientEmail;
 
-  const stats = computeBreakdowns(logs);
+      const stats = computeBreakdowns(logs);
 
-  return {
-    settings,
-    resolvedRecipientEmail,
-    larkConnected: larkTarget.larkConnected,
-    summary: {
-      healthScore: stats.healthScore,
-      totalLogs24h: stats.totalLogs24h,
-      openErrorsCount: stats.openErrorsCount,
-      openWarnsCount: stats.openWarnsCount,
-      resolvedCount: stats.resolvedCount,
-      topFailingModule: stats.moduleBreakdown[0]?.module_name || 'None (Clean)',
-      topFailingPage: stats.pageBreakdown[0]?.page_path || '/',
-      topCodeHotspot: stats.codeHotspots[0]?.code_location || 'None detected'
+      return {
+        settings,
+        resolvedRecipientEmail,
+        larkConnected: larkTarget.larkConnected,
+        summary: {
+          healthScore: stats.healthScore,
+          totalLogs24h: stats.totalLogs24h,
+          openErrorsCount: stats.openErrorsCount,
+          openWarnsCount: stats.openWarnsCount,
+          resolvedCount: stats.resolvedCount,
+          topFailingModule: stats.moduleBreakdown[0]?.module_name || 'None (Clean)',
+          topFailingPage: stats.pageBreakdown[0]?.page_path || '/',
+          topCodeHotspot: stats.codeHotspots[0]?.code_location || 'None detected'
+        },
+        moduleBreakdown: stats.moduleBreakdown,
+        pageBreakdown: stats.pageBreakdown,
+        codeHotspots: stats.codeHotspots,
+        featureChecks,
+        logs,
+        reports
+      };
     },
-    moduleBreakdown: stats.moduleBreakdown,
-    pageBreakdown: stats.pageBreakdown,
-    codeHotspots: stats.codeHotspots,
-    featureChecks,
-    logs,
-    reports
-  };
+    14
+  );
 }
 
 export async function runLiveQaAgentScan(
-  _triggeredBy = 'live-qa-agent',
+  triggeredBy = 'live-qa-agent',
   userToken?: string
 ): Promise<{ analyzedCount: number; dashboard: ProductQaDashboardResponse }> {
   if (lastScanRunning) {
     return { analyzedCount: 0, dashboard: await getQaDashboardData(userToken) };
   }
   lastScanRunning = true;
+  const isBackgroundLoop = triggeredBy === 'qa-background-loop';
   try {
     const logs = await listProductQaLogs(200, userToken);
     let analyzedCount = 0;
@@ -1099,7 +1120,10 @@ export async function runLiveQaAgentScan(
         analyzedCount += 1;
       }
     }
-    await saveProductQaSettings({ last_scan_at: new Date().toISOString() }, userToken).catch(() => null);
+    if (!isBackgroundLoop || analyzedCount > 0) {
+      invalidateCache('qa:');
+      await saveProductQaSettings({ last_scan_at: new Date().toISOString() }, userToken).catch(() => null);
+    }
     const dashboard = await getQaDashboardData(userToken);
     return { analyzedCount, dashboard };
   } finally {
@@ -1480,11 +1504,17 @@ export function startQaMonitorLoop(): void {
   qaLoopStarted = true;
   setInterval(async () => {
     try {
-      const settings = await getProductQaSettings();
-      if (!settings.agent_enabled) return;
+      const allowed = await shouldRunLoopTick('qa_monitor');
+      if (!allowed) return;
 
-      // Re-analyze any un-analyzed open logs in background
-      await runLiveQaAgentScan('qa-background-loop').catch(() => null);
+      const settings = await getProductQaSettings();
+      if (!settings.agent_enabled) {
+        recordLoopOutcome('qa_monitor', 'skipped_idle');
+        return;
+      }
+
+      // Analyze only open un-analyzed logs; skips DB writes and 11-table scans when clean
+      const scanRes = await runLiveQaAgentScan('qa-background-loop').catch(() => null);
 
       // End-of-Day scheduler check
       if (settings.eod_enabled) {
@@ -1498,8 +1528,9 @@ export function startQaMonitorLoop(): void {
           }).catch(() => null);
         }
       }
+      recordLoopOutcome('qa_monitor', scanRes && scanRes.analyzedCount > 0 ? 'executed' : 'skipped_idle');
     } catch {
-      // keep background loop resilient
+      recordLoopOutcome('qa_monitor', 'error');
     }
   }, 60_000);
 }

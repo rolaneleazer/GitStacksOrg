@@ -14,6 +14,7 @@ import type {
 } from '../shared/types.ts';
 import { DEFAULT_MODULE_LABELS } from '../shared/workspaceLayout.ts';
 import { resolveLarkAlertTarget } from './notifications.ts';
+import { recordLoopOutcome, shouldRunLoopTick } from './quotaShield.ts';
 import { broadcastToAdmins } from './realtime.ts';
 import { addInboxEmailLog, getAdSenseSettings, getAllPageContents, listCrmLeads, listPosts } from './repository.ts';
 import { sendLarkSmtpMail } from './vault.ts';
@@ -415,6 +416,20 @@ export async function runDemoGuardAndAdminParityScan(options?: {
         fileHashes,
         isolationSignature: 'strict-readonly-v1'
       };
+    }
+
+    // On background scheduled ticks, if local watched file hashes match sealed baseline and parity was verified within 60 minutes, skip Supabase queries/writes
+    const lastScanMs = state.lastScanAt ? Date.parse(state.lastScanAt) || 0 : 0;
+    if (
+      options?.reason === 'scheduled' &&
+      !options?.adminToken &&
+      state.baseline &&
+      overallHash === state.baseline.overallHash &&
+      state.adminParityChecks.length > 0 &&
+      Date.now() - lastScanMs < 60 * 60_000
+    ) {
+      recordLoopOutcome('demo_guard', 'skipped_idle');
+      return buildDashboardPayload(state);
     }
 
     // Compare current watched files against sealed baseline
@@ -889,14 +904,27 @@ export function startDemoGuardLoop(): void {
   guardLoopStarted = true;
 
   setTimeout(() => {
-    void runDemoGuardAndAdminParityScan({ reason: 'boot' }).catch(() => null);
-  }, 4500);
+    void (async () => {
+      const state = await readState();
+      if (!state.baseline) {
+        await runDemoGuardAndAdminParityScan({ reason: 'boot' });
+      }
+    })().catch(() => null);
+  }, 6000);
 
   setInterval(() => {
     void (async () => {
+      const allowed = await shouldRunLoopTick('demo_guard');
+      if (!allowed) return;
       const state = await readState();
-      if (!state.autoWatchEnabled) return;
+      if (!state.autoWatchEnabled) {
+        recordLoopOutcome('demo_guard', 'skipped_idle');
+        return;
+      }
       await runDemoGuardAndAdminParityScan({ reason: 'scheduled' });
-    })().catch(() => null);
+      recordLoopOutcome('demo_guard', 'executed');
+    })().catch(() => {
+      recordLoopOutcome('demo_guard', 'error');
+    });
   }, 60 * 1000);
 }

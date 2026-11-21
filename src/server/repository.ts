@@ -99,12 +99,15 @@ import type {
 } from '../shared/types.ts';
 import { resolveDateRangeBounds, type ResolvedDateRange } from '../shared/dateRanges.ts';
 import { classifyAcquisitionChannel } from './googleAnalyticsService.ts';
+import { getCachedOrFetch, invalidateCache } from './cache.ts';
+import { getCacheTtlMultiplier } from './quotaShield.ts';
 import { listLiveVisitors, listRecent30mVisitors } from './realtime.ts';
 
 // Explicit Supabase column projection lists to prevent SELECT * over-fetching on Supabase Free Tier
 const USER_PROFILE_COLUMNS = 'user_id, email, full_name, role, job_title, bio, avatar_url, phone, timezone, status, created_at, updated_at';
 const POST_COLUMNS = 'id, slug, title, summary_tldr, content_markdown, category, author_name, author_role, author_bio, cover_image, cover_alt, meta_title, meta_description, primary_keyword, faqs, "references", word_count, read_time_minutes, quality_score, geo_score, status, published_at, updated_at, created_at';
 const POST_LIST_COLUMNS = 'id, slug, title, summary_tldr, category, author_name, author_role, author_bio, cover_image, cover_alt, meta_title, meta_description, primary_keyword, faqs, "references", word_count, read_time_minutes, quality_score, geo_score, status, published_at, updated_at, created_at';
+const POST_PUBLIC_SUMMARY_COLUMNS = 'id, slug, title, summary_tldr, category, author_name, author_role, cover_image, cover_alt, meta_title, meta_description, primary_keyword, word_count, read_time_minutes, quality_score, geo_score, status, published_at, updated_at, created_at';
 const COMMENT_COLUMNS = 'id, post_id, author_name, author_email, body, status, created_at';
 const SUBSCRIBER_COLUMNS = 'id, email, name, interest_topic, consent_given, created_at';
 const INQUIRY_COLUMNS = 'id, reference_code, full_name, company, work_email, service_interest, budget_range, timeline, project_brief, status, assigned_to, assigned_at, created_at';
@@ -866,35 +869,56 @@ export async function listPosts(
   userToken?: string,
   includeContent = false
 ): Promise<Article[]> {
-  if (isSupabaseConfigured()) {
-    const sb = getSupabaseClient(userToken);
-    const cols: string = includeContent ? POST_COLUMNS : POST_LIST_COLUMNS;
-    let query = sb
-      .from('posts')
-      .select(cols)
-      .order('updated_at', { ascending: false })
-      .limit(50);
-    if (!includeDrafts) {
-      query = query.eq('status', 'published');
-    }
-    const { data, error } = await query;
-    if (!error) {
-      const rows = (data || []) as unknown as Article[];
-      if (rows.length === 0 && !includeDrafts) {
-        return SEED_ARTICLES;
-      }
-      return rows;
-    }
-    if (!isFallbackableDbError(error)) {
-      throw new Error(error.message);
-    }
-  }
+  const isSlimPublicSummary = !includeDrafts && !includeContent;
+  const cacheKey = `posts:list:${includeDrafts ? 'all' : 'pub'}:${includeContent ? 'full' : 'summary'}`;
+  const baseTtlMs = isSlimPublicSummary ? 120_000 : 45_000;
+  const ttlMs = Math.round(baseTtlMs * getCacheTtlMultiplier());
 
-  const db = await readLocalDb();
-  const posts = includeDrafts ? db.posts : db.posts.filter((p) => p.status === 'published');
-  return [...posts].sort(
-    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-  );
+  const runFetch = async (): Promise<Article[]> => {
+    if (isSupabaseConfigured()) {
+      const sb = getSupabaseClient(userToken);
+      const cols: string = includeContent
+        ? POST_COLUMNS
+        : isSlimPublicSummary
+          ? POST_PUBLIC_SUMMARY_COLUMNS
+          : POST_LIST_COLUMNS;
+      let query = sb
+        .from('posts')
+        .select(cols)
+        .order('updated_at', { ascending: false })
+        .limit(50);
+      if (!includeDrafts) {
+        query = query.eq('status', 'published');
+      }
+      const { data, error } = await query;
+      if (!error) {
+        const rows = ((data || []) as unknown as Article[]).map((row) => ({
+          ...row,
+          author_bio: row.author_bio || '',
+          faqs: Array.isArray(row.faqs) ? row.faqs : [],
+          references: Array.isArray(row.references) ? row.references : []
+        }));
+        if (rows.length === 0 && !includeDrafts) {
+          return SEED_ARTICLES;
+        }
+        return rows;
+      }
+      if (!isFallbackableDbError(error)) {
+        throw new Error(error.message);
+      }
+    }
+
+    const db = await readLocalDb();
+    const posts = includeDrafts ? db.posts : db.posts.filter((p) => p.status === 'published');
+    return [...posts].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+  };
+
+  if (!userToken || !includeDrafts) {
+    return getCachedOrFetch(cacheKey, ttlMs, runFetch, 1);
+  }
+  return runFetch();
 }
 
 export async function getPostBySlug(
@@ -902,28 +926,38 @@ export async function getPostBySlug(
   includeDrafts: boolean,
   userToken?: string
 ): Promise<Article | null> {
-  if (isSupabaseConfigured()) {
-    const sb = getSupabaseClient(userToken);
-    let query = sb.from('posts').select(POST_COLUMNS).eq('slug', slug).limit(1);
-    if (!includeDrafts) {
-      query = query.eq('status', 'published');
-    }
-    const { data, error } = await query;
-    if (!error) {
-      if (data && data[0]) return data[0] as Article;
-      const seedFallback = SEED_ARTICLES.find((p) => p.slug === slug);
-      return seedFallback || null;
-    }
-    if (!isFallbackableDbError(error)) {
-      throw new Error(error.message);
-    }
-  }
+  const cacheKey = `posts:slug:${slug}:${includeDrafts ? 'all' : 'pub'}`;
+  const ttlMs = Math.round(120_000 * getCacheTtlMultiplier());
 
-  const db = await readLocalDb();
-  const found = db.posts.find((p) => p.slug === slug);
-  if (!found) return null;
-  if (!includeDrafts && found.status !== 'published') return null;
-  return found;
+  const runFetch = async (): Promise<Article | null> => {
+    if (isSupabaseConfigured()) {
+      const sb = getSupabaseClient(userToken);
+      let query = sb.from('posts').select(POST_COLUMNS).eq('slug', slug).limit(1);
+      if (!includeDrafts) {
+        query = query.eq('status', 'published');
+      }
+      const { data, error } = await query;
+      if (!error) {
+        if (data && data[0]) return data[0] as Article;
+        const seedFallback = SEED_ARTICLES.find((p) => p.slug === slug);
+        return seedFallback || null;
+      }
+      if (!isFallbackableDbError(error)) {
+        throw new Error(error.message);
+      }
+    }
+
+    const db = await readLocalDb();
+    const found = db.posts.find((p) => p.slug === slug);
+    if (!found) return null;
+    if (!includeDrafts && found.status !== 'published') return null;
+    return found;
+  };
+
+  if (!includeDrafts) {
+    return getCachedOrFetch(cacheKey, ttlMs, runFetch, 1);
+  }
+  return runFetch();
 }
 
 export async function upsertPost(article: Article, userToken?: string): Promise<Article> {
@@ -934,7 +968,10 @@ export async function upsertPost(article: Article, userToken?: string): Promise<
       .upsert(article, { onConflict: 'id' })
       .select()
       .single();
-    if (!error && data) return data as Article;
+    if (!error && data) {
+      invalidateCache('posts:');
+      return data as Article;
+    }
     if (error && !isFallbackableDbError(error)) {
       throw new Error(error.message);
     }
@@ -948,13 +985,17 @@ export async function upsertPost(article: Article, userToken?: string): Promise<
     db.posts.unshift(article);
   }
   await writeLocalDb(db);
+  invalidateCache('posts:');
   return article;
 }
 
 export async function deletePost(id: string, userToken?: string): Promise<boolean> {
   if (isSupabaseConfigured()) {
     const { error } = await getSupabaseClient(userToken).from('posts').delete().eq('id', id);
-    if (!error) return true;
+    if (!error) {
+      invalidateCache('posts:');
+      return true;
+    }
     if (!isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -963,6 +1004,7 @@ export async function deletePost(id: string, userToken?: string): Promise<boolea
   db.posts = db.posts.filter((p) => p.id !== id);
   db.comments = db.comments.filter((c) => c.post_id !== id);
   await writeLocalDb(db);
+  invalidateCache('posts:');
   return db.posts.length < before;
 }
 
@@ -1224,92 +1266,98 @@ export async function assignInquiry(
 }
 
 export async function getAdSenseSettings(userToken?: string): Promise<AdSenseSettings> {
-  const db = await readLocalDb();
-  const localSettings: AdSenseSettings = { ...DEFAULT_ADSENSE_SETTINGS, ...(db.site_settings || {}) };
+  const ttlMs = Math.round(180_000 * getCacheTtlMultiplier());
+  const runFetch = async (): Promise<AdSenseSettings> => {
+    const db = await readLocalDb();
+    const localSettings: AdSenseSettings = { ...DEFAULT_ADSENSE_SETTINGS, ...(db.site_settings || {}) };
 
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await getSupabaseClient(userToken)
-        .from('site_settings')
-        .select(SITE_SETTINGS_COLUMNS)
-        .eq('id', 'default')
-        .limit(1);
-      if (!error && data && data[0]) {
-        const row = data[0] as AdSenseSettings & { id?: string };
-        return {
-          adsense_publisher_id: row.adsense_publisher_id || '',
-          ads_txt_content: row.ads_txt_content || DEFAULT_ADSENSE_SETTINGS.ads_txt_content,
-          auto_ads_enabled: Boolean(row.auto_ads_enabled),
-          ad_slots_enabled: Boolean(row.ad_slots_enabled),
-          editorial_review_note:
-            row.editorial_review_note || DEFAULT_ADSENSE_SETTINGS.editorial_review_note,
-          ga4_measurement_id: row.ga4_measurement_id || '',
-          ga4_enabled: Boolean(row.ga4_enabled),
-          ga4_track_events: row.ga4_track_events !== undefined ? Boolean(row.ga4_track_events) : true,
-          gtm_enabled:
-            row.gtm_enabled !== undefined
-              ? Boolean(row.gtm_enabled)
-              : (localSettings.gtm_enabled ?? DEFAULT_ADSENSE_SETTINGS.gtm_enabled ?? true),
-          gtm_container_id:
-            row.gtm_container_id ||
-            localSettings.gtm_container_id ||
-            DEFAULT_ADSENSE_SETTINGS.gtm_container_id ||
-            'GTM-MFP3W7MS',
-          gtm_track_datalayer:
-            row.gtm_track_datalayer !== undefined
-              ? Boolean(row.gtm_track_datalayer)
-              : (localSettings.gtm_track_datalayer ?? true),
-          gtm_track_conversions:
-            row.gtm_track_conversions !== undefined
-              ? Boolean(row.gtm_track_conversions)
-              : (localSettings.gtm_track_conversions ?? true),
-          gtm_respect_consent:
-            row.gtm_respect_consent !== undefined
-              ? Boolean(row.gtm_respect_consent)
-              : (localSettings.gtm_respect_consent ?? false),
-          gtm_exclude_admin:
-            row.gtm_exclude_admin !== undefined
-              ? Boolean(row.gtm_exclude_admin)
-              : (localSettings.gtm_exclude_admin ?? true),
-          brand_name: row.brand_name || DEFAULT_ADSENSE_SETTINGS.brand_name,
-          brand_logo_url: row.brand_logo_url || '',
-          brand_logo_alt: row.brand_logo_alt || DEFAULT_ADSENSE_SETTINGS.brand_logo_alt,
-          favicon_url: row.favicon_url || localSettings.favicon_url || '',
-          theme_preset: row.theme_preset || DEFAULT_ADSENSE_SETTINGS.theme_preset,
-          primary_color: row.primary_color || DEFAULT_ADSENSE_SETTINGS.primary_color,
-          header_surface: row.header_surface === 'tinted' ? 'tinted' : 'white',
-          header_cta_label: row.header_cta_label || DEFAULT_ADSENSE_SETTINGS.header_cta_label,
-          header_cta_href: row.header_cta_href || DEFAULT_ADSENSE_SETTINGS.header_cta_href,
-          bmc_enabled: row.bmc_enabled !== undefined ? Boolean(row.bmc_enabled) : (localSettings.bmc_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_enabled),
-          bmc_handle: row.bmc_handle || localSettings.bmc_handle || DEFAULT_ADSENSE_SETTINGS.bmc_handle,
-          bmc_custom_url: row.bmc_custom_url || localSettings.bmc_custom_url || DEFAULT_ADSENSE_SETTINGS.bmc_custom_url,
-          bmc_button_text: row.bmc_button_text || localSettings.bmc_button_text || DEFAULT_ADSENSE_SETTINGS.bmc_button_text,
-          bmc_button_color: row.bmc_button_color || localSettings.bmc_button_color || DEFAULT_ADSENSE_SETTINGS.bmc_button_color,
-          bmc_font_style: row.bmc_font_style || localSettings.bmc_font_style || DEFAULT_ADSENSE_SETTINGS.bmc_font_style,
-          bmc_header_enabled: row.bmc_header_enabled !== undefined ? Boolean(row.bmc_header_enabled) : (localSettings.bmc_header_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_header_enabled),
-          bmc_footer_enabled: row.bmc_footer_enabled !== undefined ? Boolean(row.bmc_footer_enabled) : (localSettings.bmc_footer_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_footer_enabled),
-          bmc_floating_enabled: row.bmc_floating_enabled !== undefined ? Boolean(row.bmc_floating_enabled) : (localSettings.bmc_floating_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_floating_enabled),
-          bmc_floating_position: row.bmc_floating_position || localSettings.bmc_floating_position || DEFAULT_ADSENSE_SETTINGS.bmc_floating_position,
-          bmc_floating_y_offset: row.bmc_floating_y_offset || localSettings.bmc_floating_y_offset || DEFAULT_ADSENSE_SETTINGS.bmc_floating_y_offset,
-          bmc_support_message: row.bmc_support_message || localSettings.bmc_support_message || DEFAULT_ADSENSE_SETTINGS.bmc_support_message,
-          updated_at: row.updated_at || new Date().toISOString()
-        };
+    if (isSupabaseConfigured()) {
+      try {
+        const { data, error } = await getSupabaseClient(userToken)
+          .from('site_settings')
+          .select(SITE_SETTINGS_COLUMNS)
+          .eq('id', 'default')
+          .limit(1);
+        if (!error && data && data[0]) {
+          const row = data[0] as AdSenseSettings & { id?: string };
+          return {
+            adsense_publisher_id: row.adsense_publisher_id || '',
+            ads_txt_content: row.ads_txt_content || DEFAULT_ADSENSE_SETTINGS.ads_txt_content,
+            auto_ads_enabled: Boolean(row.auto_ads_enabled),
+            ad_slots_enabled: Boolean(row.ad_slots_enabled),
+            editorial_review_note:
+              row.editorial_review_note || DEFAULT_ADSENSE_SETTINGS.editorial_review_note,
+            ga4_measurement_id: row.ga4_measurement_id || '',
+            ga4_enabled: Boolean(row.ga4_enabled),
+            ga4_track_events: row.ga4_track_events !== undefined ? Boolean(row.ga4_track_events) : true,
+            gtm_enabled:
+              row.gtm_enabled !== undefined
+                ? Boolean(row.gtm_enabled)
+                : (localSettings.gtm_enabled ?? DEFAULT_ADSENSE_SETTINGS.gtm_enabled ?? true),
+            gtm_container_id:
+              row.gtm_container_id ||
+              localSettings.gtm_container_id ||
+              DEFAULT_ADSENSE_SETTINGS.gtm_container_id ||
+              'GTM-MFP3W7MS',
+            gtm_track_datalayer:
+              row.gtm_track_datalayer !== undefined
+                ? Boolean(row.gtm_track_datalayer)
+                : (localSettings.gtm_track_datalayer ?? true),
+            gtm_track_conversions:
+              row.gtm_track_conversions !== undefined
+                ? Boolean(row.gtm_track_conversions)
+                : (localSettings.gtm_track_conversions ?? true),
+            gtm_respect_consent:
+              row.gtm_respect_consent !== undefined
+                ? Boolean(row.gtm_respect_consent)
+                : (localSettings.gtm_respect_consent ?? false),
+            gtm_exclude_admin:
+              row.gtm_exclude_admin !== undefined
+                ? Boolean(row.gtm_exclude_admin)
+                : (localSettings.gtm_exclude_admin ?? true),
+            brand_name: row.brand_name || DEFAULT_ADSENSE_SETTINGS.brand_name,
+            brand_logo_url: row.brand_logo_url || '',
+            brand_logo_alt: row.brand_logo_alt || DEFAULT_ADSENSE_SETTINGS.brand_logo_alt,
+            favicon_url: row.favicon_url || localSettings.favicon_url || '',
+            theme_preset: row.theme_preset || DEFAULT_ADSENSE_SETTINGS.theme_preset,
+            primary_color: row.primary_color || DEFAULT_ADSENSE_SETTINGS.primary_color,
+            header_surface: row.header_surface === 'tinted' ? 'tinted' : 'white',
+            header_cta_label: row.header_cta_label || DEFAULT_ADSENSE_SETTINGS.header_cta_label,
+            header_cta_href: row.header_cta_href || DEFAULT_ADSENSE_SETTINGS.header_cta_href,
+            bmc_enabled: row.bmc_enabled !== undefined ? Boolean(row.bmc_enabled) : (localSettings.bmc_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_enabled),
+            bmc_handle: row.bmc_handle || localSettings.bmc_handle || DEFAULT_ADSENSE_SETTINGS.bmc_handle,
+            bmc_custom_url: row.bmc_custom_url || localSettings.bmc_custom_url || DEFAULT_ADSENSE_SETTINGS.bmc_custom_url,
+            bmc_button_text: row.bmc_button_text || localSettings.bmc_button_text || DEFAULT_ADSENSE_SETTINGS.bmc_button_text,
+            bmc_button_color: row.bmc_button_color || localSettings.bmc_button_color || DEFAULT_ADSENSE_SETTINGS.bmc_button_color,
+            bmc_font_style: row.bmc_font_style || localSettings.bmc_font_style || DEFAULT_ADSENSE_SETTINGS.bmc_font_style,
+            bmc_header_enabled: row.bmc_header_enabled !== undefined ? Boolean(row.bmc_header_enabled) : (localSettings.bmc_header_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_header_enabled),
+            bmc_footer_enabled: row.bmc_footer_enabled !== undefined ? Boolean(row.bmc_footer_enabled) : (localSettings.bmc_footer_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_footer_enabled),
+            bmc_floating_enabled: row.bmc_floating_enabled !== undefined ? Boolean(row.bmc_floating_enabled) : (localSettings.bmc_floating_enabled ?? DEFAULT_ADSENSE_SETTINGS.bmc_floating_enabled),
+            bmc_floating_position: row.bmc_floating_position || localSettings.bmc_floating_position || DEFAULT_ADSENSE_SETTINGS.bmc_floating_position,
+            bmc_floating_y_offset: row.bmc_floating_y_offset || localSettings.bmc_floating_y_offset || DEFAULT_ADSENSE_SETTINGS.bmc_floating_y_offset,
+            bmc_support_message: row.bmc_support_message || localSettings.bmc_support_message || DEFAULT_ADSENSE_SETTINGS.bmc_support_message,
+            updated_at: row.updated_at || new Date().toISOString()
+          };
+        }
+        if (error && !isFallbackableDbError(error)) {
+          console.warn('Supabase settings fallback:', error.message);
+        }
+      } catch {
+        // ignore
       }
-      if (error && !isFallbackableDbError(error)) {
-        console.warn('Supabase settings fallback:', error.message);
-      }
-    } catch {
-      // ignore
     }
-  }
 
-  return localSettings;
+    return localSettings;
+  };
+
+  return getCachedOrFetch('settings:adsense:default', ttlMs, runFetch, 1);
 }
 
 export async function saveAdSenseSettings(
   next: AdSenseSettings,
   userToken?: string
 ): Promise<AdSenseSettings> {
+  invalidateCache('settings:adsense');
   const db = await readLocalDb();
   db.site_settings = next;
   await writeLocalDb(db);
@@ -1322,6 +1370,7 @@ export async function saveAdSenseSettings(
         .select(SITE_SETTINGS_COLUMNS)
         .single();
       if (!error && data) {
+        invalidateCache('settings:adsense');
         return { ...next, ...(data as AdSenseSettings) };
       }
       if (error) {
@@ -1401,20 +1450,26 @@ function mergePageWithDefaults(key: PageKey, stored?: Partial<PageContentConfig>
 
 export async function listPageContents(userToken?: string): Promise<PageContentConfig[]> {
   const keys: PageKey[] = ['home', 'services', 'about', 'contact'];
-  if (isSupabaseConfigured()) {
-    const { data, error } = await getSupabaseClient(userToken)
-      .from('page_contents')
-      .select(PAGE_CONTENT_COLUMNS)
-      .limit(10);
-    if (!error && Array.isArray(data)) {
-      const byKey = new Map((data as PageContentConfig[]).map((r) => [r.page_key, r]));
-      return keys.map((k) => mergePageWithDefaults(k, byKey.get(k)));
-    }
-    if (error && !isFallbackableDbError(error)) throw new Error(error.message);
-  }
+  const ttlMs = Math.round(180_000 * getCacheTtlMultiplier());
 
-  const db = await readLocalDb();
-  return keys.map((k) => mergePageWithDefaults(k, db.page_contents?.[k]));
+  const runFetch = async (): Promise<PageContentConfig[]> => {
+    if (isSupabaseConfigured()) {
+      const { data, error } = await getSupabaseClient(userToken)
+        .from('page_contents')
+        .select(PAGE_CONTENT_COLUMNS)
+        .limit(10);
+      if (!error && Array.isArray(data)) {
+        const byKey = new Map((data as PageContentConfig[]).map((r) => [r.page_key, r]));
+        return keys.map((k) => mergePageWithDefaults(k, byKey.get(k)));
+      }
+      if (error && !isFallbackableDbError(error)) throw new Error(error.message);
+    }
+
+    const db = await readLocalDb();
+    return keys.map((k) => mergePageWithDefaults(k, db.page_contents?.[k]));
+  };
+
+  return getCachedOrFetch('pages:list:all', ttlMs, runFetch, 1);
 }
 
 export async function getAllPageContents(
@@ -1439,13 +1494,17 @@ export async function upsertPageContent(
   config: PageContentConfig,
   userToken?: string
 ): Promise<PageContentConfig> {
+  invalidateCache('pages:');
   if (isSupabaseConfigured()) {
     const { data, error } = await getSupabaseClient(userToken)
       .from('page_contents')
       .upsert(config, { onConflict: 'page_key' })
       .select()
       .single();
-    if (!error && data) return data as PageContentConfig;
+    if (!error && data) {
+      invalidateCache('pages:');
+      return data as PageContentConfig;
+    }
     if (error && !isFallbackableDbError(error)) throw new Error(error.message);
   }
 
@@ -1453,6 +1512,7 @@ export async function upsertPageContent(
   db.page_contents = db.page_contents || { ...DEFAULT_PAGE_CONTENTS };
   db.page_contents[config.page_key] = config;
   await writeLocalDb(db);
+  invalidateCache('pages:');
   return config;
 }
 
@@ -2345,30 +2405,38 @@ export async function getAnalyticsSummary(
     inputObj.days
   );
 
-  // Fetch both range events and 42-day cohort/realtime horizon in parallel when needed
-  const sixWeeksAgoIso = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
-  const fetchSinceIso = range.startIso < sixWeeksAgoIso ? range.startIso : sixWeeksAgoIso;
+  const cacheKey = `analytics:summary:${range.preset}:${range.startIso.slice(0, 13)}:${range.endIso.slice(0, 13)}`;
+  const baseTtlMs = range.preset === 'realtime' ? 20_000 : 60_000;
+  const ttlMs = Math.round(baseTtlMs * getCacheTtlMultiplier());
 
-  const allFetched = await fetchAnalyticsEventsBetween(fetchSinceIso, undefined, userToken);
-  const startMs = Date.parse(range.startIso);
-  const endMs = Date.parse(range.endIso);
+  return getCachedOrFetch(
+    cacheKey,
+    ttlMs,
+    async () => {
+      // Fetch both range events and 42-day cohort/realtime horizon in parallel when needed
+      const sixWeeksAgoIso = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
+      const fetchSinceIso = range.startIso < sixWeeksAgoIso ? range.startIso : sixWeeksAgoIso;
 
-  const normalizedAll = allFetched.map(normalizeAnalyticsEvent);
-  const eventsInRange = allFetched.filter((e) => {
-    const ms = Date.parse(e.created_at) || 0;
-    return ms >= startMs && ms <= endMs;
-  });
-  const recordsInRange = normalizedAll.filter((r) => r.createdMs >= startMs && r.createdMs <= endMs);
+      const allFetched = await fetchAnalyticsEventsBetween(fetchSinceIso, undefined, userToken);
+      const startMs = Date.parse(range.startIso);
+      const endMs = Date.parse(range.endIso);
 
-  const pageviews = eventsInRange.filter((e) => e.event_type === 'pageview');
-  const inquiryConversions = eventsInRange.filter((e) => e.event_type === 'inquiry_submitted').length;
-  const newsletterConversions = eventsInRange.filter(
-    (e) => e.event_type === 'newsletter_subscribed'
-  ).length;
-  const commentSubmissions = eventsInRange.filter(
-    (e) => e.event_type === 'comment_submitted'
-  ).length;
-  const sessions = new Set(eventsInRange.map((e) => e.session_id).filter(Boolean));
+      const normalizedAll = allFetched.map(normalizeAnalyticsEvent);
+      const eventsInRange = allFetched.filter((e) => {
+        const ms = Date.parse(e.created_at) || 0;
+        return ms >= startMs && ms <= endMs;
+      });
+      const recordsInRange = normalizedAll.filter((r) => r.createdMs >= startMs && r.createdMs <= endMs);
+
+      const pageviews = eventsInRange.filter((e) => e.event_type === 'pageview');
+      const inquiryConversions = eventsInRange.filter((e) => e.event_type === 'inquiry_submitted').length;
+      const newsletterConversions = eventsInRange.filter(
+        (e) => e.event_type === 'newsletter_subscribed'
+      ).length;
+      const commentSubmissions = eventsInRange.filter(
+        (e) => e.event_type === 'comment_submitted'
+      ).length;
+      const sessions = new Set(eventsInRange.map((e) => e.session_id).filter(Boolean));
 
   const buckets = buildTimeBuckets(range);
   const bucketMap = new Map<
@@ -2469,10 +2537,13 @@ export async function getAnalyticsSummary(
     landingPages: breakdowns.landingPages,
     pageTitles: breakdowns.pageTitles,
     eventCounts: breakdowns.eventCounts,
-    devices: breakdowns.devices,
-    cohorts,
-    realtime
-  };
+        devices: breakdowns.devices,
+        cohorts,
+        realtime
+      };
+    },
+    1
+  );
 }
 
 // --- Chat Thread Assignment ---
@@ -5052,13 +5123,21 @@ export async function getGtmDashboardSummary(
     inputObj.days ?? 7
   );
 
-  const sixWeeksAgoIso = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
-  const fetchSinceIso = range.startIso < sixWeeksAgoIso ? range.startIso : sixWeeksAgoIso;
+  const cacheKey = `gtm:summary:${range.preset}:${range.startIso.slice(0, 13)}:${range.endIso.slice(0, 13)}`;
+  const baseTtlMs = range.preset === 'realtime' ? 20_000 : 60_000;
+  const ttlMs = Math.round(baseTtlMs * getCacheTtlMultiplier());
 
-  const [siteSettings, allFetched] = await Promise.all([
-    getAdSenseSettings(userToken),
-    listGtmEventLogsSince(fetchSinceIso, 3000, userToken)
-  ]);
+  return getCachedOrFetch(
+    cacheKey,
+    ttlMs,
+    async () => {
+      const sixWeeksAgoIso = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
+      const fetchSinceIso = range.startIso < sixWeeksAgoIso ? range.startIso : sixWeeksAgoIso;
+
+      const [siteSettings, allFetched] = await Promise.all([
+        getAdSenseSettings(userToken),
+        listGtmEventLogsSince(fetchSinceIso, 3000, userToken)
+      ]);
 
   const gtmSettings: GtmSettingsConfig = {
     gtm_enabled: siteSettings.gtm_enabled !== undefined ? Boolean(siteSettings.gtm_enabled) : true,
@@ -5207,7 +5286,10 @@ export async function getGtmDashboardSummary(
     pageTitles: breakdowns.pageTitles,
     devices: breakdowns.devices,
     cohorts,
-    realtime,
-    recentEvents: events.slice(0, 150)
-  };
+      realtime,
+      recentEvents: events.slice(0, 150)
+    };
+    },
+    2
+  );
 }

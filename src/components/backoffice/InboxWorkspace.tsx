@@ -176,14 +176,15 @@ export function InboxWorkspace({
     }
   }, [selectedChatId, loadSelectedChatThread]);
 
-  // Real-time WS + 60s fallback poll for Live Website Chat
+  // Real-time WS + 3m visibility-aware fallback poll for Live Website Chat
   useEffect(() => {
     const pollId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       loadChatSessions(true);
       if (subTab === 'live_chat' && selectedChatId) {
         loadSelectedChatThread(selectedChatId);
       }
-    }, 60_000);
+    }, 180_000);
 
     let ws: WebSocket | null = null;
     try {

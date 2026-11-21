@@ -71,6 +71,7 @@ import type {
   OpenSourceSyncTrack,
   PageContentConfig,
   PageKey,
+  QuotaShieldUpdatePayload,
   RoutingRule,
   ServiceCategory,
   SiteAuditCheck,
@@ -104,6 +105,11 @@ import {
   searchGoogleMapsEstablishments
 } from './connectors.ts';
 import { collectInfrastructureMetrics, restartInfrastructureServices } from './infrastructure.ts';
+import {
+  flushQuotaShieldCache,
+  getQuotaShieldStatus,
+  updateQuotaShieldConfig
+} from './quotaShield.ts';
 import { auditPageAdSense } from './adsenseAuditor.ts';
 import { isPublicSsrPath, renderPublicRouteHtml } from './ssrRenderer.ts';
 import { discoverTrendingTopics, generateAdSenseSafeArticle } from './trendScout.ts';
@@ -555,10 +561,13 @@ export async function createApp(): Promise<Express> {
   await ensureDatabaseReadyOnBoot();
 
   // Hardened HTTP Security Headers Middleware (Audited by Aegis CyberSec Sentinel)
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('X-XSS-Protection', '1; mode=block');
+    if (req.path.startsWith('/api/admin/') || req.path.startsWith('/api/infrastructure/')) {
+      res.setHeader('Cache-Control', 'private, no-store');
+    }
     next();
   });
 
@@ -609,6 +618,7 @@ export async function createApp(): Promise<Express> {
       `# AI Manifest: ${origin}/llms.txt`,
       `# Extended AI Corpus: ${origin}/llms-full.txt`
     ].join('\n');
+    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=3600');
     res.type('text/plain').send(body);
   });
 
@@ -641,6 +651,7 @@ export async function createApp(): Promise<Express> {
       ].join('\n');
 
       const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`;
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
       res.type('application/xml').send(xml);
     } catch {
       res.status(500).type('text/plain').send('Failed to generate sitemap');
@@ -676,6 +687,7 @@ export async function createApp(): Promise<Express> {
         '## Full Machine-Readable Corpus',
         `- [Complete Technical Corpus](${origin}/llms-full.txt)`
       ];
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
       res.type('text/plain; charset=utf-8').send(lines.join('\n'));
     } catch {
       res.status(500).type('text/plain').send('Failed to generate llms.txt');
@@ -724,6 +736,7 @@ export async function createApp(): Promise<Express> {
           ''
         ])
       ];
+      res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
       res.type('text/plain; charset=utf-8').send(sections.join('\n'));
     } catch {
       res.status(500).type('text/plain').send('Failed to generate llms-full.txt');
@@ -733,6 +746,7 @@ export async function createApp(): Promise<Express> {
   app.get('/ads.txt', async (_req, res) => {
     try {
       const settings = await getAdSenseSettings();
+      res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=1800');
       res.type('text/plain; charset=utf-8').send(settings.ads_txt_content);
     } catch {
       res.status(500).type('text/plain').send('# Error loading ads.txt');
@@ -848,6 +862,52 @@ export async function createApp(): Promise<Express> {
     }
   );
 
+  app.get(
+    '/api/admin/infrastructure/quota-shield',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (_req, res) => {
+      try {
+        const status = await getQuotaShieldStatus();
+        res.json(status);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to load Supabase Quota Shield status.'
+        });
+      }
+    }
+  );
+
+  app.put(
+    '/api/admin/infrastructure/quota-shield',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const payload = (req.body || {}) as QuotaShieldUpdatePayload;
+        const status = await updateQuotaShieldConfig(payload);
+        res.json(status);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to update Supabase Quota Shield settings.'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/infrastructure/quota-shield/flush-cache',
+    requireRoles('super_admin', 'editor'),
+    async (_req, res) => {
+      try {
+        const result = await flushQuotaShieldCache();
+        res.json(result);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to flush server cache.'
+        });
+      }
+    }
+  );
+
   // --- AdSense Compliance & Visual Auditor API ---
 
   app.post('/api/audit-page', async (req, res) => {
@@ -924,6 +984,11 @@ export async function createApp(): Promise<Express> {
       const session = await verifyEditorToken(token);
       const wantAll = req.query.status === 'all' && Boolean(session);
       const posts = await listPosts(wantAll, token);
+      if (wantAll) {
+        res.setHeader('Cache-Control', 'private, no-store');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=120, stale-while-revalidate=300');
+      }
       res.json({ posts });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load posts' });
@@ -936,6 +1001,11 @@ export async function createApp(): Promise<Express> {
       const session = await verifyEditorToken(token);
       const post = await getPostBySlug(req.params.slug, Boolean(session), token);
       if (!post) return res.status(404).json({ error: 'Article not found' });
+      if (session) {
+        res.setHeader('Cache-Control', 'private, no-store');
+      } else {
+        res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=120, stale-while-revalidate=300');
+      }
       res.json({ post });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load article' });
@@ -1313,6 +1383,7 @@ export async function createApp(): Promise<Express> {
       const session = await verifyEditorToken(getBearerToken(req));
       const settings = await getAdSenseSettings();
       if (!session) {
+        res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=180, stale-while-revalidate=300');
         return res.json({
           settings: {
             adsense_publisher_id: settings.adsense_publisher_id,
@@ -1356,6 +1427,7 @@ export async function createApp(): Promise<Express> {
           }
         });
       }
+      res.setHeader('Cache-Control', 'private, no-store');
       res.json({ settings });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load AdSense settings' });
@@ -1585,6 +1657,7 @@ export async function createApp(): Promise<Express> {
   app.get('/api/pages', async (_req, res) => {
     try {
       const pages = await listPageContents();
+      res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=180, stale-while-revalidate=300');
       res.json({ pages });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load page contents' });

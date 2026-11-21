@@ -12,13 +12,19 @@ import {
   RefreshCw,
   RotateCcw,
   Server,
-  ShieldAlert
+  ShieldAlert,
+  ShieldCheck,
+  Copy,
+  Check
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useVisibilityInterval } from '../../hooks/useVisibilityInterval.ts';
 import { api } from '../../lib/api.ts';
 import type {
   InfrastructureMetricsResponse,
   InfrastructureSamplePoint,
+  QuotaShieldLoopId,
+  QuotaShieldStatusResponse,
   UserRole
 } from '../../shared/types.ts';
 
@@ -26,7 +32,7 @@ interface InfrastructureMonitorProps {
   currentUserRole: UserRole;
 }
 
-type PollMode = '60s' | '120s' | 'paused';
+type PollMode = '120s' | '300s' | 'paused';
 
 function formatTimeLabel(iso: string): string {
   try {
@@ -84,11 +90,16 @@ function buildAreaPath(
 export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitorProps) {
   const [data, setData] = useState<InfrastructureMetricsResponse | null>(null);
   const [samples, setSamples] = useState<InfrastructureSamplePoint[]>([]);
-  const [pollMode, setPollMode] = useState<PollMode>('60s');
+  const [pollMode, setPollMode] = useState<PollMode>('120s');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  const [shield, setShield] = useState<QuotaShieldStatusResponse | null>(null);
+  const [shieldBusy, setShieldBusy] = useState(false);
+  const [shieldNotice, setShieldNotice] = useState<string | null>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   const [showRss, setShowRss] = useState(true);
   const [showHeap, setShowHeap] = useState(true);
@@ -110,9 +121,13 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
     if (!isInitial) setRefreshing(true);
     setError(null);
     try {
-      const res = await api.getInfrastructureMetrics();
+      const [res, shieldRes] = await Promise.all([
+        api.getInfrastructureMetrics(),
+        api.getQuotaShieldStatus().catch(() => null)
+      ]);
       if (!mountedRef.current) return;
       setData(res);
+      if (shieldRes) setShield(shieldRes);
       setSamples((prev) => {
         if (prev.length === 0 && res.history.length > 0) {
           return res.history.slice(-30);
@@ -152,14 +167,93 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
     };
   }, [fetchSample]);
 
-  useEffect(() => {
-    if (pollMode === 'paused') return;
-    const ms = pollMode === '60s' ? 60000 : 120000;
-    const timer = window.setInterval(() => {
+  useVisibilityInterval(
+    () => {
       fetchSample(false);
-    }, ms);
-    return () => window.clearInterval(timer);
-  }, [pollMode, fetchSample]);
+    },
+    pollMode === 'paused' ? null : pollMode === '120s' ? 120_000 : 300_000
+  );
+
+  const canManageShield = currentUserRole === 'super_admin' || currentUserRole === 'editor';
+
+  const handleToggleLowQuotaMode = async () => {
+    if (!shield || !canManageShield) return;
+    setShieldBusy(true);
+    setShieldNotice(null);
+    try {
+      const next = await api.updateQuotaShieldConfig({
+        lowQuotaMode: !shield.lowQuotaMode
+      });
+      setShield(next);
+      setShieldNotice(
+        next.lowQuotaMode
+          ? 'Low-Quota Shield enabled: non-essential background loops paused and cache TTLs extended 2.5x.'
+          : 'Low-Quota Shield returned to standard throttled protection (5m–60m intervals).'
+      );
+    } catch (err) {
+      setShieldNotice(err instanceof Error ? err.message : 'Unable to update Quota Shield.');
+    } finally {
+      setShieldBusy(false);
+    }
+  };
+
+  const handleLoopToggle = async (loopId: QuotaShieldLoopId, enabled: boolean) => {
+    if (!canManageShield) return;
+    setShieldBusy(true);
+    setShieldNotice(null);
+    try {
+      const next = await api.updateQuotaShieldConfig({
+        loops: { [loopId]: { enabled } }
+      });
+      setShield(next);
+    } catch (err) {
+      setShieldNotice(err instanceof Error ? err.message : 'Failed to toggle background loop.');
+    } finally {
+      setShieldBusy(false);
+    }
+  };
+
+  const handleLoopIntervalChange = async (loopId: QuotaShieldLoopId, intervalSeconds: number) => {
+    if (!canManageShield) return;
+    setShieldBusy(true);
+    setShieldNotice(null);
+    try {
+      const next = await api.updateQuotaShieldConfig({
+        loops: { [loopId]: { intervalSeconds } }
+      });
+      setShield(next);
+    } catch (err) {
+      setShieldNotice(err instanceof Error ? err.message : 'Failed to update loop interval.');
+    } finally {
+      setShieldBusy(false);
+    }
+  };
+
+  const handleFlushCache = async () => {
+    if (!canManageShield) return;
+    setShieldBusy(true);
+    setShieldNotice(null);
+    try {
+      const res = await api.flushQuotaShieldCache();
+      setShield(res.status);
+      setShieldNotice(`Purged ${res.clearedEntries} cached server entries. Fresh reads will re-populate cache.`);
+    } catch (err) {
+      setShieldNotice(err instanceof Error ? err.message : 'Failed to flush server cache.');
+    } finally {
+      setShieldBusy(false);
+    }
+  };
+
+  const handleCopyAuditSql = async () => {
+    if (!shield?.auditTriggerSql) return;
+    try {
+      await navigator.clipboard.writeText(shield.auditTriggerSql);
+      setCopiedSql(true);
+      window.setTimeout(() => setCopiedSql(false), 2500);
+    } catch {
+      setShieldNotice('Copy blocked by browser clipboard permissions. Select the SQL snippet manually.');
+    }
+  };
 
   const handleExportSnapshot = () => {
     if (!data) return;
@@ -325,7 +419,7 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
             aria-label="Live polling interval"
             className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 w-full sm:w-auto"
           >
-            {(['60s', '120s', 'paused'] as const).map((mode) => (
+            {(['120s', '300s', 'paused'] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -341,7 +435,7 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
                 ) : (
                   <Play className="h-3 w-3" />
                 )}
-                <span>{mode === 'paused' ? 'Pause' : `Live ${mode}`}</span>
+                <span>{mode === 'paused' ? 'Pause' : mode === '120s' ? 'Live 2m' : 'Live 5m'}</span>
               </button>
             ))}
           </div>
@@ -1029,6 +1123,232 @@ export function InfrastructureMonitor({ currentUserRole }: InfrastructureMonitor
                   : 'Vercel environment variables (Supabase keys and optional cloud tokens) are managed by a Super Admin in Vercel Project Settings.'}
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Supabase Free Tier Quota Shield & Loop Governance */}
+      {shield && (
+        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-6">
+          <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-[#16A34A] shrink-0" />
+                <h3 className="font-display text-base font-bold text-slate-900">
+                  Supabase Free Tier Quota Shield
+                </h3>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className={shield.lowQuotaMode ? 'font-semibold text-[#D97706]' : 'font-semibold text-[#16A34A]'}>
+                  {shield.lowQuotaMode ? 'Low-Quota Shield Active' : 'Throttled Protection Active'}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">
+                  Cache TTL {shield.cacheTtlMultiplier}x
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums">
+                  {shield.serverlessLoopsSuppressed
+                    ? 'Serverless Auto-Loops Suppressed'
+                    : `${shield.loops.filter((l) => l.effectiveActive).length}/${shield.loops.length} Loops Active`}
+                </span>
+              </div>
+            </div>
+
+            {canManageShield && (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleFlushCache}
+                  disabled={shieldBusy}
+                  className="min-h-[40px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${shieldBusy ? 'animate-spin' : ''}`} />
+                  <span>Flush Server Cache</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleToggleLowQuotaMode}
+                  disabled={shieldBusy}
+                  className={`min-h-[40px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition-colors disabled:opacity-50 whitespace-nowrap ${
+                    shield.lowQuotaMode
+                      ? 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                      : 'bg-slate-900 text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  <span>{shield.lowQuotaMode ? 'Disable Low-Quota Shield' : 'Enable Low-Quota Shield'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {shieldNotice && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+              {shieldNotice}
+            </div>
+          )}
+
+          {/* Cache & Quota Mitigation Telemetry Strip */}
+          <div className="grid grid-cols-1 gap-4 border-b border-slate-200 pb-5 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <div className="text-xs text-slate-500">Server Cache Hit Rate</div>
+              <div className="mt-1 font-mono text-xl font-bold text-slate-900 tabular-nums">
+                {shield.cacheStats.hitRatePercent}%
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-slate-500 tabular-nums">
+                {shield.cacheStats.hits} hits · {shield.cacheStats.misses} misses · {shield.cacheStats.entries} keys
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">Avoided DB Queries</div>
+              <div className="mt-1 font-mono text-xl font-bold text-[#16A34A] tabular-nums">
+                {shield.cacheStats.avoidedQueriesEstimate.toLocaleString()}
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Served from Node TTL cache instead of Supabase
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">Egress Optimization</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                CDN Headers + Slim Columns
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Public routes emit s-maxage=120–180s
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">Client Tab Polling</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                Visibility-Paused (2m–5m)
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Background browser tabs make zero poll requests
+              </div>
+            </div>
+          </div>
+
+          {/* Per-Loop Schedule Governance Table */}
+          <div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">
+                  Background Server Loop Governance
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Previously ran every 60s (1,440+ calls/day per loop). Throttled to 5m–60m with idle DB skipping.
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500">
+                    <th className="py-2.5 pr-3 font-semibold">Background Loop</th>
+                    <th className="py-2.5 px-3 font-semibold">Status</th>
+                    <th className="py-2.5 px-3 font-semibold">Interval</th>
+                    <th className="py-2.5 px-3 text-right font-semibold">Executed / Skipped</th>
+                    <th className="py-2.5 px-3 font-semibold">Last Tick</th>
+                    <th className="py-2.5 pl-3 text-right font-semibold">Control</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {shield.loops.map((loop) => {
+                    const statusText =
+                      loop.lastOutcome === 'serverless_disabled'
+                        ? 'Serverless Suppressed'
+                        : !loop.effectiveActive
+                          ? 'Paused'
+                          : loop.lastOutcome === 'error'
+                            ? 'Error'
+                            : 'Throttled Active';
+                    const statusColor =
+                      loop.lastOutcome === 'error'
+                        ? 'text-[#DC2626]'
+                        : !loop.effectiveActive || loop.lastOutcome === 'serverless_disabled'
+                          ? 'text-[#D97706]'
+                          : 'text-[#16A34A]';
+
+                    return (
+                      <tr key={loop.id} className="hover:bg-slate-50/70">
+                        <td className="py-3 pr-3">
+                          <div className="font-semibold text-slate-900">{loop.label}</div>
+                          <div className="mt-0.5 text-[11px] text-slate-500 max-w-md">
+                            {loop.description}
+                          </div>
+                        </td>
+                        <td className={`py-3 px-3 font-medium whitespace-nowrap ${statusColor}`}>
+                          {statusText}
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <select
+                            aria-label={`Interval for ${loop.label}`}
+                            value={loop.intervalSeconds}
+                            disabled={!canManageShield || shieldBusy}
+                            onChange={(e) =>
+                              handleLoopIntervalChange(loop.id, Number(e.target.value))
+                            }
+                            className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 font-mono text-xs text-slate-800 disabled:opacity-60"
+                          >
+                            <option value={300}>5 min</option>
+                            <option value={900}>15 min</option>
+                            <option value={1800}>30 min</option>
+                            <option value={3600}>60 min</option>
+                          </select>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap">
+                          {loop.runsCount} / {loop.skippedCount}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-[11px] text-slate-500 tabular-nums whitespace-nowrap">
+                          {loop.lastRunAt ? formatTimeLabel(loop.lastRunAt) : 'Waiting'}
+                        </td>
+                        <td className="py-3 pl-3 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            disabled={!canManageShield || shieldBusy}
+                            onClick={() => handleLoopToggle(loop.id, !loop.enabled)}
+                            className="min-h-[34px] rounded-md border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {loop.enabled ? 'Pause' : 'Resume'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Audit Trigger Cleanup SQL for Log Ingestion & Log Query Prevention */}
+          <div className="border-t border-slate-200 pt-5 space-y-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">
+                  Supabase Trigger &amp; Log Query Prevention SQL
+                </h4>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Run once in Supabase SQL Editor to stop noisy telemetry tables from triggering data_audit_logs inserts and Realtime broadcasts. Also avoid leaving Supabase Dashboard Logs Explorer auto-refreshing (primary cause of Log Query spikes).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyAuditSql}
+                className="min-h-[38px] w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+              >
+                {copiedSql ? (
+                  <Check className="h-3.5 w-3.5 text-[#16A34A]" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+                <span>{copiedSql ? 'Copied Cleanup SQL' : 'Copy Cleanup SQL'}</span>
+              </button>
+            </div>
+            <pre className="max-h-44 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3.5 font-mono text-[11px] leading-relaxed text-slate-700">
+              {shield.auditTriggerSql}
+            </pre>
           </div>
         </div>
       )}

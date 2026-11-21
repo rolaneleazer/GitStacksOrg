@@ -19,6 +19,7 @@ import {
   Unplug
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useVisibilityInterval } from '../../hooks/useVisibilityInterval.ts';
 import { api } from '../../lib/api.ts';
 import {
   clearGtmOAuthToken,
@@ -196,14 +197,12 @@ export function TagManagerPanel({ settings, onSettingsUpdated }: TagManagerPanel
     loadData(range);
   }, [loadData, range]);
 
-  useEffect(() => {
-    if (!autoPoll) return;
-    if (subTab !== 'realtime' && range.preset !== 'realtime') return;
-    const timer = window.setInterval(() => {
-      pollRealtimeGtm();
-    }, 8000);
-    return () => window.clearInterval(timer);
-  }, [autoPoll, pollRealtimeGtm, range.preset, subTab]);
+  const shouldPollRealtime =
+    autoPoll && (subTab === 'realtime' || range.preset === 'realtime');
+  useVisibilityInterval(
+    pollRealtimeGtm,
+    shouldPollRealtime ? 60_000 : null
+  );
 
   const handleRangeChange = (next: DateRangeSelection) => {
     setRange(next);

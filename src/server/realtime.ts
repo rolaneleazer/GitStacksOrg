@@ -6,9 +6,9 @@ interface StoredVisitor extends LiveWebsiteVisitor {
   lastSeenMs: number;
 }
 
-const VISITOR_TTL_MS = 65_000;
+const VISITOR_TTL_MS = 125_000;
 const VISITOR_30M_TTL_MS = 30 * 60_000;
-const ADMIN_ONLINE_TTL_MS = 95_000;
+const ADMIN_ONLINE_TTL_MS = 180_000;
 
 const visitorPresenceMap = new Map<string, StoredVisitor>();
 const recent30mVisitorMap = new Map<string, StoredVisitor>();

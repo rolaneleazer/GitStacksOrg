@@ -13,6 +13,8 @@ import {
   normalizePostgresUrl,
   resetSupabaseClientPools
 } from './repository.ts';
+import { getCachedOrFetch, invalidateCache } from './cache.ts';
+import { getCacheTtlMultiplier } from './quotaShield.ts';
 
 const VERCEL_HOBBY_RAM_LIMIT_MB = 2048;
 const VERCEL_HOBBY_MAX_DURATION_SEC = 300;
@@ -334,11 +336,16 @@ async function querySupabaseManagementApi(
 }
 
 export async function collectInfrastructureMetrics(): Promise<InfrastructureMetricsResponse> {
-  const reqStart = performance.now();
-  const coldStart = !hasSampledOnce;
-  hasSampledOnce = true;
+  const ttlMs = Math.round(45_000 * getCacheTtlMultiplier());
+  return getCachedOrFetch(
+    'infra:metrics',
+    ttlMs,
+    async () => {
+      const reqStart = performance.now();
+      const coldStart = !hasSampledOnce;
+      hasSampledOnce = true;
 
-  const projectRef = getSupabaseProjectRef() || null;
+      const projectRef = getSupabaseProjectRef() || null;
 
   const [eventLoopLagMs, pgTelemetry, vercelApi, sbMgmt] = await Promise.all([
     measureEventLoopLagMs(),
@@ -512,9 +519,12 @@ export async function collectInfrastructureMetrics(): Promise<InfrastructureMetr
       projectRegion: sbMgmt.projectRegion,
       projectStatus: sbMgmt.projectStatus
     },
-    history: [...sampleHistory],
-    alerts
-  };
+        history: [...sampleHistory],
+        alerts
+      };
+    },
+    14
+  );
 }
 
 export async function restartInfrastructureServices(): Promise<{
@@ -525,8 +535,9 @@ export async function restartInfrastructureServices(): Promise<{
   cacheCleared: boolean;
   sampledAt: string;
 }> {
-  // 1. Reset client connection pool singletons
+  // 1. Reset client connection pool singletons and server caches
   resetSupabaseClientPools();
+  invalidateCache();
 
   // 2. Terminate idle & hanging PostgreSQL connections if direct DB URL configured
   let connectionsTerminated = 0;

@@ -556,6 +556,59 @@ export interface InfrastructureMetricsResponse {
   alerts: InfrastructureAlert[];
 }
 
+export type QuotaShieldLoopId =
+  | 'qa_monitor'
+  | 'demo_guard'
+  | 'cyber_security'
+  | 'ai_visibility'
+  | 'chat_watcher'
+  | 'cloudflare_snapshot';
+
+export interface QuotaShieldLoopState {
+  id: QuotaShieldLoopId;
+  label: string;
+  description: string;
+  enabled: boolean;
+  effectiveActive: boolean;
+  intervalSeconds: number;
+  defaultIntervalSeconds: number;
+  lastRunAt: string | null;
+  lastOutcome: 'idle' | 'executed' | 'skipped_idle' | 'paused' | 'serverless_disabled' | 'error';
+  runsCount: number;
+  skippedCount: number;
+}
+
+export interface QuotaShieldStatusResponse {
+  lowQuotaMode: boolean;
+  cacheTtlMultiplier: number;
+  serverlessLoopsSuppressed: boolean;
+  cacheStats: {
+    hits: number;
+    misses: number;
+    entries: number;
+    hitRatePercent: number;
+    avoidedQueriesEstimate: number;
+    lastFlushedAt: string | null;
+  };
+  loops: QuotaShieldLoopState[];
+  auditTriggerSql: string;
+  updatedAt: string;
+}
+
+export interface QuotaShieldUpdatePayload {
+  lowQuotaMode?: boolean;
+  cacheTtlMultiplier?: number;
+  loops?: Partial<
+    Record<
+      QuotaShieldLoopId,
+      {
+        enabled?: boolean;
+        intervalSeconds?: number;
+      }
+    >
+  >;
+}
+
 // --- Virtual Office HQ & Daily Agent Email Reports ---
 
 export type AgentWorkStatus = 'working' | 'walking' | 'idle';

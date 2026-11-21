@@ -477,7 +477,7 @@ export function CloudflareAnalyticsPanel({ onOpenSettings }: CloudflareAnalytics
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(60);
+  const [secondsUntilRefresh, setSecondsUntilRefresh] = useState(120);
 
   const loadAnalytics = useCallback(
     async (silent = false) => {
@@ -487,7 +487,7 @@ export function CloudflareAnalyticsPanel({ onOpenSettings }: CloudflareAnalytics
       try {
         const res = await api.getCloudflareAnalytics(windowPreset);
         setData(res);
-        setSecondsUntilRefresh(60);
+        setSecondsUntilRefresh(120);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : 'Unable to retrieve Cloudflare telemetry.'
@@ -507,10 +507,11 @@ export function CloudflareAnalyticsPanel({ onOpenSettings }: CloudflareAnalytics
   useEffect(() => {
     if (!autoRefresh) return;
     const id = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       setSecondsUntilRefresh((prev) => {
         if (prev <= 1) {
           loadAnalytics(true);
-          return 60;
+          return 120;
         }
         return prev - 1;
       });

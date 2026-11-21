@@ -9,6 +9,7 @@ import type {
   CyberSecuritySettings
 } from '../shared/types.ts';
 import { resolveLarkAlertTarget } from './notifications.ts';
+import { recordLoopOutcome, shouldRunLoopTick } from './quotaShield.ts';
 import { broadcastToAdmins } from './realtime.ts';
 import {
   addCyberSecurityReport,
@@ -809,26 +810,47 @@ export async function mitigateCyberFinding(
   return updateCyberSecurityFindingStatus(findingId, status, userToken);
 }
 
+let lastCyberCheckedDateUtc = '';
+
 export function startCyberSecurityLoop(): void {
   if (cyberLoopStarted) return;
   cyberLoopStarted = true;
   setInterval(async () => {
     try {
-      const settings = await getCyberSecuritySettings();
-      if (!settings.sentinel_enabled) return;
+      const allowed = await shouldRunLoopTick('cyber_security');
+      if (!allowed) return;
+
       const now = new Date();
       const todayUtc = now.toISOString().slice(0, 10);
+      if (lastCyberCheckedDateUtc === todayUtc) {
+        recordLoopOutcome('cyber_security', 'skipped_idle');
+        return;
+      }
+
+      const settings = await getCyberSecuritySettings();
+      if (!settings.sentinel_enabled) {
+        recordLoopOutcome('cyber_security', 'skipped_idle');
+        return;
+      }
+      if (settings.last_report_date === todayUtc) {
+        lastCyberCheckedDateUtc = todayUtc;
+        recordLoopOutcome('cyber_security', 'skipped_idle');
+        return;
+      }
       if (
         settings.daily_report_enabled &&
-        now.getUTCHours() >= settings.daily_hour_utc &&
-        settings.last_report_date !== todayUtc
+        now.getUTCHours() >= settings.daily_hour_utc
       ) {
         await generateAndSendCyberSecurityReport({
           triggerType: 'daily_cron'
         }).catch(() => null);
+        lastCyberCheckedDateUtc = todayUtc;
+        recordLoopOutcome('cyber_security', 'executed');
+      } else {
+        recordLoopOutcome('cyber_security', 'skipped_idle');
       }
     } catch {
-      // keep background loop resilient
+      recordLoopOutcome('cyber_security', 'error');
     }
   }, 60_000);
 }

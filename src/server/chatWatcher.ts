@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { WebsiteChatMessage, WebsiteChatSession } from '../shared/types.ts';
 import { dispatchAdminLarkAlert, resolveLarkAlertTarget } from './notifications.ts';
+import { recordLoopOutcome, shouldRunLoopTick } from './quotaShield.ts';
 import { broadcastToAdmins, broadcastToVisitor, isAdminOnline } from './realtime.ts';
 import {
   appendWebsiteChatMessage,
@@ -156,6 +157,13 @@ export function startChatWatcherLoop(): void {
   if (watcherTimerStarted) return;
   watcherTimerStarted = true;
   setInterval(() => {
-    runOfflineChatInquiryCheck().catch(() => null);
+    void (async () => {
+      const allowed = await shouldRunLoopTick('chat_watcher');
+      if (!allowed) return;
+      const res = await runOfflineChatInquiryCheck();
+      recordLoopOutcome('chat_watcher', res.escalatedCount > 0 ? 'executed' : 'skipped_idle');
+    })().catch(() => {
+      recordLoopOutcome('chat_watcher', 'error');
+    });
   }, 60_000);
 }

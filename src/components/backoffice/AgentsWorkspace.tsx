@@ -193,17 +193,17 @@ export function AgentsWorkspace({
     return () => window.clearInterval(walkTimer);
   }, [continuousWalk]);
 
-  // Real-time WebSocket stream + 12s fallback HUD polling for live website visitors & chat alerts
+  // Real-time WebSocket stream + 3m visibility-aware fallback HUD polling
   useEffect(() => {
     const refreshHud = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       api
         .getOfficeHud()
         .then((res) => setHud(res.hud))
         .catch(() => {});
     };
 
-    // Fallback polling reduced to 60s (WebSocket handles live push events)
-    const pollId = window.setInterval(refreshHud, 60_000);
+    const pollId = window.setInterval(refreshHud, 180_000);
     let ws: WebSocket | null = null;
     try {
       const wsUrl = getRealtimeWsUrl();

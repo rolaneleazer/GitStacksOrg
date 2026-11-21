@@ -65,6 +65,8 @@ import type {
   PublicDemoUser,
   QaFeatureCheckItem,
   QaLogStatus,
+  QuotaShieldStatusResponse,
+  QuotaShieldUpdatePayload,
   RoutingRule,
   SiteAuditReport,
   TaskPriority,
@@ -881,6 +883,26 @@ export const api = {
     }>('/api/infrastructure/restart-services', {
       method: 'POST'
     });
+    invalidateClientApiCache();
+    return res;
+  },
+
+  async getQuotaShieldStatus() {
+    return request<QuotaShieldStatusResponse>('/api/admin/infrastructure/quota-shield');
+  },
+
+  async updateQuotaShieldConfig(payload: QuotaShieldUpdatePayload) {
+    return request<QuotaShieldStatusResponse>('/api/admin/infrastructure/quota-shield', {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async flushQuotaShieldCache() {
+    const res = await request<{ clearedEntries: number; status: QuotaShieldStatusResponse }>(
+      '/api/admin/infrastructure/quota-shield/flush-cache',
+      { method: 'POST' }
+    );
     invalidateClientApiCache();
     return res;
   },

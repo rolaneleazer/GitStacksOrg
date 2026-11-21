@@ -1522,7 +1522,17 @@ BEGIN
     FROM information_schema.tables
     WHERE table_schema = 'public'
       AND table_type = 'BASE TABLE'
-      AND table_name <> 'data_audit_logs'
+      AND table_name NOT IN (
+        'data_audit_logs',
+        'analytics_events',
+        'gtm_event_logs',
+        'product_qa_logs',
+        'cloudflare_snapshots',
+        'inbox_email_logs',
+        'demo_guard_alerts',
+        'cyber_security_reports',
+        'ai_search_runs'
+      )
   LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS trg_gitstack_audit ON public.%I;', tbl.table_name);
     EXECUTE format(

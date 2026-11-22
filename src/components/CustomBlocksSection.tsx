@@ -8,7 +8,13 @@ interface CustomBlocksSectionProps {
 }
 
 export function CustomBlocksSection({ blocks, onNavigate }: CustomBlocksSectionProps) {
-  const visibleBlocks = (blocks || []).filter((b) => b.visible && (b.heading.trim() || b.body.trim()));
+  const visibleBlocks = (blocks || []).filter(
+    (b) =>
+      b.visible &&
+      b.kind !== 'showcase_slide' &&
+      !b.id?.startsWith('slide-') &&
+      (b.heading.trim() || b.body.trim())
+  );
   if (visibleBlocks.length === 0) return null;
 
   return (

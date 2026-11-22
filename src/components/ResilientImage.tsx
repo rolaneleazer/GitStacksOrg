@@ -1,5 +1,5 @@
 import { Layers } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface ResilientImageProps {
   src: string;
@@ -15,6 +15,10 @@ export function ResilientImage({
   fallbackTitle = 'GitStack Engineering'
 }: ResilientImageProps) {
   const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
 
   if (failed || !src) {
     return (

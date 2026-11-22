@@ -1,8 +1,11 @@
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
   Eye,
   ImagePlus,
+  Images,
   Plus,
   RotateCcw,
   Save,
@@ -14,6 +17,10 @@ import {
   STUDIO_IMAGE_LIBRARY,
   validatePageContentForAdSense
 } from '../../shared/pageDefaults.ts';
+import {
+  BACK_OFFICE_CATEGORIES_SHOWCASE,
+  DEFAULT_SERVICE_SHOWCASE_SLIDES
+} from '../../shared/servicesShowcase.ts';
 import type { CustomContentBlock, PageContentConfig, PageKey } from '../../shared/types.ts';
 import { ResilientImage } from '../ResilientImage.tsx';
 
@@ -112,9 +119,91 @@ export function PageEditorPanel({
     reader.readAsDataURL(file);
   };
 
+  const isShowcaseSlide = (b: CustomContentBlock) =>
+    b.kind === 'showcase_slide' || (typeof b.id === 'string' && b.id.startsWith('slide-'));
+
+  const showcaseSlides = useMemo(
+    () => (current.custom_blocks || []).filter(isShowcaseSlide),
+    [current.custom_blocks]
+  );
+
+  const standardBlocks = useMemo(
+    () => (current.custom_blocks || []).filter((b) => !isShowcaseSlide(b)),
+    [current.custom_blocks]
+  );
+
+  const commitCombinedBlocks = (nextSlides: CustomContentBlock[], nextStandard: CustomContentBlock[]) => {
+    updateField('custom_blocks', [...nextSlides, ...nextStandard]);
+  };
+
+  const toSlideBlock = (s: (typeof DEFAULT_SERVICE_SHOWCASE_SLIDES)[number]): CustomContentBlock => ({
+    id: s.id,
+    kind: 'showcase_slide',
+    category_label: s.category,
+    module_id: s.module_id,
+    heading: s.title,
+    body: s.caption,
+    image_url: s.image_url,
+    image_alt: s.image_alt,
+    cta_label: s.cta_label,
+    cta_href: s.cta_href,
+    visible: true
+  });
+
+  const initializeDefaultSlides = () => {
+    commitCombinedBlocks(DEFAULT_SERVICE_SHOWCASE_SLIDES.map(toSlideBlock), standardBlocks);
+    setStatusMsg({
+      type: 'ok',
+      text: 'Loaded all 6 Back Office showcase slide slots. Upload custom screenshots from /obama or customize captions, then click Publish.'
+    });
+  };
+
+  const addShowcaseSlide = () => {
+    const baseSlides =
+      showcaseSlides.length > 0
+        ? showcaseSlides
+        : DEFAULT_SERVICE_SHOWCASE_SLIDES.map(toSlideBlock);
+    const nextSlide: CustomContentBlock = {
+      id: `slide-custom-${Math.random().toString(36).slice(2, 8)}`,
+      kind: 'showcase_slide',
+      category_label: 'Command & Agents',
+      heading: 'Production Back Office Workspace Capture',
+      body: 'Live production workflow module demonstrating GitStack’s Back Office ERP orchestration, real-time telemetry, and enterprise automation.',
+      image_url: STUDIO_IMAGE_LIBRARY[4]?.url || '',
+      image_alt: 'GitStack Back Office ERP production workspace screenshot',
+      cta_label: 'Launch in Live Demo',
+      cta_href: '/demo?tab=backoffice',
+      visible: true
+    };
+    commitCombinedBlocks([...baseSlides, nextSlide], standardBlocks);
+  };
+
+  const updateShowcaseSlide = (idx: number, patch: Partial<CustomContentBlock>) => {
+    const next = [...showcaseSlides];
+    next[idx] = { ...next[idx], kind: 'showcase_slide', ...patch };
+    commitCombinedBlocks(next, standardBlocks);
+  };
+
+  const moveShowcaseSlide = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir;
+    if (target < 0 || target >= showcaseSlides.length) return;
+    const next = [...showcaseSlides];
+    const [item] = next.splice(idx, 1);
+    next.splice(target, 0, item);
+    commitCombinedBlocks(next, standardBlocks);
+  };
+
+  const removeShowcaseSlide = (idx: number) => {
+    commitCombinedBlocks(
+      showcaseSlides.filter((_, i) => i !== idx),
+      standardBlocks
+    );
+  };
+
   const addCustomBlock = () => {
     const nextBlock: CustomContentBlock = {
       id: `blk-${Math.random().toString(36).slice(2, 9)}`,
+      kind: 'block',
       heading: 'Enterprise AI Governance & SLA Commitment',
       body: 'Every GitStack architecture deployment includes documented runbooks, security compliance mapping, and measurable uptime benchmarks tailored to your engineering environment.',
       image_url: '',
@@ -123,19 +212,19 @@ export function PageEditorPanel({
       cta_href: '/contact',
       visible: true
     };
-    updateField('custom_blocks', [...current.custom_blocks, nextBlock]);
+    commitCombinedBlocks(showcaseSlides, [...standardBlocks, nextBlock]);
   };
 
   const updateBlock = (idx: number, patch: Partial<CustomContentBlock>) => {
-    const next = [...current.custom_blocks];
-    next[idx] = { ...next[idx], ...patch };
-    updateField('custom_blocks', next);
+    const next = [...standardBlocks];
+    next[idx] = { ...next[idx], kind: 'block', ...patch };
+    commitCombinedBlocks(showcaseSlides, next);
   };
 
   const removeBlock = (idx: number) => {
-    updateField(
-      'custom_blocks',
-      current.custom_blocks.filter((_, i) => i !== idx)
+    commitCombinedBlocks(
+      showcaseSlides,
+      standardBlocks.filter((_, i) => i !== idx)
     );
   };
 
@@ -498,12 +587,214 @@ export function PageEditorPanel({
             </div>
           </div>
 
+          {/* Services Back Office Screenshot Slider Upload Slots */}
+          {activeKey === 'services' && (
+            <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <div>
+                  <h3 className="font-display text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                    <Images className="h-4 w-4 text-[var(--gs-primary)]" />
+                    <span>
+                      Back Office &amp; Product Screenshot Slider Slots ({showcaseSlides.length || DEFAULT_SERVICE_SHOWCASE_SLIDES.length})
+                    </span>
+                  </h3>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Upload real captures from your production Back Office (/obama) under 900 KB or
+                    pair generated UI previews for the interactive /services photo slider.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {showcaseSlides.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={initializeDefaultSlides}
+                      className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                    >
+                      <span>Customize 6 Default Slides</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={addShowcaseSlide}
+                    className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg bg-[var(--gs-primary)] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-[var(--gs-primary-hover)] whitespace-nowrap shrink-0"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add Screenshot Slide</span>
+                  </button>
+                </div>
+              </div>
+
+              {showcaseSlides.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-xs text-slate-600 space-y-2">
+                  <p className="font-semibold text-slate-800">
+                    Active default: 6 curated Back Office ERP &amp; AI Automation UI showcase visuals are live on /services.
+                  </p>
+                  <p>
+                    Click &ldquo;Customize 6 Default Slides&rdquo; or &ldquo;Add Screenshot Slide&rdquo; above to upload your own production screenshots from <span className="font-mono">git-stack.org/obama</span>.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {showcaseSlides.map((slide, sIdx) => (
+                    <div
+                      key={slide.id}
+                      className="rounded-lg border border-slate-200 bg-[var(--gs-canvas-bg)] p-4 space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-[var(--gs-primary)] tabular-nums">
+                            Slide {String(sIdx + 1).padStart(2, '0')}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-700">
+                            {slide.category_label || 'Back Office ERP'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={sIdx === 0}
+                            onClick={() => moveShowcaseSlide(sIdx, -1)}
+                            className="p-1 text-slate-500 hover:text-slate-900 disabled:opacity-30"
+                            aria-label={`Move slide ${sIdx + 1} up`}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={sIdx === showcaseSlides.length - 1}
+                            onClick={() => moveShowcaseSlide(sIdx, 1)}
+                            className="p-1 text-slate-500 hover:text-slate-900 disabled:opacity-30"
+                            aria-label={`Move slide ${sIdx + 1} down`}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </button>
+                          <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={slide.visible}
+                              onChange={(e) =>
+                                updateShowcaseSlide(sIdx, { visible: e.target.checked })
+                              }
+                            />
+                            <span>Visible</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeShowcaseSlide(sIdx)}
+                            className="text-slate-400 hover:text-red-700 p-1"
+                            aria-label={`Remove slide ${sIdx + 1}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700">
+                            Slide Title
+                          </label>
+                          <input
+                            type="text"
+                            value={slide.heading}
+                            onChange={(e) =>
+                              updateShowcaseSlide(sIdx, { heading: e.target.value })
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700">
+                            Back Office Category
+                          </label>
+                          <select
+                            value={slide.category_label || 'Command & Agents'}
+                            onChange={(e) =>
+                              updateShowcaseSlide(sIdx, { category_label: e.target.value })
+                            }
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900"
+                          >
+                            {BACK_OFFICE_CATEGORIES_SHOWCASE.map((cat) => (
+                              <option key={cat.id} value={cat.name}>
+                                {cat.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <textarea
+                        rows={2}
+                        value={slide.body}
+                        onChange={(e) => updateShowcaseSlide(sIdx, { body: e.target.value })}
+                        placeholder="Describe what this Back Office module screenshot demonstrates (30+ chars)..."
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900"
+                      />
+
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-12 items-start">
+                        <div className="sm:col-span-7 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="text-[11px] font-semibold text-slate-700">
+                              Screenshot File (&lt;900KB) or Asset URL
+                            </label>
+                            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-[var(--gs-primary)] hover:bg-slate-50">
+                              <ImagePlus className="h-3 w-3" />
+                              <span>Upload /obama Capture</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) =>
+                                  handleImageUpload(e, (url) =>
+                                    updateShowcaseSlide(sIdx, { image_url: url })
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                          <input
+                            type="text"
+                            value={slide.image_url}
+                            onChange={(e) =>
+                              updateShowcaseSlide(sIdx, { image_url: e.target.value })
+                            }
+                            placeholder="/src/assets/images/... or data URL"
+                            className="w-full rounded-lg border border-slate-200 bg-white font-mono px-3 py-1.5 text-[11px]"
+                          />
+                          <input
+                            type="text"
+                            value={slide.image_alt}
+                            onChange={(e) =>
+                              updateShowcaseSlide(sIdx, { image_alt: e.target.value })
+                            }
+                            placeholder="Descriptive SEO alt attribute (min 8 chars)..."
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs"
+                          />
+                        </div>
+                        <div className="sm:col-span-5">
+                          <div className="aspect-[16/9] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                            <ResilientImage
+                              src={slide.image_url}
+                              alt={slide.image_alt || slide.heading}
+                              className="h-full w-full object-cover"
+                              fallbackTitle={slide.heading}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Add More Content & Picture Blocks */}
           <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div>
                 <h3 className="font-display text-sm font-bold text-slate-900">
-                  Additional Content &amp; Picture Sections ({current.custom_blocks.length})
+                  Additional Content &amp; Picture Sections ({standardBlocks.length})
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
                   Append structured content sections with text, images, and CTAs onto {activeMeta.label}.
@@ -519,14 +810,14 @@ export function PageEditorPanel({
               </button>
             </div>
 
-            {current.custom_blocks.length === 0 ? (
+            {standardBlocks.length === 0 ? (
               <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
                 No extra sections added to {activeMeta.label} yet. Click &ldquo;Add Section&rdquo;
                 above to append custom copy or pictures.
               </div>
             ) : (
               <div className="space-y-4">
-                {current.custom_blocks.map((block, idx) => (
+                {standardBlocks.map((block, idx) => (
                   <div
                     key={block.id}
                     className="rounded-lg border border-slate-200 bg-[var(--gs-canvas-bg)] p-4 space-y-3"

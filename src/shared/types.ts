@@ -196,6 +196,9 @@ export interface CustomContentBlock {
   cta_label: string;
   cta_href: string;
   visible: boolean;
+  kind?: 'block' | 'showcase_slide';
+  category_label?: string;
+  module_id?: string;
 }
 
 export interface PageContentConfig {

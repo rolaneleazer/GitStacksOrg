@@ -3,6 +3,7 @@ export interface RouteSeoMeta {
   description: string;
   path: string;
   ogType?: 'website' | 'article';
+  ogImage?: string;
   robots?: string;
   jsonLd?: Record<string, unknown>;
 }
@@ -30,6 +31,13 @@ export function applySeoMetadata(meta: RouteSeoMeta) {
   setMetaTag('meta[property="og:url"]', 'property', 'og:url', canonicalUrl);
   setMetaTag('meta[name="twitter:title"]', 'name', 'twitter:title', meta.title);
   setMetaTag('meta[name="twitter:description"]', 'name', 'twitter:description', meta.description);
+  if (meta.ogImage) {
+    const absImage = meta.ogImage.startsWith('http')
+      ? meta.ogImage
+      : `${origin}${meta.ogImage.startsWith('/') ? '' : '/'}${meta.ogImage}`;
+    setMetaTag('meta[property="og:image"]', 'property', 'og:image', absImage);
+    setMetaTag('meta[name="twitter:image"]', 'name', 'twitter:image', absImage);
+  }
 
   let canonical = document.head.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
   if (!canonical) {

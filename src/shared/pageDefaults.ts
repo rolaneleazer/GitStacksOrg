@@ -23,6 +23,42 @@ export const STUDIO_IMAGE_LIBRARY = [
     url: '/src/assets/images/insight_cover_ai_agents_1794645171607.jpg',
     defaultAlt:
       'Geometric optical glass prisms refracting cobalt blue light on a white studio surface'
+  },
+  {
+    label: 'Back Office UI: Command & 8 AI Agents',
+    url: '/src/assets/images/bo_command_agents_1795316018621.jpg',
+    defaultAlt:
+      'GitStack Back Office ERP Command Dashboard showing 8 autonomous AI agents, priority workflow queue, and real-time system health metrics'
+  },
+  {
+    label: 'Back Office UI: Search Console & Growth SEO',
+    url: '/src/assets/images/bo_growth_seo_1795316018091.jpg',
+    defaultAlt:
+      'GitStack Growth and Search Console SEO cockpit displaying CTR curves, keyword impressions table, Google Trends velocity cards, and 100/100 publishing gatekeeper scores'
+  },
+  {
+    label: 'Back Office UI: CRM, Inbox & Auto-Response',
+    url: '/src/assets/images/bo_crm_inbox_1795316018170.jpg',
+    defaultAlt:
+      'GitStack Revenue CRM and Lead Inbox workspace featuring verified visitor contact cards, live chat transcript, quick auto-response templates, and pipeline conversion stages'
+  },
+  {
+    label: 'Back Office UI: GA4, GTM & Cloudflare Telemetry',
+    url: '/src/assets/images/bo_analytics_telemetry_1795316018341.jpg',
+    defaultAlt:
+      'GitStack Analytics and Edge Telemetry dashboard combining GA4 conversion funnels, GTM event trigger matrix, and Cloudflare bandwidth and cache latency graphs'
+  },
+  {
+    label: 'Back Office UI: Page Editor & Brand Studio',
+    url: '/src/assets/images/bo_content_brand_1795316018735.jpg',
+    defaultAlt:
+      'GitStack Page Content Editor and Branding Studio interface displaying live section copy controls, image upload dropzones, color theme tokens, and AdSense integrity checks'
+  },
+  {
+    label: 'Back Office UI: Quota Shield & Cybersecurity',
+    url: '/src/assets/images/bo_platform_security_1795316017614.jpg',
+    defaultAlt:
+      'GitStack Platform Security and Quota Shield console showing Vercel deployment health, Supabase egress and log ingestion gauges, Demo Guard verifier, and RBAC audit logs'
   }
 ];
 
@@ -48,19 +84,20 @@ export const DEFAULT_PAGE_CONTENTS: Record<PageKey, PageContentConfig> = {
   },
   services: {
     page_key: 'services',
-    hero_kicker: 'Capabilities & Engagement Models',
-    hero_title: 'Engineering Systems Designed for Reliability, Intelligence, and Scale',
+    hero_kicker: 'Enterprise AI Automation · Custom SaaS · Back Office ERP',
+    hero_title: 'Enterprise AI Automation, Custom SaaS & Back Office ERP',
     hero_subtitle:
-      'GitStack pairs senior software and cloud platform engineering with production AI integration and automated machine learning operations.',
+      'Explore GitStack’s 28-module Back Office ERP, turnkey B2B SaaS systems, and enterprise AI automation—test workflows live in our interactive demo.',
     hero_cta_label: 'Request a Technical Proposal',
-    hero_image: '',
-    hero_image_alt: '',
+    hero_image: '/src/assets/images/bo_command_agents_1795316018621.jpg',
+    hero_image_alt:
+      'GitStack Back Office ERP Command Dashboard showing 8 autonomous AI agents, priority workflow queue, and real-time system health metrics',
     secondary_image: '',
     secondary_image_alt: '',
     intro_heading: 'Want to inspect our engineering architecture standards first?',
     intro_body: 'Read our deep-dive implementation blueprints in the Technical Insights Journal.',
     custom_blocks: [],
-    updated_at: '2026-11-14T00:00:00Z'
+    updated_at: '2026-11-21T00:00:00Z'
   },
   about: {
     page_key: 'about',

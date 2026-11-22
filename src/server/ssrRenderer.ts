@@ -4,6 +4,13 @@ import { DEFAULT_PRINCIPAL_AUTHOR, buildPrincipalAuthorJsonLd } from '../shared/
 import { DEFAULT_PAGE_CONTENTS } from '../shared/pageDefaults.ts';
 import { buildArticleJsonLd } from '../shared/qualityGate.ts';
 import { DEFAULT_ADSENSE_SETTINGS, SEED_ARTICLES } from '../shared/seedData.ts';
+import {
+  BACK_OFFICE_CATEGORIES_SHOWCASE,
+  BACK_OFFICE_MODULES_SHOWCASE,
+  resolveServiceShowcaseSlides,
+  SERVICES_ENTERPRISE_FAQS,
+  SERVICES_SEO_META
+} from '../shared/servicesShowcase.ts';
 import type { AdSenseSettings, Article, PageContentConfig, PageKey } from '../shared/types.ts';
 import { getAdSenseSettings, getPostBySlug, listPageContents, listPosts } from './repository.ts';
 
@@ -251,6 +258,8 @@ function buildRouteContent(
 ): {
   title: string;
   description: string;
+  keywords?: string;
+  ogImage?: string;
   ogType: 'website' | 'article';
   jsonLd?: Record<string, unknown>;
   mainHtml: string;
@@ -303,27 +312,126 @@ function buildRouteContent(
 
   if (cleanPath === '/services') {
     const cms = pagesMap.services;
+    const slides = resolveServiceShowcaseSlides(cms.custom_blocks);
+    const categoriesHtml = BACK_OFFICE_CATEGORIES_SHOWCASE.map((cat) => {
+      const catModules = BACK_OFFICE_MODULES_SHOWCASE.filter((m) => m.categoryId === cat.id);
+      return `
+      <section style="margin-top:24px;">
+        <h3>${escapeHtml(cat.code)}. ${escapeHtml(cat.name)} (${cat.moduleCount} Modules)</h3>
+        <p>${escapeHtml(cat.summary)}</p>
+        <ul>
+          ${catModules
+            .map(
+              (m) =>
+                `<li><strong>Module ${escapeHtml(m.order)} — ${escapeHtml(m.name)}:</strong> ${escapeHtml(m.headline)}. ${escapeHtml(m.problemSolved)}</li>`
+            )
+            .join('')}
+        </ul>
+      </section>`;
+    }).join('');
+
+    const slidesHtml = slides
+      .map(
+        (s) => `
+      <figure style="margin:16px 0;">
+        <img src="${escapeHtml(s.image_url)}" alt="${escapeHtml(s.image_alt)}" style="max-width:100%;height:auto;border-radius:12px;" />
+        <figcaption><strong>${escapeHtml(s.category)} — ${escapeHtml(s.title)}:</strong> ${escapeHtml(s.caption)}</figcaption>
+      </figure>`
+      )
+      .join('');
+
+    const faqsHtml = SERVICES_ENTERPRISE_FAQS.map(
+      (f) => `<h3>${escapeHtml(f.question)}</h3><p>${escapeHtml(f.answer)}</p>`
+    ).join('');
+
+    const storedSub = (cms.hero_subtitle || '').trim();
+    const hasErpKeyword =
+      storedSub.toLowerCase().includes('back office erp') &&
+      storedSub.toLowerCase().includes('ai automation');
+    const resolvedSeoDescription = hasErpKeyword ? storedSub : SERVICES_SEO_META.description;
+
     return {
-      title: `Enterprise AI, MLOps, Custom Software & Cloud Services | ${brand}`,
-      description: cms.hero_subtitle,
+      title: `Enterprise AI Automation, SaaS & Back Office ERP | ${brand}`,
+      description: resolvedSeoDescription,
+      keywords: SERVICES_SEO_META.keywords.join(', '),
+      ogImage: slides[0]?.image_url || cms.hero_image,
       ogType: 'website',
+      jsonLd: {
+        '@context': 'https://schema.org',
+        '@graph': [
+          {
+            '@type': 'Service',
+            name: 'Enterprise AI Automation, Custom SaaS & Back Office ERP',
+            serviceType: 'Enterprise AI Automation, Custom SaaS & Back Office ERP',
+            description: cms.hero_subtitle || SERVICES_SEO_META.description,
+            url: `${origin}/services`,
+            provider: { '@type': 'Organization', name: brand, url: origin },
+            hasOfferCatalog: {
+              '@type': 'OfferCatalog',
+              name: 'GitStack 28-Module Back Office ERP & B2B SaaS Systems',
+              itemListElement: BACK_OFFICE_MODULES_SHOWCASE.map((mod, idx) => ({
+                '@type': 'ListItem',
+                position: idx + 1,
+                item: {
+                  '@type': 'SoftwareApplication',
+                  name: `${brand} Back Office ERP — ${mod.name}`,
+                  applicationCategory: `BusinessApplication · ${mod.categoryName}`,
+                  operatingSystem: 'Web, Cloud SaaS',
+                  description: `${mod.headline}. ${mod.problemSolved}`,
+                  url: `${origin}/demo?tab=backoffice`
+                }
+              }))
+            }
+          },
+          {
+            '@type': 'FAQPage',
+            mainEntity: SERVICES_ENTERPRISE_FAQS.map((faq) => ({
+              '@type': 'Question',
+              name: faq.question,
+              acceptedAnswer: { '@type': 'Answer', text: faq.answer }
+            }))
+          }
+        ]
+      },
       mainHtml: `
 <main style="max-width:1152px;margin:0 auto;padding:40px 24px;">
   <p>${escapeHtml(cms.hero_kicker)}</p>
   <h1>${escapeHtml(cms.hero_title)}</h1>
   <p>${escapeHtml(cms.hero_subtitle)}</p>
+  <p><a href="/demo?tab=backoffice">Launch Live Interactive Back Office Demo</a> · <a href="/contact">Book Technical Scoping</a></p>
+  <section>
+    <h2>Back Office ERP &amp; SaaS Product Tour</h2>
+    ${slidesHtml}
+  </section>
+  <section>
+    <h2>Complete Back Office ERP Architecture: 28 Modules Across 6 Categories</h2>
+    ${categoriesHtml}
+  </section>
+  <section>
+    <h2>Turnkey Managed B2B SaaS Systems</h2>
+    <ul>
+      <li><strong>Gitstack Inventory Sync:</strong> Omnichannel Shopee, Lazada &amp; TikTok Shop stock allocation (&lt;150ms latency SLA).</li>
+      <li><strong>Gitstack E-Invoice Portal:</strong> BIR EIS-ready electronic invoicing, HSM SHA-256 JWS digital signing &amp; 12% VAT tax ledgers.</li>
+      <li><strong>Gitstack AI Concierge:</strong> Grounded multichannel customer support, pricing quotations &amp; lead capture across Web, Messenger &amp; Viber.</li>
+      <li><strong>Gitstack FlowCRM &amp; Chaser:</strong> Kanban sales pipeline with automated invoice reminders and GCash/Maya payment portals.</li>
+    </ul>
+  </section>
   <section>
     <h2>Core Enterprise Engineering Capabilities</h2>
     <h3>01. AI Integration &amp; Enterprise RAG Architecture</h3>
-    <p>Production Retrieval-Augmented Generation pipelines combining hybrid lexical-vector indexing, cross-encoder reranking, zero-trust RBAC pre-retrieval filtering, and automated groundedness evaluation to eliminate hallucinations across enterprise knowledge bases.</p>
+    <p>Production Retrieval-Augmented Generation pipelines combining hybrid lexical-vector indexing, cross-encoder reranking, zero-trust RBAC pre-retrieval filtering, and automated groundedness evaluation.</p>
     <h3>02. Machine Learning Automation &amp; MLOps Pipelines</h3>
     <p>Automated feature stores, event-driven retraining DAGs, Population Stability Index (PSI) drift monitors, shadow traffic mirroring, and zero-downtime Kubernetes canary promotions.</p>
     <h3>03. Custom Distributed Software Development</h3>
-    <p>High-throughput TypeScript, React, Node.js, Go, and Python microservices, Strangler Fig legacy monolith modernization, transactional outbox messaging, and WCAG AA executive platforms.</p>
+    <p>High-throughput TypeScript, React, Next.js, and Node.js systems, Strangler Fig legacy modernization, and transactional outbox messaging.</p>
     <h3>04. Multi-Region Cloud Infrastructure Management &amp; FinOps</h3>
-    <p>Modular Terraform stacks, remote state locking, Open Policy Agent (OPA) policy-as-code gates in CI, Kubernetes multi-region cluster orchestration, and automated cloud cost optimization.</p>
+    <p>Modular Terraform stacks, Open Policy Agent (OPA) policy gates, Kubernetes multi-region orchestration, and FinOps cost optimization.</p>
     <h3>05. Principal Technical &amp; Security Consulting</h3>
-    <p>Architecture audits, SOC2/ISO-27001 readiness engineering, AI due diligence, and fractional principal systems engineering leadership.</p>
+    <p>Architecture audits, SOC2/ISO-27001 readiness engineering, AI due diligence, and fractional principal systems leadership.</p>
+  </section>
+  <section>
+    <h2>Frequently Asked Questions</h2>
+    ${faqsHtml}
   </section>
   ${renderAuthorCardHtml()}
 </main>`
@@ -658,6 +766,12 @@ export async function renderPublicRouteHtml(reqPath: string, origin: string): Pr
     /<meta\s+name="description"\s+content="[^"]*"\s*\/>/i,
     `<meta name="description" content="${escapeHtml(route.description)}" />`
   );
+  if (route.keywords) {
+    html = html.replace(
+      /<meta\s+name="keywords"\s+content="[\s\S]*?"\s*\/>/i,
+      `<meta name="keywords" content="${escapeHtml(route.keywords)}" />`
+    );
+  }
   html = html.replace(
     /<meta\s+property="og:title"\s+content="[^"]*"\s*\/>/i,
     `<meta property="og:title" content="${escapeHtml(route.title)}" />`
@@ -671,8 +785,27 @@ export async function renderPublicRouteHtml(reqPath: string, origin: string): Pr
     `<meta property="og:type" content="${route.ogType}" />`
   );
   html = html.replace(
+    /<meta\s+name="twitter:title"\s+content="[^"]*"\s*\/>/i,
+    `<meta name="twitter:title" content="${escapeHtml(route.title)}" />`
+  );
+  html = html.replace(
+    /<meta\s+name="twitter:description"\s+content="[\s\S]*?"\s*\/>/i,
+    `<meta name="twitter:description" content="${escapeHtml(route.description)}" />`
+  );
+  const ogImgMeta = route.ogImage
+    ? `\n    <meta property="og:image" content="${escapeHtml(
+        route.ogImage.startsWith('http')
+          ? route.ogImage
+          : `${origin}${route.ogImage.startsWith('/') ? '' : '/'}${route.ogImage}`
+      )}" />\n    <meta name="twitter:image" content="${escapeHtml(
+        route.ogImage.startsWith('http')
+          ? route.ogImage
+          : `${origin}${route.ogImage.startsWith('/') ? '' : '/'}${route.ogImage}`
+      )}" />`
+    : '';
+  html = html.replace(
     '</head>',
-    `  <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />\n    <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />\n  </head>`
+    `  <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />\n    <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />${ogImgMeta}\n  </head>`
   );
 
   if (route.jsonLd) {

@@ -2435,4 +2435,104 @@ export interface DemoGuardDashboardResponse {
   autoEmailEnabled: boolean;
 }
 
+// --- Super Admin Gemini & MCP Command Hub Types ---
 
+export type StudioModuleId = WorkspaceModuleId | 'mcp_hub';
+
+export type McpToolAccessLevel = 'read' | 'write' | 'staged_edit';
+
+export interface McpTokenSummary {
+  id: string;
+  label: string;
+  tokenPrefix: string;
+  scopes: string[];
+  createdBy: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface McpCreateTokenResponse {
+  token: McpTokenSummary;
+  rawToken: string;
+}
+
+export type McpCodeProposalStatus = 'pending' | 'applied' | 'rejected';
+
+export interface McpCodeProposal {
+  id: string;
+  filePath: string;
+  summary: string;
+  rationale: string;
+  originalSha256: string;
+  originalContent: string;
+  proposedContent: string;
+  diffPreview: string;
+  requestedBy: string;
+  source: 'gemini_chat' | 'external_mcp';
+  status: McpCodeProposalStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  error?: string;
+}
+
+export interface McpAuditLogEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  transport: 'gemini_chat' | 'mcp_http' | 'mcp_sse' | 'admin_ui';
+  toolName: string;
+  status: 'ok' | 'blocked' | 'error';
+  durationMs: number;
+  summary: string;
+  argsPreview: string;
+}
+
+export interface McpToolDescriptor {
+  name: string;
+  category: 'Source Code' | 'CMS & SEO' | 'CRM & Inbox' | 'Agents & Workflows' | 'Infra & Security';
+  description: string;
+  accessLevel: McpToolAccessLevel;
+  parameters: Record<
+    string,
+    {
+      type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+      description: string;
+      required?: boolean;
+      enumValues?: string[];
+    }
+  >;
+}
+
+export interface McpToolTrace {
+  id: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  status: 'ok' | 'blocked' | 'error';
+  durationMs: number;
+  resultPreview: string;
+}
+
+export interface McpChatHistoryTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
+export interface McpChatResponse {
+  reply: string;
+  traces: McpToolTrace[];
+  createdProposalIds: string[];
+  modelUsed: string;
+  thinkingLevel: 'MEDIUM' | 'XHIGH';
+}
+
+export interface McpDashboardResponse {
+  tokens: McpTokenSummary[];
+  proposals: McpCodeProposal[];
+  auditLogs: McpAuditLogEntry[];
+  tools: McpToolDescriptor[];
+  mcpEndpointPath: string;
+  sseEndpointPath: string;
+  geminiConfigured: boolean;
+}

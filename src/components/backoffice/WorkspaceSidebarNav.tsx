@@ -21,6 +21,7 @@ import {
   DEFAULT_MODULE_LABELS
 } from '../../shared/workspaceLayout.ts';
 import type {
+  StudioModuleId,
   UserProfile,
   UserRole,
   WorkspaceCategoryConfig,
@@ -29,7 +30,7 @@ import type {
 } from '../../shared/types.ts';
 
 export interface StudioNavDescriptor {
-  id: WorkspaceModuleId;
+  id: StudioModuleId;
   defaultLabel: string;
   icon: React.ComponentType<{ className?: string }>;
   count?: number;
@@ -38,10 +39,10 @@ export interface StudioNavDescriptor {
 interface WorkspaceSidebarNavProps {
   layout: WorkspaceLayoutConfig;
   savingLayout: boolean;
-  navMap: Record<WorkspaceModuleId, StudioNavDescriptor>;
-  allowedTabs: WorkspaceModuleId[];
-  activeTab: WorkspaceModuleId;
-  onSelectTab: (tabId: WorkspaceModuleId) => void;
+  navMap: Record<StudioModuleId, StudioNavDescriptor>;
+  allowedTabs: StudioModuleId[];
+  activeTab: StudioModuleId;
+  onSelectTab: (tabId: StudioModuleId) => void;
   onChangeLayout: (next: WorkspaceLayoutConfig, persistImmediately?: boolean) => void;
   currentUserRole: UserRole;
   roleLabel: string;
@@ -63,6 +64,7 @@ export function WorkspaceSidebarNav({
   activeTab,
   onSelectTab,
   onChangeLayout,
+  currentUserRole,
   roleLabel,
   displayName,
   avatarInitials,
@@ -80,21 +82,48 @@ export function WorkspaceSidebarNav({
     fromCatId: string;
   } | null>(null);
 
-  const allowedSet = useMemo(() => new Set<WorkspaceModuleId>(allowedTabs), [allowedTabs]);
-
-  const getModuleLabel = (id: WorkspaceModuleId): string =>
-    layout.moduleAliases[id]?.trim() || navMap[id]?.defaultLabel || DEFAULT_MODULE_LABELS[id] || id;
-
-  const activeCategory = useMemo(
+  const allowedSet = useMemo(() => new Set<StudioModuleId>(allowedTabs), [allowedTabs]);
+  const showSuperAdminMcpHub =
+    currentUserRole === 'super_admin' && allowedSet.has('mcp_hub') && Boolean(navMap.mcp_hub);
+  const mcpHostCategoryId = useMemo(
     () =>
-      layout.categories.find((c) => c.moduleIds.includes(activeTab)) || layout.categories[0] || null,
-    [layout.categories, activeTab]
+      layout.categories.find((c) => c.id === 'cat-command')?.id ||
+      layout.categories[0]?.id ||
+      null,
+    [layout.categories]
   );
+
+  const getCategoryVisibleModules = (category: WorkspaceCategoryConfig, includeVirtual = true): StudioModuleId[] => {
+    const base: StudioModuleId[] = category.moduleIds.filter(
+      (id) => allowedSet.has(id) && Boolean(navMap[id])
+    );
+    if (includeVirtual && showSuperAdminMcpHub && category.id === mcpHostCategoryId) {
+      return ['mcp_hub', ...base];
+    }
+    return base;
+  };
+
+  const getModuleLabel = (id: StudioModuleId): string =>
+    (id !== 'mcp_hub' ? layout.moduleAliases[id]?.trim() : '') ||
+    navMap[id]?.defaultLabel ||
+    (id !== 'mcp_hub' ? DEFAULT_MODULE_LABELS[id] : 'Gemini & MCP Hub') ||
+    id;
+
+  const activeCategory = useMemo(() => {
+    if (activeTab === 'mcp_hub') {
+      return layout.categories.find((c) => c.id === mcpHostCategoryId) || layout.categories[0] || null;
+    }
+    return (
+      layout.categories.find((c) => c.moduleIds.includes(activeTab)) ||
+      layout.categories[0] ||
+      null
+    );
+  }, [layout.categories, activeTab, mcpHostCategoryId]);
 
   const activeCategoryModules = useMemo(() => {
     if (!activeCategory) return [];
-    return activeCategory.moduleIds.filter((id) => allowedSet.has(id) && navMap[id]);
-  }, [activeCategory, allowedSet, navMap]);
+    return getCategoryVisibleModules(activeCategory, true);
+  }, [activeCategory, allowedSet, navMap, showSuperAdminMcpHub, mcpHostCategoryId]);
 
   const toggleSidebarCollapsed = () => {
     onChangeLayout(
@@ -304,9 +333,7 @@ export function WorkspaceSidebarNav({
       {/* Categorized Sections */}
       <div className="space-y-2.5">
         {layout.categories.map((category, catIdx) => {
-          const visibleModuleIds = category.moduleIds.filter(
-            (id) => allowedSet.has(id) && Boolean(navMap[id])
-          );
+          const visibleModuleIds = getCategoryVisibleModules(category, !editMode);
           if (!editMode && visibleModuleIds.length === 0) return null;
 
           const isCollapsed = !editMode && Boolean(category.collapsed);
@@ -406,12 +433,13 @@ export function WorkspaceSidebarNav({
                     const active = activeTab === modId;
                     const displayLabel = getModuleLabel(modId);
 
-                    if (editMode) {
+                    if (editMode && modId !== 'mcp_hub') {
+                      const baseModId = modId as WorkspaceModuleId;
                       return (
                         <div
-                          key={modId}
+                          key={baseModId}
                           draggable
-                          onDragStart={() => setDraggedModule({ moduleId: modId, fromCatId: category.id })}
+                          onDragStart={() => setDraggedModule({ moduleId: baseModId, fromCatId: category.id })}
                           onDragEnd={() => setDraggedModule(null)}
                           onDragOver={(e) => {
                             if (draggedModule) e.preventDefault();
@@ -420,8 +448,8 @@ export function WorkspaceSidebarNav({
                             if (!draggedModule) return;
                             e.preventDefault();
                             e.stopPropagation();
-                            if (draggedModule.moduleId !== modId) {
-                              const targetIdx = category.moduleIds.indexOf(modId);
+                            if (draggedModule.moduleId !== baseModId) {
+                              const targetIdx = category.moduleIds.indexOf(baseModId);
                               moveModuleInOrAcrossCategories(
                                 draggedModule.moduleId,
                                 draggedModule.fromCatId,
@@ -439,11 +467,11 @@ export function WorkspaceSidebarNav({
                             <input
                               type="text"
                               value={
-                                layout.moduleAliases[modId] !== undefined
-                                  ? layout.moduleAliases[modId]
+                                layout.moduleAliases[baseModId] !== undefined
+                                  ? layout.moduleAliases[baseModId]
                                   : item.defaultLabel
                               }
-                              onChange={(e) => renameModule(modId, e.target.value)}
+                              onChange={(e) => renameModule(baseModId, e.target.value)}
                               onBlur={() => onChangeLayout(layout, true)}
                               maxLength={55}
                               placeholder={item.defaultLabel}
@@ -453,7 +481,7 @@ export function WorkspaceSidebarNav({
                             <button
                               type="button"
                               disabled={modIdx === 0}
-                              onClick={() => reorderModuleStep(category.id, modId, -1)}
+                              onClick={() => reorderModuleStep(category.id, baseModId, -1)}
                               aria-label={`Move ${displayLabel} up`}
                               className="min-h-[32px] min-w-[26px] inline-flex items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30"
                             >
@@ -462,7 +490,7 @@ export function WorkspaceSidebarNav({
                             <button
                               type="button"
                               disabled={modIdx === visibleModuleIds.length - 1}
-                              onClick={() => reorderModuleStep(category.id, modId, 1)}
+                              onClick={() => reorderModuleStep(category.id, baseModId, 1)}
                               aria-label={`Move ${displayLabel} down`}
                               className="min-h-[32px] min-w-[26px] inline-flex items-center justify-center rounded text-slate-500 hover:bg-slate-100 disabled:opacity-30"
                             >
@@ -478,7 +506,7 @@ export function WorkspaceSidebarNav({
                               value={category.id}
                               onChange={(e) =>
                                 moveModuleInOrAcrossCategories(
-                                  modId,
+                                  baseModId,
                                   category.id,
                                   e.target.value
                                 )
@@ -722,9 +750,7 @@ export function WorkspaceSidebarNav({
                 className="flex-1 overflow-y-auto space-y-3 pr-0.5"
               >
                 {layout.categories.map((cat) => {
-                  const visibleIds = cat.moduleIds.filter(
-                    (id) => allowedSet.has(id) && Boolean(navMap[id])
-                  );
+                  const visibleIds = getCategoryVisibleModules(cat, true);
                   if (visibleIds.length === 0) return null;
                   return (
                     <div

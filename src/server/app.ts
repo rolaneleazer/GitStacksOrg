@@ -187,6 +187,22 @@ import {
   runDailyAiSearchVisibilityTest
 } from './aiSeoVisibility.ts';
 import {
+  applyCodeProposal,
+  createMcpToken,
+  executeMcpTool,
+  getMcpDashboard,
+  handleMcpJsonRpc,
+  pushMcpSseMessage,
+  registerMcpSseClient,
+  rejectCodeProposal,
+  revokeMcpToken,
+  rotateMcpToken,
+  runGeminiMcpChat,
+  unregisterMcpSseClient,
+  verifyMcpBearerToken,
+  type JsonRpcRequestPayload
+} from './mcpService.ts';
+import {
   generateAndSendCyberSecurityReport,
   getCyberSecurityDashboard,
   mitigateCyberFinding,
@@ -7060,6 +7076,275 @@ export async function createApp(): Promise<Express> {
     } catch (err) {
       res.status(500).json({
         error: err instanceof Error ? err.message : 'Failed to dispatch Demo Guard email alert.'
+      });
+    }
+  });
+
+  // --- Super Admin Gemini & MCP (Model Context Protocol) Command Hub ---
+
+  async function authenticateMcpRequest(req: Request): Promise<{
+    actor: string;
+    userToken?: string;
+    blockedByDemo?: boolean;
+  } | null> {
+    const demoHeader = String(req.headers['x-gitstack-demo-origin'] || '') === '1';
+    const referer = typeof req.headers.referer === 'string' ? req.headers.referer : '';
+    let refererIsDemo = false;
+    try {
+      if (referer) {
+        const refPath = new URL(referer).pathname || '';
+        refererIsDemo = refPath === '/demo' || refPath.startsWith('/demo/');
+      }
+    } catch {
+      refererIsDemo = false;
+    }
+    if (demoHeader || refererIsDemo) {
+      return { actor: '', blockedByDemo: true };
+    }
+
+    const rawBearer = getBearerToken(req);
+    if (!rawBearer) return null;
+
+    if (rawBearer.startsWith('gsmcp_')) {
+      const mcpToken = await verifyMcpBearerToken(rawBearer);
+      if (!mcpToken) return null;
+      return { actor: `mcp:${mcpToken.label} (${mcpToken.tokenPrefix})` };
+    }
+
+    const session = await verifyEditorToken(rawBearer);
+    if (!session || session.role !== 'super_admin') {
+      return null;
+    }
+    return { actor: session.email, userToken: rawBearer };
+  }
+
+  app.get('/api/mcp', async (req, res) => {
+    const auth = await authenticateMcpRequest(req);
+    if (auth?.blockedByDemo) {
+      return res.status(403).json({ error: 'Demo sandbox sessions cannot access MCP endpoints.' });
+    }
+    if (!auth) {
+      return res.status(401).json({
+        error: 'Valid rotating MCP Bearer token (gsmcp_...) or Super Admin token required.'
+      });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      name: 'gitstack-command-mcp',
+      protocolVersion: '2024-11-05',
+      transport: ['http-jsonrpc', 'sse'],
+      endpoint: `${getOrigin(req)}/api/mcp`,
+      sseEndpoint: `${getOrigin(req)}/api/mcp/sse`,
+      authenticatedAs: auth.actor
+    });
+  });
+
+  app.get('/api/mcp/sse', async (req, res) => {
+    const auth = await authenticateMcpRequest(req);
+    if (auth?.blockedByDemo) {
+      return res.status(403).json({ error: 'Demo sandbox sessions cannot access MCP SSE.' });
+    }
+    if (!auth) {
+      return res.status(401).json({
+        error: 'Valid rotating MCP Bearer token (gsmcp_...) or Super Admin token required.'
+      });
+    }
+
+    const sessionId = `mcpsse_${crypto.randomUUID().slice(0, 12)}`;
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    registerMcpSseClient(sessionId, res);
+    res.write(`event: endpoint\ndata: /api/mcp?sessionId=${encodeURIComponent(sessionId)}\n\n`);
+
+    const keepAlive = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(`: heartbeat ${Date.now()}\n\n`);
+      }
+    }, 25_000);
+
+    req.on('close', () => {
+      clearInterval(keepAlive);
+      unregisterMcpSseClient(sessionId);
+    });
+  });
+
+  app.post('/api/mcp', async (req, res) => {
+    const auth = await authenticateMcpRequest(req);
+    if (auth?.blockedByDemo) {
+      return res.status(403).json({ error: 'Demo sandbox sessions cannot access MCP endpoints.' });
+    }
+    if (!auth) {
+      return res.status(401).json({
+        jsonrpc: '2.0',
+        id: null,
+        error: { code: -32001, message: 'Unauthorized: valid rotating MCP Bearer token required.' }
+      });
+    }
+
+    const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
+    const transport: 'mcp_http' | 'mcp_sse' = sessionId ? 'mcp_sse' : 'mcp_http';
+    const payload = (req.body || {}) as JsonRpcRequestPayload;
+    const response = await handleMcpJsonRpc(payload, {
+      actor: auth.actor,
+      transport,
+      userToken: auth.userToken
+    });
+
+    if (!response) {
+      return res.status(202).end();
+    }
+
+    if (sessionId) {
+      pushMcpSseMessage(sessionId, 'message', response);
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json(response);
+  });
+
+  app.get('/api/admin/mcp/dashboard', requireRoles('super_admin'), async (_req, res) => {
+    try {
+      const dashboard = await getMcpDashboard();
+      res.setHeader('Cache-Control', 'no-store');
+      res.json(dashboard);
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to load MCP Command Hub dashboard.'
+      });
+    }
+  });
+
+  app.post('/api/admin/mcp/tokens', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const body = (req.body || {}) as { label?: string };
+      const created = await createMcpToken(
+        body.label || 'Gemini Custom Connect',
+        req.editor?.email || 'super_admin'
+      );
+      res.json(created);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to generate MCP token.'
+      });
+    }
+  });
+
+  app.post('/api/admin/mcp/tokens/:id/rotate', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const rotated = await rotateMcpToken(req.params.id, req.editor?.email || 'super_admin');
+      if (!rotated) {
+        return res.status(404).json({ error: 'MCP token not found.' });
+      }
+      res.json(rotated);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to rotate MCP token.'
+      });
+    }
+  });
+
+  app.delete('/api/admin/mcp/tokens/:id', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const revoked = await revokeMcpToken(req.params.id, req.editor?.email || 'super_admin');
+      if (!revoked) {
+        return res.status(404).json({ error: 'MCP token not found.' });
+      }
+      res.json({ token: revoked });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to revoke MCP token.'
+      });
+    }
+  });
+
+  app.post('/api/admin/mcp/handshake', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const actor = req.editor?.email || 'super_admin';
+      const userToken = getBearerToken(req);
+      const started = Date.now();
+      const initRes = await handleMcpJsonRpc(
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+        { actor, transport: 'admin_ui', userToken }
+      );
+      const listRes = await handleMcpJsonRpc(
+        { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+        { actor, transport: 'admin_ui', userToken }
+      );
+      const toolCount = Array.isArray((listRes?.result as { tools?: unknown[] } | undefined)?.tools)
+        ? ((listRes?.result as { tools: unknown[] }).tools.length)
+        : 0;
+      res.json({
+        ok: true,
+        durationMs: Date.now() - started,
+        toolCount,
+        initializeResult: initRes?.result || null
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'MCP handshake test failed.'
+      });
+    }
+  });
+
+  app.post('/api/admin/mcp/tools/:toolName', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const args = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+      const outcome = await executeMcpTool(req.params.toolName, args, {
+        actor: req.editor?.email || 'super_admin',
+        transport: 'admin_ui',
+        userToken: getBearerToken(req)
+      });
+      res.json(outcome);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'MCP tool execution failed.'
+      });
+    }
+  });
+
+  app.post('/api/admin/mcp/proposals/:id/approve', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const proposal = await applyCodeProposal(req.params.id, req.editor?.email || 'super_admin');
+      res.json({ proposal });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to apply staged code proposal.'
+      });
+    }
+  });
+
+  app.post('/api/admin/mcp/proposals/:id/reject', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const proposal = await rejectCodeProposal(req.params.id, req.editor?.email || 'super_admin');
+      res.json({ proposal });
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Failed to reject staged code proposal.'
+      });
+    }
+  });
+
+  app.post('/api/admin/mcp/chat', requireRoles('super_admin'), async (req: AuthReq, res) => {
+    try {
+      const body = (req.body || {}) as {
+        message?: string;
+        history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+        thinkingMode?: 'fast' | 'deep';
+      };
+      const result = await runGeminiMcpChat({
+        message: body.message || '',
+        history: Array.isArray(body.history) ? body.history : [],
+        thinkingMode: body.thinkingMode === 'deep' ? 'deep' : 'fast',
+        actor: req.editor?.email || 'super_admin',
+        userToken: getBearerToken(req)
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : 'Gemini Command Chat execution failed.'
       });
     }
   });

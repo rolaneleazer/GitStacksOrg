@@ -12,6 +12,7 @@ import {
   Compass,
   Contact2,
   Copy,
+  Cpu,
   Database,
   Download,
   ExternalLink,
@@ -62,6 +63,7 @@ import { InfrastructureMonitor } from '../components/backoffice/InfrastructureMo
 import { IntegrationsVaultPanel } from '../components/backoffice/IntegrationsVaultPanel.tsx';
 import { InternalChatBox } from '../components/backoffice/InternalChatBox.tsx';
 import { MarketingStudioPanel } from '../components/backoffice/MarketingStudioPanel.tsx';
+import { McpCommandHubPanel } from '../components/backoffice/McpCommandHubPanel.tsx';
 import { NotificationModulePanel } from '../components/backoffice/NotificationModulePanel.tsx';
 import { PageEditorPanel } from '../components/backoffice/PageEditorPanel.tsx';
 import { ProductQaPanel } from '../components/backoffice/ProductQaPanel.tsx';
@@ -106,13 +108,13 @@ import type {
   RoutingRule,
   ServiceCategory,
   SiteAuditReport,
+  StudioModuleId,
   TaskPriority,
   UserProfile,
   UserRole,
   UserStatus,
   UserWorkflowItem,
-  WorkspaceLayoutConfig,
-  WorkspaceModuleId
+  WorkspaceLayoutConfig
 } from '../shared/types.ts';
 import {
   createDefaultWorkspaceLayout,
@@ -126,10 +128,11 @@ interface StudioPageProps {
   onNavigate: (path: string) => void;
 }
 
-type StudioTab = WorkspaceModuleId;
+type StudioTab = StudioModuleId;
 
 const ROLE_TABS: Record<UserRole, StudioTab[]> = {
   super_admin: [
+    'mcp_hub',
     'agents',
     'crm',
     'pages',
@@ -1118,18 +1121,20 @@ export function StudioPage({
     const allowed = ROLE_TABS[currentUserRole];
     if (allowed.includes(section as StudioTab)) {
       const targetTab = section as StudioTab;
-      setWorkspaceLayout((prev) => {
-        const hasCollapsedParent = prev.categories.some(
-          (c) => c.collapsed && c.moduleIds.includes(targetTab)
-        );
-        if (!hasCollapsedParent) return prev;
-        return {
-          ...prev,
-          categories: prev.categories.map((c) =>
-            c.moduleIds.includes(targetTab) ? { ...c, collapsed: false } : c
-          )
-        };
-      });
+      if (targetTab !== 'mcp_hub') {
+        setWorkspaceLayout((prev) => {
+          const hasCollapsedParent = prev.categories.some(
+            (c) => c.collapsed && c.moduleIds.includes(targetTab)
+          );
+          if (!hasCollapsedParent) return prev;
+          return {
+            ...prev,
+            categories: prev.categories.map((c) =>
+              c.moduleIds.includes(targetTab) ? { ...c, collapsed: false } : c
+            )
+          };
+        });
+      }
       setActiveTab(targetTab);
       setWorkspaceNotice(null);
     }
@@ -1258,6 +1263,7 @@ export function StudioPage({
   }
 
   const allNavItems: StudioNavDescriptor[] = [
+    { id: 'mcp_hub', defaultLabel: 'Gemini & MCP Hub', icon: Cpu },
     { id: 'agents', defaultLabel: 'Overview & 8 Agents', icon: Bot, count: agents.length || 8 },
     { id: 'crm', defaultLabel: 'CRM & Prospecting', icon: Briefcase },
     { id: 'pages', defaultLabel: 'Page Content Editor', icon: FileEdit },
@@ -1310,10 +1316,13 @@ export function StudioPage({
   const currentTab: StudioTab = allowedTabs.includes(activeTab) ? activeTab : allowedTabs[0];
   const activeNav = navMap[currentTab] || allNavItems[0];
   const activeCategory =
-    workspaceLayout.categories.find((c) => c.moduleIds.includes(currentTab)) ||
+    (currentTab === 'mcp_hub'
+      ? workspaceLayout.categories.find((c) => c.id === 'cat-command')
+      : workspaceLayout.categories.find((c) => c.moduleIds.includes(currentTab))) ||
     workspaceLayout.categories[0];
   const activeDisplayLabel =
-    workspaceLayout.moduleAliases[currentTab]?.trim() || activeNav.defaultLabel;
+    (currentTab !== 'mcp_hub' ? workspaceLayout.moduleAliases[currentTab]?.trim() : '') ||
+    activeNav.defaultLabel;
 
   const displayName = currentProfile?.full_name || editorEmail.split('@')[0] || 'Operator';
   const avatarInitials = displayName
@@ -1655,6 +1664,11 @@ export function StudioPage({
           {/* PANEL 8C: SUPER ADMIN LIVE DATA EXPLORER & AUDIT LOGS */}
           {currentTab === 'data_explorer' && currentUserRole === 'super_admin' && (
             <DataExplorerPanel />
+          )}
+
+          {/* PANEL 8D: SUPER ADMIN GEMINI & MCP COMMAND HUB */}
+          {currentTab === 'mcp_hub' && currentUserRole === 'super_admin' && (
+            <McpCommandHubPanel />
           )}
 
           {/* PANEL 9: MY PROFILE & PICTURE */}

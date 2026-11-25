@@ -52,6 +52,12 @@ import type {
   IntegrationProviderId,
   IntegrationStatusItem,
   LarkConnectionStatus,
+  McpChatHistoryTurn,
+  McpChatResponse,
+  McpCodeProposal,
+  McpCreateTokenResponse,
+  McpDashboardResponse,
+  McpTokenSummary,
   NewsletterSubscriber,
   OfficeLiveHudSummary,
   OpenSourceSyncResult,
@@ -2422,7 +2428,86 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({})
     });
+  },
+
+  // --- Super Admin Gemini & MCP Command Hub ---
+  async getMcpDashboard() {
+    return request<McpDashboardResponse>('/api/admin/mcp/dashboard');
+  },
+
+  async createMcpToken(label: string) {
+    return request<McpCreateTokenResponse>('/api/admin/mcp/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ label })
+    });
+  },
+
+  async rotateMcpToken(id: string) {
+    return request<McpCreateTokenResponse>(`/api/admin/mcp/tokens/${encodeURIComponent(id)}/rotate`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async revokeMcpToken(id: string) {
+    return request<{ token: McpTokenSummary }>(`/api/admin/mcp/tokens/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async testMcpHandshake() {
+    return request<{
+      ok: boolean;
+      durationMs: number;
+      toolCount: number;
+      initializeResult: Record<string, unknown> | null;
+    }>('/api/admin/mcp/handshake', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async runMcpTool(toolName: string, args: Record<string, unknown>) {
+    return request<{
+      ok: boolean;
+      data?: unknown;
+      error?: string;
+      durationMs: number;
+      proposalId?: string;
+    }>(`/api/admin/mcp/tools/${encodeURIComponent(toolName)}`, {
+      method: 'POST',
+      body: JSON.stringify(args)
+    });
+  },
+
+  async approveMcpCodeProposal(id: string) {
+    return request<{ proposal: McpCodeProposal }>(
+      `/api/admin/mcp/proposals/${encodeURIComponent(id)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async rejectMcpCodeProposal(id: string) {
+    return request<{ proposal: McpCodeProposal }>(
+      `/api/admin/mcp/proposals/${encodeURIComponent(id)}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify({})
+      }
+    );
+  },
+
+  async sendGeminiMcpChat(payload: {
+    message: string;
+    history: McpChatHistoryTurn[];
+    thinkingMode: 'fast' | 'deep';
+  }) {
+    return request<McpChatResponse>('/api/admin/mcp/chat', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
   }
 };
-
-

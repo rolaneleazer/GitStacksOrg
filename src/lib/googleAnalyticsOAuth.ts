@@ -149,7 +149,7 @@ export async function fetchGa4LiveReport(params: {
 
   if (accessToken) {
     try {
-      const [dailyRes, pagesRes, refRes] = await Promise.all([
+      const [dailyRes, pagesRes, refRes, fullRefRes, interestRes] = await Promise.all([
         fetch(
           `https://analyticsdata.googleapis.com/v1beta/${propertyOption.property_id}:runReport`,
           {
@@ -201,7 +201,44 @@ export async function fetchGa4LiveReport(params: {
               limit: 8
             })
           }
-        )
+        ),
+        fetch(
+          `https://analyticsdata.googleapis.com/v1beta/${propertyOption.property_id}:runReport`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+              dimensions: [
+                { name: 'pageReferrer' },
+                { name: 'sessionSource' },
+                { name: 'sessionMedium' },
+                { name: 'sessionCampaignName' }
+              ],
+              metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'keyEvents' }],
+              limit: 20
+            })
+          }
+        ).catch(() => null),
+        fetch(
+          `https://analyticsdata.googleapis.com/v1beta/${propertyOption.property_id}:runReport`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+              dimensions: [{ name: 'brandingInterest' }],
+              metrics: [{ name: 'activeUsers' }, { name: 'sessions' }],
+              limit: 12
+            })
+          }
+        ).catch(() => null)
       ]);
 
       if (dailyRes.ok) {
@@ -227,6 +264,24 @@ export async function fetchGa4LiveReport(params: {
               }>;
             })
           : { rows: [] };
+        const fullRefJson =
+          fullRefRes && fullRefRes.ok
+            ? ((await fullRefRes.json()) as {
+                rows?: Array<{
+                  dimensionValues?: Array<{ value?: string }>;
+                  metricValues?: Array<{ value?: string }>;
+                }>;
+              })
+            : { rows: [] };
+        const interestJson =
+          interestRes && interestRes.ok
+            ? ((await interestRes.json()) as {
+                rows?: Array<{
+                  dimensionValues?: Array<{ value?: string }>;
+                  metricValues?: Array<{ value?: string }>;
+                }>;
+              })
+            : { rows: [] };
 
         const rows = dailyJson.rows || [];
         if (rows.length > 0) {
@@ -269,6 +324,51 @@ export async function fetchGa4LiveReport(params: {
             visits: Number(r.metricValues?.[0]?.value || 0)
           }));
 
+          const referrerDetails = (fullRefJson.rows || []).map((r) => {
+            const rawUrl = r.dimensionValues?.[0]?.value || '';
+            const cleanUrl = rawUrl.startsWith('http://') || rawUrl.startsWith('https://') ? rawUrl : '';
+            const src = r.dimensionValues?.[1]?.value || '';
+            const med = r.dimensionValues?.[2]?.value || '';
+            const cmp = r.dimensionValues?.[3]?.value || '';
+            let host = src && src !== '(direct)' ? src : 'Direct';
+            if (cleanUrl) {
+              try {
+                host = new URL(cleanUrl).hostname.replace(/^www\./i, '');
+              } catch {
+                // keep src
+              }
+            }
+            return {
+              referrerUrl: cleanUrl,
+              referrerHost: host,
+              triggerType: cleanUrl ? 'External Link' : 'Direct',
+              triggerLabel: med && med !== '(none)' ? `${host} / ${med}` : host,
+              utmSource: src !== '(direct)' ? src : undefined,
+              utmMedium: med !== '(none)' ? med : undefined,
+              utmCampaign: cmp !== '(not set)' ? cmp : undefined,
+              sessions: Number(r.metricValues?.[0]?.value || 0),
+              activeUsers: Number(r.metricValues?.[1]?.value || 0),
+              conversions: Number(r.metricValues?.[2]?.value || 0)
+            };
+          });
+
+          const rawInterests = (interestJson.rows || [])
+            .map((r) => ({
+              interest: (r.dimensionValues?.[0]?.value || '').trim(),
+              users: Number(r.metricValues?.[0]?.value || 0),
+              sessions: Number(r.metricValues?.[1]?.value || 0)
+            }))
+            .filter((i) => i.interest && i.interest !== '(not set)');
+          const iSum = rawInterests.reduce((s, i) => s + i.users, 0) || 1;
+          const ga4InterestSegments = rawInterests.map((i) => ({
+            interest: i.interest,
+            category: 'Google Signals Affinity',
+            source: 'ga4_signals' as const,
+            users: i.users,
+            sessions: i.sessions,
+            sharePercent: Number(((i.users / iSum) * 100).toFixed(1))
+          }));
+
           return {
             property_id: propertyOption.property_id,
             property_name: propertyOption.property_name,
@@ -281,7 +381,9 @@ export async function fetchGa4LiveReport(params: {
             conversions,
             dailySeries,
             topPages,
-            topReferrers
+            topReferrers,
+            referrerDetails,
+            ga4InterestSegments
           };
         }
       }

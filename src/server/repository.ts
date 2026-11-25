@@ -90,8 +90,12 @@ import type {
   AnalyticsEventCountItem,
   AnalyticsGeoCityItem,
   AnalyticsGeoCountryItem,
+  AnalyticsInterestSegmentItem,
   AnalyticsLandingPageItem,
   AnalyticsPageTitleItem,
+  AnalyticsReferrerDetailItem,
+  AnalyticsVisitorIdentity,
+  AnalyticsVisitorJourneyItem,
   LiveWebsiteVisitor,
   RealtimeActiveVisitorSummary,
   GtmDashboardResponse,
@@ -101,10 +105,10 @@ import type {
   DataAuditLogEntry
 } from '../shared/types.ts';
 import { resolveDateRangeBounds, type ResolvedDateRange } from '../shared/dateRanges.ts';
-import { classifyAcquisitionChannel } from './googleAnalyticsService.ts';
+import { classifyAcquisitionChannel, classifyTriggerDetails } from './googleAnalyticsService.ts';
 import { getCachedOrFetch, invalidateCache } from './cache.ts';
 import { getCacheTtlMultiplier } from './quotaShield.ts';
-import { listLiveVisitors, listRecent30mVisitors } from './realtime.ts';
+import { getVisitorIdentityHints, listLiveVisitors, listRecent30mVisitors } from './realtime.ts';
 
 // Explicit Supabase column projection lists to prevent SELECT * over-fetching on Supabase Free Tier
 const USER_PROFILE_COLUMNS = 'user_id, email, full_name, role, job_title, bio, avatar_url, phone, timezone, status, created_at, updated_at';
@@ -1744,14 +1748,33 @@ interface NormalizedTelemetryRecord {
   path: string;
   pageTitle: string;
   landingPage: string;
+  entryUrl: string;
   referrer: string;
+  referrerUrl: string;
+  referrerHost: string;
+  triggerType: string;
+  triggerLabel: string;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+  utmTerm: string;
+  clickIdType: string;
   channel: string;
   country: string;
   countryCode: string;
   city: string;
+  timezone: string;
+  language: string;
+  browser: string;
+  os: string;
+  networkHint: string;
   device: 'desktop' | 'tablet' | 'mobile';
   sessionId: string;
   visitorId: string;
+  chatToken: string;
+  demoUid: string;
+  inquiryId: string;
+  subscriberId: string;
   isReturning: boolean;
   engagementSeconds: number;
   createdAt: string;
@@ -2062,7 +2085,92 @@ function buildRealtimeSummary(
   };
 }
 
-function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
+interface StitchLookupContext {
+  inquiriesById: Map<string, ClientInquiry>;
+  chatsByToken: Map<string, WebsiteChatSession>;
+  subscribersById: Map<string, NewsletterSubscriber>;
+  demoUsersById: Map<string, DemoUser>;
+}
+
+const INTEREST_TOPIC_CATEGORY: Record<string, string> = {
+  'Back Office SaaS & ERP': 'Product & Architecture',
+  'Live Sandbox & Demo Evaluation': 'Buying Intent',
+  'Enterprise Consultation': 'High-Intent Conversion',
+  'AI Agents, RAG & MCP': 'Artificial Intelligence',
+  'Cloud & FinOps Infrastructure': 'Cloud Engineering',
+  'Technical SEO & Analytics': 'Growth Engineering',
+  'Engineering Research & Insights': 'Technical Content',
+  'Company & Engineering Credibility': 'Brand Evaluation',
+  'Platform Overview': 'Discovery'
+};
+
+function inferInterestsAndPersona(input: {
+  paths: string[];
+  titles: string[];
+  referrerHost: string;
+  triggerType: string;
+  utmCampaign: string;
+  conversions: number;
+}): { interests: string[]; primaryPersona: string } {
+  const tags = new Set<string>();
+  const combinedText = `${input.paths.join(' ')} ${input.titles.join(' ')} ${input.utmCampaign} ${input.referrerHost}`.toLowerCase();
+
+  for (const p of input.paths) {
+    const clean = (p || '/').toLowerCase();
+    if (clean.startsWith('/services')) tags.add('Back Office SaaS & ERP');
+    if (clean.startsWith('/demo')) tags.add('Live Sandbox & Demo Evaluation');
+    if (clean.startsWith('/contact')) tags.add('Enterprise Consultation');
+    if (clean.startsWith('/about')) tags.add('Company & Engineering Credibility');
+    if (clean.startsWith('/insights')) tags.add('Engineering Research & Insights');
+  }
+
+  if (
+    input.triggerType === 'AI Citation' ||
+    /(rag|agent|mcp|llm|openai|gemini|ai-integration|ml-automation|\bai\b)/i.test(combinedText)
+  ) {
+    tags.add('AI Agents, RAG & MCP');
+  }
+  if (/(cloud|finops|aws|kubernetes|terraform|docker|supabase|infra|security|zero-trust)/i.test(combinedText)) {
+    tags.add('Cloud & FinOps Infrastructure');
+  }
+  if (/(seo|adsense|search|analytics|gtm|visibility|geo-score|marketing)/i.test(combinedText)) {
+    tags.add('Technical SEO & Analytics');
+  }
+  if (/(erp|back-office|backoffice|saas|crm|workflow|obama)/i.test(combinedText)) {
+    tags.add('Back Office SaaS & ERP');
+  }
+  if (input.conversions > 0) {
+    tags.add('Enterprise Consultation');
+  }
+  if (tags.size === 0) {
+    tags.add('Platform Overview');
+  }
+
+  const interests = Array.from(tags);
+  let primaryPersona = 'General Platform Visitor';
+  if (tags.has('Enterprise Consultation') || input.conversions > 0) {
+    primaryPersona = 'High-Intent Consultation Prospect';
+  } else if (tags.has('Live Sandbox & Demo Evaluation')) {
+    primaryPersona = 'Back Office SaaS Evaluator';
+  } else if (tags.has('AI Agents, RAG & MCP')) {
+    primaryPersona = 'AI Architecture Buyer';
+  } else if (tags.has('Cloud & FinOps Infrastructure')) {
+    primaryPersona = 'Cloud & DevOps Architect';
+  } else if (tags.has('Technical SEO & Analytics')) {
+    primaryPersona = 'Growth & SEO Operator';
+  } else if (tags.has('Back Office SaaS & ERP')) {
+    primaryPersona = 'Custom Software Buyer';
+  } else if (tags.has('Engineering Research & Insights')) {
+    primaryPersona = 'Technical Researcher';
+  }
+
+  return { interests, primaryPersona };
+}
+
+function aggregateBreakdowns(
+  records: NormalizedTelemetryRecord[],
+  stitch?: StitchLookupContext
+) {
   const visitorSet = new Set<string>();
   const newVisitorSet = new Set<string>();
   const returningVisitorSet = new Set<string>();
@@ -2084,15 +2192,80 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
     sessionId: string;
     visitorId: string;
     landingPage: string;
+    referrerHost: string;
+    triggerLabel: string;
+    interests: string[];
     isNew: boolean;
     firstMs: number;
     lastMs: number;
     maxEngagementSec: number;
     keyEvents: number;
+    paths: string[];
+    titles: string[];
+    triggerType: string;
+    utmCampaign: string;
   }
   const sessionMap = new Map<string, SessionAccum>();
 
-  for (const r of records) {
+  const refDetailMap = new Map<
+    string,
+    {
+      referrerUrl: string;
+      referrerHost: string;
+      triggerType: string;
+      triggerLabel: string;
+      utmSource: string;
+      utmMedium: string;
+      utmCampaign: string;
+      utmTerm: string;
+      clickIdType: string;
+      sessions: Set<string>;
+      visitors: Set<string>;
+      conversions: number;
+    }
+  >();
+
+  interface JourneyAccum {
+    visitorId: string;
+    sessionId: string;
+    entryUrl: string;
+    referrerUrl: string;
+    referrerHost: string;
+    triggerType: string;
+    triggerLabel: string;
+    utmSource: string;
+    utmMedium: string;
+    utmCampaign: string;
+    clickIdType: string;
+    landingPage: string;
+    visitedPaths: string[];
+    titles: string[];
+    pageviews: number;
+    maxEngagementSec: number;
+    country: string;
+    countryCode: string;
+    city: string;
+    timezone: string;
+    language: string;
+    device: 'desktop' | 'tablet' | 'mobile';
+    browser: string;
+    os: string;
+    networkHint: string;
+    firstMs: number;
+    lastMs: number;
+    firstSeenAt: string;
+    lastSeenAt: string;
+    conversions: number;
+    chatTokens: Set<string>;
+    demoUids: Set<string>;
+    inquiryIds: Set<string>;
+    subscriberIds: Set<string>;
+  }
+  const journeyMap = new Map<string, JourneyAccum>();
+
+  const sortedRecords = [...records].sort((a, b) => a.createdMs - b.createdMs);
+
+  for (const r of sortedRecords) {
     const vid = r.visitorId || r.sessionId;
     const sid = r.sessionId || vid;
     if (vid) {
@@ -2159,11 +2332,18 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
           sessionId: sid,
           visitorId: vid,
           landingPage: r.landingPage || r.path || '/',
+          referrerHost: r.referrerHost || (r.referrer && r.referrer !== 'direct' ? r.referrer : 'Direct'),
+          triggerLabel: r.triggerLabel || 'Direct / Bookmark',
+          interests: [],
           isNew: !r.isReturning,
           firstMs: r.createdMs,
           lastMs: r.createdMs,
           maxEngagementSec: r.engagementSeconds,
-          keyEvents: r.isConversion ? 1 : 0
+          keyEvents: r.isConversion ? 1 : 0,
+          paths: [r.path],
+          titles: [r.pageTitle],
+          triggerType: r.triggerType,
+          utmCampaign: r.utmCampaign
         });
       } else {
         if (r.createdMs < existing.firstMs) {
@@ -2175,11 +2355,129 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
           existing.maxEngagementSec = r.engagementSeconds;
         }
         if (r.isConversion) existing.keyEvents += 1;
+        if (r.referrerHost && (existing.referrerHost === 'Direct' || !existing.referrerHost)) {
+          existing.referrerHost = r.referrerHost;
+          existing.triggerLabel = r.triggerLabel || existing.triggerLabel;
+        }
+        existing.paths.push(r.path);
+        existing.titles.push(r.pageTitle);
       }
+    }
+
+    // Referrer Details aggregation
+    const refHostClean = r.referrerHost || (r.utmSource ? r.utmSource : 'Direct');
+    const refKey = `${r.referrerUrl || refHostClean}|${r.triggerLabel}|${r.utmSource}|${r.utmCampaign}`;
+    const refDetail = refDetailMap.get(refKey) || {
+      referrerUrl: r.referrerUrl,
+      referrerHost: refHostClean,
+      triggerType: r.triggerType,
+      triggerLabel: r.triggerLabel,
+      utmSource: r.utmSource,
+      utmMedium: r.utmMedium,
+      utmCampaign: r.utmCampaign,
+      utmTerm: r.utmTerm,
+      clickIdType: r.clickIdType,
+      sessions: new Set<string>(),
+      visitors: new Set<string>(),
+      conversions: 0
+    };
+    if (sid) refDetail.sessions.add(sid);
+    if (vid) refDetail.visitors.add(vid);
+    if (r.isConversion) refDetail.conversions += 1;
+    refDetailMap.set(refKey, refDetail);
+
+    // Visitor Journey accumulation (keyed by visitorId so multi-session & conversion events join cleanly)
+    const jKey = vid || sid || r.id;
+    const hints = getVisitorIdentityHints(r.visitorId, r.sessionId);
+    const jExisting = journeyMap.get(jKey);
+    if (!jExisting) {
+      journeyMap.set(jKey, {
+        visitorId: vid || jKey,
+        sessionId: sid || jKey,
+        entryUrl: r.entryUrl || r.landingPage || r.path || '/',
+        referrerUrl: r.referrerUrl,
+        referrerHost: r.referrerHost || 'Direct',
+        triggerType: r.triggerType,
+        triggerLabel: r.triggerLabel,
+        utmSource: r.utmSource,
+        utmMedium: r.utmMedium,
+        utmCampaign: r.utmCampaign,
+        clickIdType: r.clickIdType,
+        landingPage: r.landingPage || r.path || '/',
+        visitedPaths: r.path ? [r.path] : [],
+        titles: r.pageTitle ? [r.pageTitle] : [],
+        pageviews: r.isPageview ? 1 : 0,
+        maxEngagementSec: r.engagementSeconds,
+        country: r.country || 'Local Development',
+        countryCode: r.countryCode || 'LOCAL',
+        city: r.city || 'Localhost',
+        timezone: r.timezone || 'UTC',
+        language: r.language || 'en',
+        device: r.device,
+        browser: r.browser || 'Unknown',
+        os: r.os || 'Unknown',
+        networkHint: r.networkHint || 'Public Edge Network',
+        firstMs: r.createdMs,
+        lastMs: r.createdMs,
+        firstSeenAt: r.createdAt,
+        lastSeenAt: r.createdAt,
+        conversions: r.isConversion ? 1 : 0,
+        chatTokens: new Set<string>([
+          ...(r.chatToken ? [r.chatToken] : []),
+          ...(hints.chatToken ? [hints.chatToken] : [])
+        ]),
+        demoUids: new Set<string>([
+          ...(r.demoUid ? [r.demoUid] : []),
+          ...(hints.demoUid ? [hints.demoUid] : [])
+        ]),
+        inquiryIds: new Set<string>(r.inquiryId ? [r.inquiryId] : []),
+        subscriberIds: new Set<string>(r.subscriberId ? [r.subscriberId] : [])
+      });
+    } else {
+      if (r.isPageview) jExisting.pageviews += 1;
+      if (r.path && jExisting.visitedPaths[jExisting.visitedPaths.length - 1] !== r.path) {
+        jExisting.visitedPaths.push(r.path);
+      }
+      if (r.pageTitle) jExisting.titles.push(r.pageTitle);
+      if (r.engagementSeconds > jExisting.maxEngagementSec) {
+        jExisting.maxEngagementSec = r.engagementSeconds;
+      }
+      if (r.createdMs >= jExisting.lastMs) {
+        jExisting.lastMs = r.createdMs;
+        jExisting.lastSeenAt = r.createdAt;
+        if (r.sessionId) jExisting.sessionId = r.sessionId;
+      }
+      if (r.createdMs < jExisting.firstMs) {
+        jExisting.firstMs = r.createdMs;
+        jExisting.firstSeenAt = r.createdAt;
+        if (r.landingPage || r.path) jExisting.landingPage = r.landingPage || r.path;
+      }
+      if (r.referrerUrl && !jExisting.referrerUrl) {
+        jExisting.referrerUrl = r.referrerUrl;
+        jExisting.referrerHost = r.referrerHost || jExisting.referrerHost;
+        jExisting.triggerType = r.triggerType || jExisting.triggerType;
+        jExisting.triggerLabel = r.triggerLabel || jExisting.triggerLabel;
+      }
+      if (r.utmSource && !jExisting.utmSource) jExisting.utmSource = r.utmSource;
+      if (r.utmMedium && !jExisting.utmMedium) jExisting.utmMedium = r.utmMedium;
+      if (r.utmCampaign && !jExisting.utmCampaign) jExisting.utmCampaign = r.utmCampaign;
+      if (r.clickIdType && !jExisting.clickIdType) jExisting.clickIdType = r.clickIdType;
+      if (r.browser && jExisting.browser === 'Unknown') jExisting.browser = r.browser;
+      if (r.os && jExisting.os === 'Unknown') jExisting.os = r.os;
+      if (r.networkHint && jExisting.networkHint === 'Public Edge Network') {
+        jExisting.networkHint = r.networkHint;
+      }
+      if (r.isConversion) jExisting.conversions += 1;
+      if (r.chatToken) jExisting.chatTokens.add(r.chatToken);
+      if (hints.chatToken) jExisting.chatTokens.add(hints.chatToken);
+      if (r.demoUid) jExisting.demoUids.add(r.demoUid);
+      if (hints.demoUid) jExisting.demoUids.add(hints.demoUid);
+      if (r.inquiryId) jExisting.inquiryIds.add(r.inquiryId);
+      if (r.subscriberId) jExisting.subscriberIds.add(r.subscriberId);
     }
   }
 
-  // Average engagement across sessions
+  // Average engagement across sessions & landing page enrichment
   let totalSessEngagement = 0;
   let sessWithEngagement = 0;
 
@@ -2192,6 +2490,9 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
       engagementSum: number;
       keyEvents: number;
       convertingSessions: number;
+      refDomainCounts: Map<string, number>;
+      triggerCounts: Map<string, number>;
+      interestCounts: Map<string, number>;
     }
   >();
 
@@ -2205,13 +2506,25 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
       sessWithEngagement += 1;
     }
 
+    const inferred = inferInterestsAndPersona({
+      paths: s.paths,
+      titles: s.titles,
+      referrerHost: s.referrerHost,
+      triggerType: s.triggerType,
+      utmCampaign: s.utmCampaign,
+      conversions: s.keyEvents
+    });
+
     const lpEntry = lpMap.get(s.landingPage) || {
       sessions: 0,
       visitors: new Set<string>(),
       newVisitors: new Set<string>(),
       engagementSum: 0,
       keyEvents: 0,
-      convertingSessions: 0
+      convertingSessions: 0,
+      refDomainCounts: new Map<string, number>(),
+      triggerCounts: new Map<string, number>(),
+      interestCounts: new Map<string, number>()
     };
     lpEntry.sessions += 1;
     if (s.visitorId) {
@@ -2221,14 +2534,197 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
     lpEntry.engagementSum += derivedSec;
     lpEntry.keyEvents += s.keyEvents;
     if (s.keyEvents > 0) lpEntry.convertingSessions += 1;
+
+    const rDomain = s.referrerHost || 'Direct';
+    lpEntry.refDomainCounts.set(rDomain, (lpEntry.refDomainCounts.get(rDomain) || 0) + 1);
+    const tLabel = s.triggerLabel || 'Direct / Bookmark';
+    lpEntry.triggerCounts.set(tLabel, (lpEntry.triggerCounts.get(tLabel) || 0) + 1);
+    for (const tag of inferred.interests) {
+      lpEntry.interestCounts.set(tag, (lpEntry.interestCounts.get(tag) || 0) + 1);
+    }
     lpMap.set(s.landingPage, lpEntry);
   }
+
+  const pickTopKey = (m: Map<string, number>, fallback: string): string => {
+    let best = fallback;
+    let bestVal = -1;
+    for (const [k, v] of m.entries()) {
+      if (v > bestVal) {
+        best = k;
+        bestVal = v;
+      }
+    }
+    return best;
+  };
 
   const avgEngagementSeconds =
     sessWithEngagement > 0 ? Math.round(totalSessEngagement / sessWithEngagement) : 0;
 
   const totalDevUsers =
     Array.from(deviceMap.values()).reduce((sum, s) => sum + s.size, 0) || 1;
+
+  // Build behavioral interest segments & stitched Visitor Journeys
+  const interestUsersMap = new Map<string, { users: Set<string>; sessions: Set<string> }>();
+  const visitorJourneys: AnalyticsVisitorJourneyItem[] = [];
+
+  for (const j of journeyMap.values()) {
+    const inferred = inferInterestsAndPersona({
+      paths: j.visitedPaths,
+      titles: j.titles,
+      referrerHost: j.referrerHost,
+      triggerType: j.triggerType,
+      utmCampaign: j.utmCampaign,
+      conversions: j.conversions
+    });
+
+    for (const topic of inferred.interests) {
+      const bucket = interestUsersMap.get(topic) || {
+        users: new Set<string>(),
+        sessions: new Set<string>()
+      };
+      bucket.users.add(j.visitorId);
+      bucket.sessions.add(j.sessionId);
+      interestUsersMap.set(topic, bucket);
+    }
+
+    let identity: AnalyticsVisitorIdentity | null = null;
+    if (stitch) {
+      for (const inqId of j.inquiryIds) {
+        const inq = stitch.inquiriesById.get(inqId);
+        if (inq) {
+          identity = {
+            fullName: inq.full_name,
+            email: inq.work_email,
+            company: inq.company,
+            serviceInterest: inq.service_interest,
+            source: 'inquiry'
+          };
+          break;
+        }
+      }
+      if (!identity) {
+        for (const cTok of j.chatTokens) {
+          const chat = stitch.chatsByToken.get(cTok);
+          if (chat && chat.visitor_email) {
+            identity = {
+              fullName: chat.visitor_name,
+              email: chat.visitor_email,
+              phone: chat.visitor_phone || undefined,
+              source: 'live_chat'
+            };
+            break;
+          }
+        }
+      }
+      if (!identity) {
+        for (const dUid of j.demoUids) {
+          const dUser = stitch.demoUsersById.get(dUid);
+          if (dUser) {
+            identity = {
+              fullName: dUser.full_name,
+              email: dUser.email,
+              phone: dUser.phone || undefined,
+              company: dUser.company || undefined,
+              source: 'demo_user'
+            };
+            break;
+          }
+        }
+      }
+      if (!identity) {
+        for (const subId of j.subscriberIds) {
+          const sub = stitch.subscribersById.get(subId);
+          if (sub) {
+            identity = {
+              fullName: sub.name || sub.email.split('@')[0],
+              email: sub.email,
+              serviceInterest: sub.interest_topic,
+              source: 'newsletter'
+            };
+            break;
+          }
+        }
+      }
+    }
+
+    const utmParts = [
+      j.utmSource ? `utm_source=${j.utmSource}` : '',
+      j.utmMedium ? `utm_medium=${j.utmMedium}` : '',
+      j.utmCampaign ? `utm_campaign=${j.utmCampaign}` : ''
+    ].filter(Boolean);
+
+    const engSec =
+      j.maxEngagementSec > 0
+        ? j.maxEngagementSec
+        : Math.min(600, Math.max(0, Math.round((j.lastMs - j.firstMs) / 1000)));
+
+    visitorJourneys.push({
+      visitorId: j.visitorId,
+      sessionId: j.sessionId,
+      entryUrl: j.entryUrl,
+      referrerUrl: j.referrerUrl,
+      referrerHost: j.referrerHost,
+      triggerType: j.triggerType,
+      triggerLabel: j.triggerLabel,
+      utmSummary: utmParts.length > 0 ? utmParts.join(' · ') : undefined,
+      utmSource: j.utmSource || undefined,
+      utmMedium: j.utmMedium || undefined,
+      utmCampaign: j.utmCampaign || undefined,
+      clickIdType: j.clickIdType || undefined,
+      landingPage: j.landingPage,
+      visitedPaths: j.visitedPaths.slice(0, 15),
+      pageviews: j.pageviews,
+      engagementSeconds: engSec,
+      interests: inferred.interests,
+      primaryPersona: inferred.primaryPersona,
+      country: j.country,
+      countryCode: j.countryCode,
+      city: j.city,
+      timezone: j.timezone,
+      language: j.language,
+      device: j.device,
+      browser: j.browser,
+      os: j.os,
+      networkHint: j.networkHint,
+      firstSeenAt: j.firstSeenAt,
+      lastSeenAt: j.lastSeenAt,
+      conversions: j.conversions,
+      identity
+    });
+  }
+
+  visitorJourneys.sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt));
+
+  const totalJourneyUsers = Math.max(1, visitorSet.size);
+  const interestSegments: AnalyticsInterestSegmentItem[] = Array.from(interestUsersMap.entries())
+    .map(([interest, val]): AnalyticsInterestSegmentItem => ({
+      interest,
+      category: INTEREST_TOPIC_CATEGORY[interest] || 'Behavioral Topic',
+      source: 'behavioral',
+      users: val.users.size,
+      sessions: val.sessions.size,
+      sharePercent: Number(((val.users.size / totalJourneyUsers) * 100).toFixed(1))
+    }))
+    .sort((a, b) => b.users - a.users || b.sessions - a.sessions)
+    .slice(0, 12);
+
+  const referrerDetails: AnalyticsReferrerDetailItem[] = Array.from(refDetailMap.values())
+    .map((val): AnalyticsReferrerDetailItem => ({
+      referrerUrl: val.referrerUrl,
+      referrerHost: val.referrerHost,
+      triggerType: val.triggerType,
+      triggerLabel: val.triggerLabel,
+      utmSource: val.utmSource || undefined,
+      utmMedium: val.utmMedium || undefined,
+      utmCampaign: val.utmCampaign || undefined,
+      utmTerm: val.utmTerm || undefined,
+      clickIdType: val.clickIdType || undefined,
+      sessions: Math.max(1, val.sessions.size),
+      activeUsers: Math.max(1, val.visitors.size),
+      conversions: val.conversions
+    }))
+    .sort((a, b) => b.sessions - a.sessions || b.activeUsers - a.activeUsers)
+    .slice(0, 25);
 
   // Ensure returning visitors aren't double-counted in newUsers if a visitor returned in window
   for (const rv of returningVisitorSet) {
@@ -2274,7 +2770,10 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
         avgEngagementSeconds: val.sessions > 0 ? Math.round(val.engagementSum / val.sessions) : 0,
         keyEvents: val.keyEvents,
         keyEventRatePercent:
-          val.sessions > 0 ? Number(((val.convertingSessions / val.sessions) * 100).toFixed(1)) : 0
+          val.sessions > 0 ? Number(((val.convertingSessions / val.sessions) * 100).toFixed(1)) : 0,
+        topReferrerDomain: pickTopKey(val.refDomainCounts, 'Direct'),
+        topTriggerLabel: pickTopKey(val.triggerCounts, 'Direct / Bookmark'),
+        topInterest: pickTopKey(val.interestCounts, 'Platform Overview')
       }))
       .sort((a, b) => b.sessions - a.sessions)
       .slice(0, 20),
@@ -2302,7 +2801,10 @@ function aggregateBreakdowns(records: NormalizedTelemetryRecord[]) {
         users: set.size,
         percent: Number(((set.size / totalDevUsers) * 100).toFixed(1))
       }))
-      .sort((a, b) => b.users - a.users)
+      .sort((a, b) => b.users - a.users),
+    referrerDetails,
+    interestSegments,
+    visitorJourneys: visitorJourneys.slice(0, 60)
   };
 }
 
@@ -2312,8 +2814,10 @@ function normalizeAnalyticsEvent(evt: AnalyticsEvent): NormalizedTelemetryRecord
   const device: 'desktop' | 'tablet' | 'mobile' =
     deviceRaw === 'mobile' ? 'mobile' : deviceRaw === 'tablet' ? 'tablet' : 'desktop';
   const referrer = evt.referrer?.trim() || 'direct';
+  const triggerDetails = classifyTriggerDetails(referrer, meta.entry_url || evt.path, meta);
   const channel =
-    meta.channel_group?.trim() || classifyAcquisitionChannel(referrer, evt.path);
+    meta.channel_group?.trim() ||
+    classifyAcquisitionChannel(triggerDetails.referrerUrl || referrer, evt.path);
   return {
     id: evt.id,
     eventName: evt.event_type === 'pageview' ? 'page_view' : evt.event_type,
@@ -2322,14 +2826,33 @@ function normalizeAnalyticsEvent(evt: AnalyticsEvent): NormalizedTelemetryRecord
     path: evt.path || '/',
     pageTitle: meta.page_title || evt.path || 'GitStack',
     landingPage: meta.landing_page || evt.path || '/',
+    entryUrl: meta.entry_url || meta.landing_page || evt.path || '/',
     referrer,
+    referrerUrl: triggerDetails.referrerUrl,
+    referrerHost: triggerDetails.referrerHost,
+    triggerType: meta.trigger_type || triggerDetails.triggerType,
+    triggerLabel: meta.trigger_label || triggerDetails.triggerLabel,
+    utmSource: triggerDetails.utmSource,
+    utmMedium: triggerDetails.utmMedium,
+    utmCampaign: triggerDetails.utmCampaign,
+    utmTerm: triggerDetails.utmTerm,
+    clickIdType: triggerDetails.clickIdType,
     channel,
     country: meta.country || 'Local Development',
     countryCode: meta.country_code || 'LOCAL',
     city: meta.city || 'Localhost',
+    timezone: meta.timezone || 'UTC',
+    language: meta.browser_lang || 'en',
+    browser: meta.browser_name || 'Unknown',
+    os: meta.os_name || 'Unknown',
+    networkHint: meta.network_hint || 'Public Edge Network',
     device,
     sessionId: evt.session_id || '',
     visitorId: meta.visitor_id || evt.session_id || '',
+    chatToken: meta.chat_token || '',
+    demoUid: meta.demo_uid || '',
+    inquiryId: meta.inquiry_id || '',
+    subscriberId: meta.subscriber_id || '',
     isReturning: meta.is_returning === 'true',
     engagementSeconds: Math.max(0, Number(meta.engagement_seconds || 0) || 0),
     createdAt: evt.created_at,
@@ -2344,6 +2867,7 @@ function normalizeGtmEvent(evt: GtmEventLog): NormalizedTelemetryRecord {
   const device: 'desktop' | 'tablet' | 'mobile' =
     deviceRaw === 'mobile' ? 'mobile' : deviceRaw === 'tablet' ? 'tablet' : 'desktop';
   const referrer = str('referrer') || 'direct';
+  const triggerDetails = classifyTriggerDetails(referrer, evt.page_path);
   const channel =
     str('channel_group') || classifyAcquisitionChannel(referrer, evt.page_path);
   return {
@@ -2354,14 +2878,33 @@ function normalizeGtmEvent(evt: GtmEventLog): NormalizedTelemetryRecord {
     path: evt.page_path || '/',
     pageTitle: evt.page_title || str('page_title') || evt.page_path || 'GitStack',
     landingPage: str('landing_page') || evt.page_path || '/',
+    entryUrl: str('entry_url') || str('landing_page') || evt.page_path || '/',
     referrer,
+    referrerUrl: triggerDetails.referrerUrl,
+    referrerHost: triggerDetails.referrerHost,
+    triggerType: str('trigger_type') || triggerDetails.triggerType,
+    triggerLabel: str('trigger_label') || triggerDetails.triggerLabel,
+    utmSource: str('utm_source') || triggerDetails.utmSource,
+    utmMedium: str('utm_medium') || triggerDetails.utmMedium,
+    utmCampaign: str('utm_campaign') || triggerDetails.utmCampaign,
+    utmTerm: str('utm_term') || triggerDetails.utmTerm,
+    clickIdType: str('click_id_type') || triggerDetails.clickIdType,
     channel,
     country: str('country') || 'Local Development',
     countryCode: str('country_code') || 'LOCAL',
     city: str('city') || 'Localhost',
+    timezone: str('timezone') || 'UTC',
+    language: str('browser_lang') || 'en',
+    browser: str('browser_name') || 'Unknown',
+    os: str('os_name') || 'Unknown',
+    networkHint: str('network_hint') || 'Public Edge Network',
     device,
     sessionId: evt.session_id || '',
     visitorId: str('visitor_id') || evt.session_id || '',
+    chatToken: str('chat_token'),
+    demoUid: str('demo_uid'),
+    inquiryId: str('inquiry_id'),
+    subscriberId: str('subscriber_id'),
     isReturning: payload.is_returning === true || payload.is_returning === 'true',
     engagementSeconds: Math.max(0, Number(payload.engagement_seconds || 0) || 0),
     createdAt: evt.created_at,
@@ -2421,11 +2964,25 @@ export async function getAnalyticsSummary(
     cacheKey,
     ttlMs,
     async () => {
-      // Fetch both range events and 42-day cohort/realtime horizon in parallel when needed
+      // Fetch range events + 42-day cohort horizon + first-party identity tables in parallel
       const sixWeeksAgoIso = new Date(Date.now() - 42 * 24 * 60 * 60 * 1000).toISOString();
       const fetchSinceIso = range.startIso < sixWeeksAgoIso ? range.startIso : sixWeeksAgoIso;
 
-      const allFetched = await fetchAnalyticsEventsBetween(fetchSinceIso, undefined, userToken);
+      const [allFetched, inquiries, chatSessions, subscribers, demoUsers] = await Promise.all([
+        fetchAnalyticsEventsBetween(fetchSinceIso, undefined, userToken),
+        listInquiries(userToken).catch(() => [] as ClientInquiry[]),
+        listWebsiteChatSessions(userToken).catch(() => [] as WebsiteChatSession[]),
+        listSubscribers(userToken).catch(() => [] as NewsletterSubscriber[]),
+        listDemoUsersRaw(userToken).catch(() => [] as DemoUser[])
+      ]);
+
+      const stitchContext: StitchLookupContext = {
+        inquiriesById: new Map(inquiries.map((i) => [i.id, i])),
+        chatsByToken: new Map(chatSessions.map((c) => [c.visitor_token, c])),
+        subscribersById: new Map(subscribers.map((s) => [s.id, s])),
+        demoUsersById: new Map(demoUsers.map((d) => [d.id, d]))
+      };
+
       const startMs = Date.parse(range.startIso);
       const endMs = Date.parse(range.endIso);
 
@@ -2446,108 +3003,111 @@ export async function getAnalyticsSummary(
       ).length;
       const sessions = new Set(eventsInRange.map((e) => e.session_id).filter(Boolean));
 
-  const buckets = buildTimeBuckets(range);
-  const bucketMap = new Map<
-    string,
-    {
-      label: string;
-      pageviews: number;
-      conversions: number;
-      visitors: Set<string>;
-      newVisitors: Set<string>;
-      engSum: number;
-      engCount: number;
-    }
-  >();
-  for (const b of buckets) {
-    bucketMap.set(b.key, {
-      label: b.label,
-      pageviews: 0,
-      conversions: 0,
-      visitors: new Set<string>(),
-      newVisitors: new Set<string>(),
-      engSum: 0,
-      engCount: 0
-    });
-  }
+      const buckets = buildTimeBuckets(range);
+      const bucketMap = new Map<
+        string,
+        {
+          label: string;
+          pageviews: number;
+          conversions: number;
+          visitors: Set<string>;
+          newVisitors: Set<string>;
+          engSum: number;
+          engCount: number;
+        }
+      >();
+      for (const b of buckets) {
+        bucketMap.set(b.key, {
+          label: b.label,
+          pageviews: 0,
+          conversions: 0,
+          visitors: new Set<string>(),
+          newVisitors: new Set<string>(),
+          engSum: 0,
+          engCount: 0
+        });
+      }
 
-  for (const r of recordsInRange) {
-    const bKey = getRecordBucketKey(r.createdAt, range.bucketMode);
-    const bucket = bucketMap.get(bKey);
-    if (!bucket) continue;
-    if (r.isPageview) bucket.pageviews += 1;
-    else bucket.conversions += 1;
-    const vid = r.visitorId || r.sessionId;
-    if (vid) {
-      bucket.visitors.add(vid);
-      if (!r.isReturning) bucket.newVisitors.add(vid);
-    }
-    if (r.engagementSeconds > 0) {
-      bucket.engSum += r.engagementSeconds;
-      bucket.engCount += 1;
-    }
-  }
+      for (const r of recordsInRange) {
+        const bKey = getRecordBucketKey(r.createdAt, range.bucketMode);
+        const bucket = bucketMap.get(bKey);
+        if (!bucket) continue;
+        if (r.isPageview) bucket.pageviews += 1;
+        else bucket.conversions += 1;
+        const vid = r.visitorId || r.sessionId;
+        if (vid) {
+          bucket.visitors.add(vid);
+          if (!r.isReturning) bucket.newVisitors.add(vid);
+        }
+        if (r.engagementSeconds > 0) {
+          bucket.engSum += r.engagementSeconds;
+          bucket.engCount += 1;
+        }
+      }
 
-  const pageCount = new Map<string, number>();
-  const refCount = new Map<string, number>();
-  for (const pv of pageviews) {
-    pageCount.set(pv.path, (pageCount.get(pv.path) || 0) + 1);
-    const ref = pv.referrer?.trim() || 'direct';
-    refCount.set(ref, (refCount.get(ref) || 0) + 1);
-  }
+      const pageCount = new Map<string, number>();
+      const refCount = new Map<string, number>();
+      for (const pv of pageviews) {
+        pageCount.set(pv.path, (pageCount.get(pv.path) || 0) + 1);
+        const ref = pv.referrer?.trim() || 'direct';
+        refCount.set(ref, (refCount.get(ref) || 0) + 1);
+      }
 
-  const uniqueSessions = sessions.size;
-  const totalConversions = inquiryConversions + newsletterConversions;
-  const conversionRatePercent =
-    uniqueSessions > 0 ? Number(((totalConversions / uniqueSessions) * 100).toFixed(1)) : 0;
+      const uniqueSessions = sessions.size;
+      const totalConversions = inquiryConversions + newsletterConversions;
+      const conversionRatePercent =
+        uniqueSessions > 0 ? Number(((totalConversions / uniqueSessions) * 100).toFixed(1)) : 0;
 
-  const breakdowns = aggregateBreakdowns(recordsInRange);
-  const cohorts = buildCohortMatrix(normalizedAll);
-  const realtime = buildRealtimeSummary(normalizedAll);
+      const breakdowns = aggregateBreakdowns(recordsInRange, stitchContext);
+      const cohorts = buildCohortMatrix(normalizedAll);
+      const realtime = buildRealtimeSummary(normalizedAll);
 
-  return {
-    days: range.daysSpan,
-    preset: range.preset,
-    startDate: range.startDate,
-    endDate: range.endDate,
-    bucketMode: range.bucketMode,
-    totalPageviews: pageviews.length,
-    uniqueSessions,
-    activeUsers: breakdowns.activeUsers,
-    newUsers: breakdowns.newUsers,
-    returningUsers: breakdowns.returningUsers,
-    avgEngagementSeconds: breakdowns.avgEngagementSeconds,
-    qualifiedLeads: totalConversions,
-    inquiryConversions,
-    newsletterConversions,
-    commentSubmissions,
-    conversionRatePercent,
-    dailySeries: Array.from(bucketMap.entries()).map(([key, val]) => ({
-      date: key,
-      label: val.label,
-      pageviews: val.pageviews,
-      conversions: val.conversions,
-      activeUsers: val.visitors.size,
-      newUsers: val.newVisitors.size,
-      avgEngagementSeconds: val.engCount > 0 ? Math.round(val.engSum / val.engCount) : 0
-    })),
-    topPages: Array.from(pageCount.entries())
-      .map(([p, views]) => ({ path: p, views }))
-      .sort((a, b) => b.views - a.views)
-      .slice(0, 8),
-    topReferrers: Array.from(refCount.entries())
-      .map(([referrer, visits]) => ({ referrer, visits }))
-      .sort((a, b) => b.visits - a.visits)
-      .slice(0, 6),
-    countries: breakdowns.countries,
-    cities: breakdowns.cities,
-    channels: breakdowns.channels,
-    landingPages: breakdowns.landingPages,
-    pageTitles: breakdowns.pageTitles,
-    eventCounts: breakdowns.eventCounts,
+      return {
+        days: range.daysSpan,
+        preset: range.preset,
+        startDate: range.startDate,
+        endDate: range.endDate,
+        bucketMode: range.bucketMode,
+        totalPageviews: pageviews.length,
+        uniqueSessions,
+        activeUsers: breakdowns.activeUsers,
+        newUsers: breakdowns.newUsers,
+        returningUsers: breakdowns.returningUsers,
+        avgEngagementSeconds: breakdowns.avgEngagementSeconds,
+        qualifiedLeads: totalConversions,
+        inquiryConversions,
+        newsletterConversions,
+        commentSubmissions,
+        conversionRatePercent,
+        dailySeries: Array.from(bucketMap.entries()).map(([key, val]) => ({
+          date: key,
+          label: val.label,
+          pageviews: val.pageviews,
+          conversions: val.conversions,
+          activeUsers: val.visitors.size,
+          newUsers: val.newVisitors.size,
+          avgEngagementSeconds: val.engCount > 0 ? Math.round(val.engSum / val.engCount) : 0
+        })),
+        topPages: Array.from(pageCount.entries())
+          .map(([p, views]) => ({ path: p, views }))
+          .sort((a, b) => b.views - a.views)
+          .slice(0, 8),
+        topReferrers: Array.from(refCount.entries())
+          .map(([referrer, visits]) => ({ referrer, visits }))
+          .sort((a, b) => b.visits - a.visits)
+          .slice(0, 6),
+        countries: breakdowns.countries,
+        cities: breakdowns.cities,
+        channels: breakdowns.channels,
+        landingPages: breakdowns.landingPages,
+        pageTitles: breakdowns.pageTitles,
+        eventCounts: breakdowns.eventCounts,
         devices: breakdowns.devices,
         cohorts,
-        realtime
+        realtime,
+        referrerDetails: breakdowns.referrerDetails,
+        interestSegments: breakdowns.interestSegments,
+        visitorJourneys: breakdowns.visitorJourneys
       };
     },
     1

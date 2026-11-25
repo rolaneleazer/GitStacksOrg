@@ -195,6 +195,245 @@ function getVisitorSessionId(): string {
   }
 }
 
+const ENTRY_ATTRIBUTION_KEY = 'gitstack_entry_attribution';
+const DEMO_UID_KEY = 'gitstack_demo_uid';
+
+export interface VisitorAttributionSnapshot {
+  referrer_url: string;
+  referrer_host: string;
+  trigger_type: string;
+  trigger_label: string;
+  utm_source: string;
+  utm_medium: string;
+  utm_campaign: string;
+  utm_term: string;
+  utm_content: string;
+  click_id_type: string;
+  entry_url: string;
+}
+
+function parseReferrerOriginClient(rawRef: string): { url: string; host: string; isExternal: boolean } {
+  const clean = (rawRef || '').trim();
+  if (!clean || clean === 'direct' || clean === '(direct)') {
+    return { url: '', host: '', isExternal: false };
+  }
+  try {
+    const parsed = new URL(clean);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { url: '', host: '', isExternal: false };
+    }
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    const curHost =
+      typeof window !== 'undefined' ? window.location.hostname.replace(/^www\./i, '').toLowerCase() : '';
+    const isSelf =
+      !host ||
+      host === curHost ||
+      host === 'git-stack.org' ||
+      host === 'localhost' ||
+      host === '127.0.0.1';
+    if (isSelf) {
+      return { url: '', host: '', isExternal: false };
+    }
+    return { url: clean.slice(0, 400), host: host.slice(0, 120), isExternal: true };
+  } catch {
+    return { url: '', host: '', isExternal: false };
+  }
+}
+
+function detectClientTrigger(
+  host: string,
+  utmSource: string,
+  utmMedium: string,
+  clickIdType: string
+): { trigger_type: string; trigger_label: string } {
+  const h = host.toLowerCase();
+  const src = utmSource.toLowerCase();
+  const med = utmMedium.toLowerCase();
+
+  if (clickIdType) {
+    return { trigger_type: 'Paid Click ID', trigger_label: clickIdType };
+  }
+  if (med === 'email' || src === 'newsletter' || h.includes('mail.google') || h.includes('outlook.') || h.includes('larksuite')) {
+    return { trigger_type: 'Email Campaign', trigger_label: utmSource ? `Email (${utmSource})` : 'Email Link' };
+  }
+  if (
+    h.includes('chatgpt.com') ||
+    h.includes('chat.openai.com') ||
+    h.includes('perplexity.ai') ||
+    h.includes('claude.ai') ||
+    h.includes('gemini.google.com') ||
+    h.includes('copilot.microsoft.com') ||
+    h.includes('poe.com') ||
+    h.includes('you.com')
+  ) {
+    return { trigger_type: 'AI Citation', trigger_label: `${host} Referral` };
+  }
+  if (
+    h.includes('google.') ||
+    h.includes('bing.com') ||
+    h.includes('duckduckgo.com') ||
+    h.includes('search.yahoo.') ||
+    h.includes('ecosia.org') ||
+    h.includes('yandex.') ||
+    h.includes('baidu.com')
+  ) {
+    const engine = h.includes('google.')
+      ? 'Google Search'
+      : h.includes('bing.')
+        ? 'Bing Search'
+        : h.includes('duckduckgo.')
+          ? 'DuckDuckGo Search'
+          : `${host} Search`;
+    return { trigger_type: 'Search Engine', trigger_label: engine };
+  }
+  if (
+    h.includes('linkedin.com') ||
+    h.includes('lnkd.in') ||
+    h.includes('facebook.com') ||
+    h.includes('fb.com') ||
+    h.includes('instagram.com') ||
+    h.includes('twitter.com') ||
+    h.includes('x.com') ||
+    h.includes('t.co') ||
+    h.includes('reddit.com') ||
+    h.includes('youtube.com') ||
+    h.includes('tiktok.com')
+  ) {
+    const socialName = h.includes('linkedin') || h.includes('lnkd.in')
+      ? 'LinkedIn'
+      : h.includes('facebook') || h.includes('fb.com')
+        ? 'Facebook'
+        : h.includes('instagram')
+          ? 'Instagram'
+          : h.includes('x.com') || h.includes('twitter') || h.includes('t.co')
+            ? 'X / Twitter'
+            : h.includes('reddit')
+              ? 'Reddit'
+              : h.includes('youtube')
+                ? 'YouTube'
+                : 'Social Post';
+    return { trigger_type: 'Social Post', trigger_label: socialName };
+  }
+  if (utmSource) {
+    return {
+      trigger_type: med === 'cpc' || med === 'paid' ? 'Paid Click ID' : 'External Link',
+      trigger_label: utmMedium ? `${utmSource} / ${utmMedium}` : utmSource
+    };
+  }
+  if (host) {
+    return { trigger_type: 'External Link', trigger_label: host };
+  }
+  return { trigger_type: 'Direct', trigger_label: 'Direct / Bookmark' };
+}
+
+function parseClientBrowserAndOs(): { browser_name: string; os_name: string; browser_lang: string } {
+  if (typeof navigator === 'undefined') {
+    return { browser_name: 'Unknown', os_name: 'Unknown', browser_lang: 'en' };
+  }
+  const ua = navigator.userAgent || '';
+  const browser_lang = (navigator.language || 'en').slice(0, 24);
+  let browser_name = 'Browser';
+  if (/Edg\//i.test(ua)) browser_name = 'Microsoft Edge';
+  else if (/OPR\//i.test(ua) || /Opera/i.test(ua)) browser_name = 'Opera';
+  else if (/Chrome\//i.test(ua) && !/Chromium/i.test(ua)) browser_name = 'Chrome';
+  else if (/Firefox\//i.test(ua)) browser_name = 'Firefox';
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser_name = 'Safari';
+
+  let os_name = 'Other OS';
+  if (/Windows NT/i.test(ua)) os_name = 'Windows';
+  else if (/iPhone|iPad|iPod/i.test(ua)) os_name = 'iOS';
+  else if (/Android/i.test(ua)) os_name = 'Android';
+  else if (/Mac OS X|Macintosh/i.test(ua)) os_name = 'macOS';
+  else if (/Linux/i.test(ua)) os_name = 'Linux';
+
+  return { browser_name, os_name, browser_lang };
+}
+
+function getPinnedEntryAttribution(): VisitorAttributionSnapshot {
+  const empty: VisitorAttributionSnapshot = {
+    referrer_url: '',
+    referrer_host: '',
+    trigger_type: 'Direct',
+    trigger_label: 'Direct / Bookmark',
+    utm_source: '',
+    utm_medium: '',
+    utm_campaign: '',
+    utm_term: '',
+    utm_content: '',
+    click_id_type: '',
+    entry_url: typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}`.slice(0, 220) : '/'
+  };
+  if (typeof window === 'undefined') return empty;
+
+  try {
+    const rawSaved = window.sessionStorage.getItem(ENTRY_ATTRIBUTION_KEY);
+    const saved: VisitorAttributionSnapshot | null = rawSaved
+      ? (JSON.parse(rawSaved) as VisitorAttributionSnapshot)
+      : null;
+
+    const params = new URLSearchParams(window.location.search || '');
+    const utm_source = (params.get('utm_source') || '').trim().slice(0, 80);
+    const utm_medium = (params.get('utm_medium') || '').trim().slice(0, 80);
+    const utm_campaign = (params.get('utm_campaign') || '').trim().slice(0, 120);
+    const utm_term = (params.get('utm_term') || '').trim().slice(0, 120);
+    const utm_content = (params.get('utm_content') || '').trim().slice(0, 120);
+
+    const click_id_type = params.get('gclid')
+      ? 'Google Ads (gclid)'
+      : params.get('fbclid')
+        ? 'Meta Ads (fbclid)'
+        : params.get('msclkid')
+          ? 'Microsoft Ads (msclkid)'
+          : params.get('ttclid')
+            ? 'TikTok Ads (ttclid)'
+            : params.get('li_fat_id')
+              ? 'LinkedIn Ads (li_fat_id)'
+              : '';
+
+    const refParsed = parseReferrerOriginClient(typeof document !== 'undefined' ? document.referrer : '');
+    const hasFreshCampaign = Boolean(utm_source || utm_medium || utm_campaign || click_id_type);
+
+    if (!saved || refParsed.isExternal || hasFreshCampaign) {
+      const mergedRefUrl = refParsed.isExternal ? refParsed.url : saved?.referrer_url || '';
+      const mergedRefHost = refParsed.isExternal ? refParsed.host : saved?.referrer_host || '';
+      const mergedUtmSource = utm_source || saved?.utm_source || '';
+      const mergedUtmMedium = utm_medium || saved?.utm_medium || '';
+      const mergedUtmCampaign = utm_campaign || saved?.utm_campaign || '';
+      const mergedUtmTerm = utm_term || saved?.utm_term || '';
+      const mergedUtmContent = utm_content || saved?.utm_content || '';
+      const mergedClickId = click_id_type || saved?.click_id_type || '';
+      const trigger = detectClientTrigger(
+        mergedRefHost,
+        mergedUtmSource,
+        mergedUtmMedium,
+        mergedClickId
+      );
+
+      const snapshot: VisitorAttributionSnapshot = {
+        referrer_url: mergedRefUrl,
+        referrer_host: mergedRefHost,
+        trigger_type: trigger.trigger_type,
+        trigger_label: trigger.trigger_label,
+        utm_source: mergedUtmSource,
+        utm_medium: mergedUtmMedium,
+        utm_campaign: mergedUtmCampaign,
+        utm_term: mergedUtmTerm,
+        utm_content: mergedUtmContent,
+        click_id_type: mergedClickId,
+        entry_url:
+          saved?.entry_url ||
+          `${window.location.pathname || '/'}${window.location.search || ''}`.slice(0, 220)
+      };
+      window.sessionStorage.setItem(ENTRY_ATTRIBUTION_KEY, JSON.stringify(snapshot));
+      return snapshot;
+    }
+
+    return saved;
+  } catch {
+    return empty;
+  }
+}
+
 export function getVisitorTelemetryContext(): {
   session_id: string;
   visitor_id: string;
@@ -203,11 +442,18 @@ export function getVisitorTelemetryContext(): {
   device_type: 'desktop' | 'tablet' | 'mobile';
   timezone: string;
   page_title: string;
+  browser_name: string;
+  os_name: string;
+  browser_lang: string;
+  chat_token: string;
+  demo_uid: string;
+  attribution: VisitorAttributionSnapshot;
 } {
   const session_id = getVisitorSessionId();
   let visitor_id = session_id;
   let is_returning = false;
   let landing_page = typeof window !== 'undefined' ? window.location.pathname || '/' : '/';
+  let demo_uid = '';
 
   if (typeof window !== 'undefined') {
     try {
@@ -231,6 +477,7 @@ export function getVisitorTelemetryContext(): {
       } else {
         window.sessionStorage.setItem('gitstack_landing_page', landing_page);
       }
+      demo_uid = window.localStorage.getItem(DEMO_UID_KEY) || '';
     } catch {
       // ignore storage errors
     }
@@ -246,6 +493,9 @@ export function getVisitorTelemetryContext(): {
     timezone = 'UTC';
   }
   const page_title = typeof document !== 'undefined' ? (document.title || 'GitStack').slice(0, 160) : 'GitStack';
+  const { browser_name, os_name, browser_lang } = parseClientBrowserAndOs();
+  const attribution = getPinnedEntryAttribution();
+  const chat_token = getExistingFloatingChatToken() || '';
 
   return {
     session_id,
@@ -254,7 +504,13 @@ export function getVisitorTelemetryContext(): {
     landing_page,
     device_type,
     timezone,
-    page_title
+    page_title,
+    browser_name,
+    os_name,
+    browser_lang,
+    chat_token,
+    demo_uid,
+    attribution
   };
 }
 
@@ -525,11 +781,16 @@ export const api = {
     interest_topic?: string;
     consent_given: boolean;
   }) {
+    const ctx = getVisitorTelemetryContext();
     const res = await request<{ subscriber: NewsletterSubscriber; alreadySubscribed: boolean }>(
       '/api/newsletter',
       {
         method: 'POST',
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          ...payload,
+          visitor_id: ctx.visitor_id,
+          session_id: ctx.session_id
+        })
       }
     );
     pushGtmEvent(
@@ -553,9 +814,14 @@ export const api = {
     timeline: string;
     project_brief: string;
   }) {
+    const ctx = getVisitorTelemetryContext();
     const res = await request<{ inquiry: ClientInquiry }>('/api/inquiries', {
       method: 'POST',
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        visitor_id: ctx.visitor_id,
+        session_id: ctx.session_id
+      })
     });
     pushGtmEvent(
       'inquiry_submitted',
@@ -684,6 +950,36 @@ export const api = {
   ) {
     if (path.startsWith('/obama') || path.startsWith('/studio')) return;
     const ctx = getVisitorTelemetryContext();
+    const attr = ctx.attribution;
+    const effectiveReferrer =
+      attr.referrer_url ||
+      (typeof document !== 'undefined' ? document.referrer : '') ||
+      'direct';
+    const cleanMeta: Record<string, string> = {
+      visitor_id: ctx.visitor_id,
+      is_returning: String(ctx.is_returning),
+      landing_page: ctx.landing_page,
+      entry_url: attr.entry_url,
+      device_type: ctx.device_type,
+      timezone: ctx.timezone,
+      page_title: ctx.page_title,
+      browser_name: ctx.browser_name,
+      os_name: ctx.os_name,
+      browser_lang: ctx.browser_lang,
+      trigger_type: attr.trigger_type,
+      trigger_label: attr.trigger_label,
+      ...(attr.referrer_url ? { referrer_url: attr.referrer_url } : {}),
+      ...(attr.referrer_host ? { referrer_host: attr.referrer_host } : {}),
+      ...(attr.utm_source ? { utm_source: attr.utm_source } : {}),
+      ...(attr.utm_medium ? { utm_medium: attr.utm_medium } : {}),
+      ...(attr.utm_campaign ? { utm_campaign: attr.utm_campaign } : {}),
+      ...(attr.utm_term ? { utm_term: attr.utm_term } : {}),
+      ...(attr.utm_content ? { utm_content: attr.utm_content } : {}),
+      ...(attr.click_id_type ? { click_id_type: attr.click_id_type } : {}),
+      ...(ctx.chat_token ? { chat_token: ctx.chat_token } : {}),
+      ...(ctx.demo_uid ? { demo_uid: ctx.demo_uid } : {}),
+      ...meta
+    };
     fetch('/api/analytics/event', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -691,17 +987,9 @@ export const api = {
       body: JSON.stringify({
         event_type: eventType,
         path,
-        referrer: (typeof document !== 'undefined' ? document.referrer : '') || 'direct',
+        referrer: effectiveReferrer,
         session_id: ctx.session_id,
-        meta: {
-          visitor_id: ctx.visitor_id,
-          is_returning: String(ctx.is_returning),
-          landing_page: ctx.landing_page,
-          device_type: ctx.device_type,
-          timezone: ctx.timezone,
-          page_title: ctx.page_title,
-          ...meta
-        }
+        meta: cleanMeta
       })
     }).catch(() => {});
   },
@@ -1351,10 +1639,15 @@ export const api = {
     phone: string;
     password: string;
   }) {
+    const ctx = getVisitorTelemetryContext();
     const res = await fetch('/api/demo/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        visitor_id: ctx.visitor_id,
+        session_id: ctx.session_id
+      })
     });
     const data = (await res.json().catch(() => ({}))) as {
       token?: string;
@@ -1365,15 +1658,25 @@ export const api = {
       throw new Error(data.error || `Registration failed (HTTP ${res.status})`);
     }
     setStoredDemoToken(data.token);
+    try {
+      window.localStorage.setItem(DEMO_UID_KEY, data.user.id);
+    } catch {
+      // ignore storage errors
+    }
     pushGtmEvent('demo_signup', { company: payload.company }, { isConversion: true });
     return { token: data.token, user: data.user };
   },
 
   async loginDemoUser(payload: { email: string; password: string }) {
+    const ctx = getVisitorTelemetryContext();
     const res = await fetch('/api/demo/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        visitor_id: ctx.visitor_id,
+        session_id: ctx.session_id
+      })
     });
     const data = (await res.json().catch(() => ({}))) as {
       token?: string;
@@ -1393,6 +1696,11 @@ export const api = {
       throw new Error(data.error || `Sign in failed (HTTP ${res.status})`);
     }
     setStoredDemoToken(data.token);
+    try {
+      window.localStorage.setItem(DEMO_UID_KEY, data.user.id);
+    } catch {
+      // ignore storage errors
+    }
     return { token: data.token, user: data.user };
   },
 
@@ -1507,7 +1815,11 @@ export const api = {
   // --- Live Website Presence & Virtual Office HUD ---
   async sendPublicPresence(pagePath: string, engagementSeconds?: number) {
     const ctx = getVisitorTelemetryContext();
-    const referrer = typeof document !== 'undefined' ? document.referrer || 'direct' : 'direct';
+    const attr = ctx.attribution;
+    const referrer =
+      attr.referrer_url ||
+      (typeof document !== 'undefined' ? document.referrer : '') ||
+      'direct';
     const res = await fetch('/api/public/presence', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1519,6 +1831,12 @@ export const api = {
         page_title: ctx.page_title,
         device_type: ctx.device_type,
         referrer,
+        referrer_url: attr.referrer_url,
+        referrer_host: attr.referrer_host,
+        trigger_label: attr.trigger_label,
+        utm_campaign: attr.utm_campaign,
+        browser_name: ctx.browser_name,
+        os_name: ctx.os_name,
         timezone: ctx.timezone,
         is_returning: ctx.is_returning,
         engagement_seconds: engagementSeconds
@@ -1566,10 +1884,15 @@ export const api = {
     visitor_email: string;
     page_path?: string;
   }) {
+    const ctx = getVisitorTelemetryContext();
     const res = await fetch('/api/public/chat/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        visitor_id: ctx.visitor_id,
+        session_id: ctx.session_id
+      })
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1585,10 +1908,15 @@ export const api = {
     visitor_email: string;
     page_path?: string;
   }) {
+    const ctx = getVisitorTelemetryContext();
     const res = await fetch('/api/public/chat/profile', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        ...payload,
+        visitor_id: ctx.visitor_id,
+        session_id: ctx.session_id
+      })
     });
     if (!res.ok) {
       const err = (await res.json().catch(() => ({}))) as { error?: string };

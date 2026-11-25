@@ -18,11 +18,14 @@ import { DEFAULT_BRANDING, normalizeHexColor } from '../shared/themePresets.ts';
 import {
   classifyAcquisitionChannel,
   discoverGa4PropertiesWithToken,
+  classifyTriggerDetails,
   fetchGa4FullReport,
   GA4_READONLY_SCOPE,
   isServiceAccountJsonString,
   mintGoogleAccessTokenFromServiceAccount,
-  resolveEdgeGeoFromRequest
+  parseBrowserOsFromUserAgent,
+  resolveEdgeGeoFromRequest,
+  resolveNetworkOrgHint
 } from './googleAnalyticsService.ts';
 import type {
   AdSenseSettings,
@@ -170,7 +173,9 @@ import {
   broadcastToAdmins,
   broadcastToVisitor,
   getLastAdminSeenAt,
+  getVisitorIdentityHints,
   isAdminOnline,
+  linkVisitorIdentityHint,
   listLiveVisitors,
   markAdminPresence,
   recordVisitorPresence
@@ -1263,7 +1268,10 @@ export async function createApp(): Promise<Express> {
 
   app.post('/api/newsletter', async (req, res) => {
     try {
-      const { email, name, interest_topic, consent_given } = req.body as Partial<NewsletterSubscriber>;
+      const { email, name, interest_topic, consent_given, visitor_id, session_id } = req.body as Partial<NewsletterSubscriber> & {
+        visitor_id?: string;
+        session_id?: string;
+      };
       if (!email || !isValidEmail(email)) {
         return res.status(400).json({ error: 'Please enter a valid email address.' });
       }
@@ -1280,13 +1288,19 @@ export async function createApp(): Promise<Express> {
       };
       const result = await addSubscriber(sub);
       if (!result.alreadySubscribed) {
+        const cleanVisitorId = typeof visitor_id === 'string' ? visitor_id.trim().slice(0, 80) : '';
+        const cleanSessionId = typeof session_id === 'string' ? session_id.trim().slice(0, 80) : '';
         await recordAnalyticsEvent({
           id: `evt-${crypto.randomUUID().slice(0, 8)}`,
           event_type: 'newsletter_subscribed',
           path: '/insights',
           referrer: 'direct',
-          session_id: `sub-${sub.id}`,
-          meta: { topic: sub.interest_topic },
+          session_id: cleanSessionId || `sub-${sub.id}`,
+          meta: {
+            topic: sub.interest_topic,
+            subscriber_id: sub.id,
+            ...(cleanVisitorId ? { visitor_id: cleanVisitorId } : {})
+          },
           created_at: sub.created_at
         });
       }
@@ -1316,8 +1330,10 @@ export async function createApp(): Promise<Express> {
         service_interest,
         budget_range,
         timeline,
-        project_brief
-      } = req.body as Partial<ClientInquiry>;
+        project_brief,
+        visitor_id,
+        session_id
+      } = req.body as Partial<ClientInquiry> & { visitor_id?: string; session_id?: string };
 
       if (!full_name || !company || !work_email || !project_brief) {
         return res.status(400).json({ error: 'Name, company, work email, and project brief are required.' });
@@ -1343,13 +1359,19 @@ export async function createApp(): Promise<Express> {
         created_at: new Date().toISOString()
       };
       const saved = await createInquiry(inquiry);
+      const cleanVisitorId = typeof visitor_id === 'string' ? visitor_id.trim().slice(0, 80) : '';
+      const cleanSessionId = typeof session_id === 'string' ? session_id.trim().slice(0, 80) : '';
       await recordAnalyticsEvent({
         id: `evt-${crypto.randomUUID().slice(0, 8)}`,
         event_type: 'inquiry_submitted',
         path: '/contact',
         referrer: 'direct',
-        session_id: `inq-${inquiry.id}`,
-        meta: { service: inquiry.service_interest },
+        session_id: cleanSessionId || `inq-${inquiry.id}`,
+        meta: {
+          service: inquiry.service_interest,
+          inquiry_id: saved.id,
+          ...(cleanVisitorId ? { visitor_id: cleanVisitorId } : {})
+        },
         created_at: inquiry.created_at
       });
       await notifyAdminViaLarkMail({
@@ -2523,23 +2545,51 @@ export async function createApp(): Promise<Express> {
       if (meta && typeof meta === 'object') {
         for (const [k, v] of Object.entries(meta)) {
           if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-            safeMeta[k.slice(0, 60)] = String(v).slice(0, 240);
+            const limit = k === 'referrer_url' ? 400 : 240;
+            safeMeta[k.slice(0, 60)] = String(v).slice(0, limit);
           }
         }
       }
 
       const geo = resolveEdgeGeoFromRequest(req, safeMeta.timezone);
-      const safeReferrer = (referrer || 'direct').slice(0, 180);
-      const channelGroup = classifyAcquisitionChannel(safeReferrer, pagePath);
+      const rawRef = (referrer || 'direct').slice(0, 400);
+      const triggerDetails = classifyTriggerDetails(rawRef, pagePath, safeMeta);
+      const channelGroup = classifyAcquisitionChannel(
+        triggerDetails.referrerUrl || rawRef,
+        pagePath
+      );
+      const uaParsed = parseBrowserOsFromUserAgent(String(req.headers['user-agent'] || ''));
+      const acceptLang = String(req.headers['accept-language'] || '').split(',')[0].trim().slice(0, 24);
+      const networkOrg = resolveNetworkOrgHint(req);
+
+      const safeSessionId = (session_id || '').slice(0, 80);
+      const linkedHints = getVisitorIdentityHints(safeMeta.visitor_id, safeSessionId);
+      const safeReferrer = (triggerDetails.referrerUrl || rawRef || 'direct').slice(0, 400);
+
       const enrichedMeta: Record<string, string> = {
         ...safeMeta,
         country: safeMeta.country || geo.country,
         country_code: safeMeta.country_code || geo.countryCode,
         city: safeMeta.city || geo.city,
-        channel_group: safeMeta.channel_group || channelGroup
+        channel_group: safeMeta.channel_group || channelGroup,
+        trigger_type: safeMeta.trigger_type || triggerDetails.triggerType,
+        trigger_label: safeMeta.trigger_label || triggerDetails.triggerLabel,
+        ...(triggerDetails.referrerUrl ? { referrer_url: triggerDetails.referrerUrl } : {}),
+        ...(triggerDetails.referrerHost ? { referrer_host: triggerDetails.referrerHost } : {}),
+        ...(triggerDetails.utmSource ? { utm_source: triggerDetails.utmSource } : {}),
+        ...(triggerDetails.utmMedium ? { utm_medium: triggerDetails.utmMedium } : {}),
+        ...(triggerDetails.utmCampaign ? { utm_campaign: triggerDetails.utmCampaign } : {}),
+        ...(triggerDetails.utmTerm ? { utm_term: triggerDetails.utmTerm } : {}),
+        ...(triggerDetails.utmContent ? { utm_content: triggerDetails.utmContent } : {}),
+        ...(triggerDetails.clickIdType ? { click_id_type: triggerDetails.clickIdType } : {}),
+        browser_name: safeMeta.browser_name || uaParsed.browser,
+        os_name: safeMeta.os_name || uaParsed.os,
+        browser_lang: safeMeta.browser_lang || acceptLang || 'en',
+        network_hint: safeMeta.network_hint || networkOrg,
+        ...(linkedHints.chatToken && !safeMeta.chat_token ? { chat_token: linkedHints.chatToken } : {}),
+        ...(linkedHints.demoUid && !safeMeta.demo_uid ? { demo_uid: linkedHints.demoUid } : {})
       };
 
-      const safeSessionId = (session_id || '').slice(0, 80);
       await recordAnalyticsEvent({
         id: `evt-${crypto.randomUUID().slice(0, 8)}`,
         event_type: safeType,
@@ -2563,7 +2613,14 @@ export async function createApp(): Promise<Express> {
           country_code: enrichedMeta.country_code,
           city: enrichedMeta.city,
           is_returning: enrichedMeta.is_returning === 'true',
-          engagement_seconds: Number(enrichedMeta.engagement_seconds || 0) || 0
+          engagement_seconds: Number(enrichedMeta.engagement_seconds || 0) || 0,
+          referrer_url: enrichedMeta.referrer_url,
+          referrer_host: enrichedMeta.referrer_host,
+          trigger_label: enrichedMeta.trigger_label,
+          utm_campaign: enrichedMeta.utm_campaign,
+          browser: enrichedMeta.browser_name,
+          os: enrichedMeta.os_name,
+          network_hint: enrichedMeta.network_hint
         });
       }
 
@@ -4392,6 +4449,11 @@ export async function createApp(): Promise<Express> {
       };
 
       const savedUser = await upsertDemoUser(demoUser);
+      const { visitor_id: demoRegVid, session_id: demoRegSid } = (req.body || {}) as {
+        visitor_id?: string;
+        session_id?: string;
+      };
+      linkVisitorIdentityHint([demoRegVid, demoRegSid], { demoUid: savedUser.id });
       const token = issueDemoSessionToken({ id: savedUser.id, email: savedUser.email });
 
       await notifyAdminViaLarkMail({
@@ -4422,7 +4484,12 @@ export async function createApp(): Promise<Express> {
 
   app.post('/api/demo/login', async (req, res) => {
     try {
-      const { email, password } = req.body as { email?: string; password?: string };
+      const { email, password, visitor_id, session_id } = req.body as {
+        email?: string;
+        password?: string;
+        visitor_id?: string;
+        session_id?: string;
+      };
       const cleanEmail = (email || '').trim().toLowerCase();
       if (!cleanEmail || !password) {
         return res.status(400).json({ error: 'Email and password are required.' });
@@ -4447,6 +4514,7 @@ export async function createApp(): Promise<Express> {
         last_action_label: 'Signed In',
         last_active_at: now
       });
+      linkVisitorIdentityHint([visitor_id, session_id], { demoUid: updated.id });
       const token = issueDemoSessionToken({ id: updated.id, email: updated.email });
       res.json({ token, user: toPublicDemoUser(updated) });
     } catch (err) {
@@ -4666,6 +4734,12 @@ export async function createApp(): Promise<Express> {
         page_title,
         device_type,
         referrer,
+        referrer_url,
+        referrer_host,
+        trigger_label,
+        utm_campaign,
+        browser_name,
+        os_name,
         timezone,
         is_returning,
         engagement_seconds
@@ -4676,6 +4750,12 @@ export async function createApp(): Promise<Express> {
         page_title?: string;
         device_type?: string;
         referrer?: string;
+        referrer_url?: string;
+        referrer_host?: string;
+        trigger_label?: string;
+        utm_campaign?: string;
+        browser_name?: string;
+        os_name?: string;
         timezone?: string;
         is_returning?: boolean;
         engagement_seconds?: number;
@@ -4684,21 +4764,36 @@ export async function createApp(): Promise<Express> {
         return res.status(400).json({ error: 'session_id required' });
       }
       const geo = resolveEdgeGeoFromRequest(req, timezone);
-      const safeRef = (referrer || 'direct').slice(0, 180);
-      const channel = classifyAcquisitionChannel(safeRef, pagePath || '/');
+      const rawRef = (referrer_url || referrer || 'direct').slice(0, 400);
+      const triggerDetails = classifyTriggerDetails(rawRef, pagePath || '/', {
+        referrer_url: referrer_url || '',
+        referrer_host: referrer_host || '',
+        utm_campaign: utm_campaign || ''
+      });
+      const channel = classifyAcquisitionChannel(triggerDetails.referrerUrl || rawRef, pagePath || '/');
+      const uaParsed = parseBrowserOsFromUserAgent(String(req.headers['user-agent'] || ''));
+      const networkOrg = resolveNetworkOrgHint(req);
+
       const visitors = recordVisitorPresence({
         session_id: session_id.trim(),
         visitor_id: visitor_id?.trim(),
         path: pagePath || '/',
         page_title,
         device_type,
-        referrer: safeRef,
+        referrer: (triggerDetails.referrerUrl || rawRef || 'direct').slice(0, 180),
         channel_group: channel,
         country: geo.country,
         country_code: geo.countryCode,
         city: geo.city,
         is_returning,
-        engagement_seconds
+        engagement_seconds,
+        referrer_url: triggerDetails.referrerUrl,
+        referrer_host: triggerDetails.referrerHost,
+        trigger_label: trigger_label || triggerDetails.triggerLabel,
+        utm_campaign: utm_campaign || triggerDetails.utmCampaign,
+        browser: browser_name || uaParsed.browser,
+        os: os_name || uaParsed.os,
+        network_hint: networkOrg
       });
       res.json({ ok: true, activeVisitorsCount: visitors.length });
     } catch {
@@ -4826,12 +4921,14 @@ export async function createApp(): Promise<Express> {
 
   app.post('/api/public/chat/start', async (req, res) => {
     try {
-      const { visitor_token, visitor_name, visitor_phone, visitor_email, page_path } = (req.body || {}) as {
+      const { visitor_token, visitor_name, visitor_phone, visitor_email, page_path, visitor_id, session_id } = (req.body || {}) as {
         visitor_token?: string;
         visitor_name?: string;
         visitor_phone?: string;
         visitor_email?: string;
         page_path?: string;
+        visitor_id?: string;
+        session_id?: string;
       };
       const check = validateVisitorIntakeFields({ visitor_name, visitor_phone, visitor_email });
       if (!check.ok) {
@@ -4839,6 +4936,7 @@ export async function createApp(): Promise<Express> {
       }
 
       const token = (visitor_token || '').trim().slice(0, 120) || `vchat-${crypto.randomUUID()}`;
+      linkVisitorIdentityHint([visitor_id, session_id], { chatToken: token });
       const now = new Date().toISOString();
       const existing = await findWebsiteChatSessionByToken(token);
 
@@ -4879,12 +4977,14 @@ export async function createApp(): Promise<Express> {
 
   app.post('/api/public/chat/profile', async (req, res) => {
     try {
-      const { visitor_token, visitor_name, visitor_phone, visitor_email, page_path } = (req.body || {}) as {
+      const { visitor_token, visitor_name, visitor_phone, visitor_email, page_path, visitor_id, session_id } = (req.body || {}) as {
         visitor_token?: string;
         visitor_name?: string;
         visitor_phone?: string;
         visitor_email?: string;
         page_path?: string;
+        visitor_id?: string;
+        session_id?: string;
       };
       if (!visitor_token?.trim()) {
         return res.status(400).json({ error: 'visitor_token is required.' });
@@ -4897,6 +4997,7 @@ export async function createApp(): Promise<Express> {
       if (!existing) {
         return res.status(404).json({ error: 'Chat session not found. Please start chat with your contact details.' });
       }
+      linkVisitorIdentityHint([visitor_id, session_id], { chatToken: visitor_token.trim() });
       const updated = await upsertWebsiteChatSession({
         ...existing,
         visitor_name: check.name,

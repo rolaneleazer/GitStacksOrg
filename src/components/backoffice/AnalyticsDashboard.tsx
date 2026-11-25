@@ -2,6 +2,7 @@ import {
   Activity,
   BarChart3,
   CheckCircle2,
+  Compass,
   Copy,
   FileText,
   Globe2,
@@ -43,6 +44,7 @@ import {
   RetentionCohortsView
 } from './AnalyticsSharedSections.tsx';
 import { GeoWorldMap } from './GeoWorldMap.tsx';
+import { VisitorJourneysPanel } from './VisitorJourneysPanel.tsx';
 
 interface AnalyticsDashboardProps {
   settings: AdSenseSettings;
@@ -62,6 +64,7 @@ type AnalyticsSubTab =
   | 'overview'
   | 'demographics'
   | 'pages'
+  | 'journeys'
   | 'retention'
   | 'connect';
 
@@ -504,10 +507,41 @@ export function AnalyticsDashboard({
     activeReport?.channels && activeReport.channels.length > 0
       ? activeReport.channels
       : summary?.channels || [];
-  const activeLandingPages =
-    activeReport?.landingPages && activeReport.landingPages.length > 0
-      ? activeReport.landingPages
-      : summary?.landingPages || [];
+  const activeLandingPages = useMemo(() => {
+    const firstPartyByPath = new Map(
+      (summary?.landingPages || []).map((lp) => [lp.landingPage.split('?')[0], lp])
+    );
+    if (activeReport?.landingPages && activeReport.landingPages.length > 0) {
+      return activeReport.landingPages.map((lp) => {
+        const fp = firstPartyByPath.get(lp.landingPage.split('?')[0]);
+        return {
+          ...lp,
+          topReferrerDomain: lp.topReferrerDomain || fp?.topReferrerDomain,
+          topTriggerLabel: lp.topTriggerLabel || fp?.topTriggerLabel,
+          topInterest: lp.topInterest || fp?.topInterest
+        };
+      });
+    }
+    return summary?.landingPages || [];
+  }, [activeReport, summary?.landingPages]);
+
+  const activeReferrerDetails = useMemo(() => {
+    const fp = summary?.referrerDetails || [];
+    const ga = activeReport?.referrerDetails || [];
+    if (ga.length === 0) return fp;
+    if (fp.length === 0) return ga;
+    const seen = new Set(fp.map((r) => `${r.referrerUrl || r.referrerHost}|${r.triggerLabel}`));
+    const merged = [...fp];
+    for (const item of ga) {
+      const k = `${item.referrerUrl || item.referrerHost}|${item.triggerLabel}`;
+      if (!seen.has(k)) merged.push(item);
+    }
+    return merged;
+  }, [activeReport?.referrerDetails, summary?.referrerDetails]);
+
+  const activeBehavioralInterests = summary?.interestSegments || [];
+  const activeGa4Interests = activeReport?.ga4InterestSegments || [];
+  const activeVisitorJourneys = summary?.visitorJourneys || [];
   const activePageTitles =
     activeReport?.pageTitles && activeReport.pageTitles.length > 0
       ? activeReport.pageTitles
@@ -604,6 +638,7 @@ export function AnalyticsDashboard({
               { id: 'overview', label: 'Overview & Acquisition', icon: BarChart3 },
               { id: 'demographics', label: 'Demographics (Geo & City)', icon: Globe2 },
               { id: 'pages', label: 'Landing Pages & Events', icon: FileText },
+              { id: 'journeys', label: 'Visitor Journeys & Interests', icon: Compass },
               { id: 'retention', label: 'Retention & Cohorts', icon: TrendingUp },
               { id: 'connect', label: 'Connect & Tag Config', icon: Link2 }
             ] as const
@@ -859,7 +894,19 @@ export function AnalyticsDashboard({
         />
       )}
 
-      {/* SUB-TAB 5: RETENTION & COHORTS */}
+      {/* SUB-TAB 5: VISITOR JOURNEYS, PRE-LANDING REFERRALS & INTERESTS */}
+      {subTab === 'journeys' && (
+        <VisitorJourneysPanel
+          referrerDetails={activeReferrerDetails}
+          behavioralInterests={activeBehavioralInterests}
+          ga4Interests={activeGa4Interests}
+          visitorJourneys={activeVisitorJourneys}
+          rangeLabel={rangeMeta.label}
+          ga4Connected={Boolean(ga4Item?.connected)}
+        />
+      )}
+
+      {/* SUB-TAB 6: RETENTION & COHORTS */}
       {subTab === 'retention' && (
         <RetentionCohortsView cohorts={summary?.cohorts || []} series={cohortSeries} />
       )}

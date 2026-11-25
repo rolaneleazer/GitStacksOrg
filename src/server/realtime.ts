@@ -103,6 +103,37 @@ export function pruneStaleVisitors(): void {
   }
 }
 
+const visitorChatTokenLinks = new Map<string, string>();
+const visitorDemoUidLinks = new Map<string, string>();
+
+export function linkVisitorIdentityHint(
+  visitorOrSessionIds: Array<string | undefined>,
+  hints: { chatToken?: string; demoUid?: string }
+): void {
+  for (const rawId of visitorOrSessionIds) {
+    const id = (rawId || '').trim().slice(0, 80);
+    if (!id) continue;
+    if (hints.chatToken) {
+      visitorChatTokenLinks.set(id, hints.chatToken.trim().slice(0, 120));
+    }
+    if (hints.demoUid) {
+      visitorDemoUidLinks.set(id, hints.demoUid.trim().slice(0, 120));
+    }
+  }
+}
+
+export function getVisitorIdentityHints(
+  visitorId?: string,
+  sessionId?: string
+): { chatToken?: string; demoUid?: string } {
+  const v = (visitorId || '').trim();
+  const s = (sessionId || '').trim();
+  return {
+    chatToken: (v && visitorChatTokenLinks.get(v)) || (s && visitorChatTokenLinks.get(s)) || undefined,
+    demoUid: (v && visitorDemoUidLinks.get(v)) || (s && visitorDemoUidLinks.get(s)) || undefined
+  };
+}
+
 export function recordVisitorPresence(input: {
   session_id: string;
   visitor_id?: string;
@@ -116,6 +147,13 @@ export function recordVisitorPresence(input: {
   city?: string;
   is_returning?: boolean;
   engagement_seconds?: number;
+  referrer_url?: string;
+  referrer_host?: string;
+  trigger_label?: string;
+  utm_campaign?: string;
+  browser?: string;
+  os?: string;
+  network_hint?: string;
 }): LiveWebsiteVisitor[] {
   pruneStaleVisitors();
   const cleanId = (input.session_id || '').trim().slice(0, 80);
@@ -151,6 +189,13 @@ export function recordVisitorPresence(input: {
       input.engagement_seconds !== undefined
         ? Number(input.engagement_seconds) || 0
         : existing?.engagement_seconds,
+    referrer_url: (input.referrer_url || existing?.referrer_url || '').slice(0, 400) || undefined,
+    referrer_host: (input.referrer_host || existing?.referrer_host || '').slice(0, 120) || undefined,
+    trigger_label: (input.trigger_label || existing?.trigger_label || '').slice(0, 80) || undefined,
+    utm_campaign: (input.utm_campaign || existing?.utm_campaign || '').slice(0, 120) || undefined,
+    browser: (input.browser || existing?.browser || '').slice(0, 60) || undefined,
+    os: (input.os || existing?.os || '').slice(0, 60) || undefined,
+    network_hint: (input.network_hint || existing?.network_hint || '').slice(0, 100) || undefined,
     started_at: existing?.started_at || nowIso,
     last_seen_at: nowIso,
     target_x: zone.target_x,

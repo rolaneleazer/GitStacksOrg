@@ -349,6 +349,9 @@ export interface AnalyticsLandingPageItem {
   avgEngagementSeconds: number;
   keyEvents: number;
   keyEventRatePercent: number;
+  topReferrerDomain?: string;
+  topTriggerLabel?: string;
+  topInterest?: string;
 }
 
 export interface AnalyticsPageTitleItem {
@@ -375,6 +378,82 @@ export interface AnalyticsCohortRow {
   cohortLabel: string;
   cohortSize: number;
   retentionByWeek: number[]; // Week 0 .. Week 5 percentages
+}
+
+export type AnalyticsTriggerType =
+  | 'Search Engine'
+  | 'AI Citation'
+  | 'Social Post'
+  | 'Paid Click ID'
+  | 'Email Campaign'
+  | 'External Link'
+  | 'Direct';
+
+export interface AnalyticsReferrerDetailItem {
+  referrerUrl: string;
+  referrerHost: string;
+  triggerType: AnalyticsTriggerType | string;
+  triggerLabel: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmTerm?: string;
+  clickIdType?: string;
+  sessions: number;
+  activeUsers: number;
+  conversions: number;
+}
+
+export interface AnalyticsInterestSegmentItem {
+  interest: string;
+  category: string;
+  source: 'behavioral' | 'ga4_signals' | 'hybrid';
+  users: number;
+  sessions: number;
+  sharePercent: number;
+}
+
+export interface AnalyticsVisitorIdentity {
+  fullName: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  serviceInterest?: string;
+  source: 'live_chat' | 'inquiry' | 'newsletter' | 'demo_user';
+}
+
+export interface AnalyticsVisitorJourneyItem {
+  visitorId: string;
+  sessionId: string;
+  entryUrl: string;
+  referrerUrl: string;
+  referrerHost: string;
+  triggerType: AnalyticsTriggerType | string;
+  triggerLabel: string;
+  utmSummary?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  clickIdType?: string;
+  landingPage: string;
+  visitedPaths: string[];
+  pageviews: number;
+  engagementSeconds: number;
+  interests: string[];
+  primaryPersona: string;
+  country: string;
+  countryCode?: string;
+  city: string;
+  timezone?: string;
+  language?: string;
+  device: 'desktop' | 'tablet' | 'mobile';
+  browser?: string;
+  os?: string;
+  networkHint?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  conversions: number;
+  identity?: AnalyticsVisitorIdentity | null;
 }
 
 export interface RealtimeActiveVisitorSummary {
@@ -428,6 +507,9 @@ export interface AnalyticsSummary {
   devices?: AnalyticsDevicePlatformItem[];
   cohorts?: AnalyticsCohortRow[];
   realtime?: RealtimeActiveVisitorSummary;
+  referrerDetails?: AnalyticsReferrerDetailItem[];
+  interestSegments?: AnalyticsInterestSegmentItem[];
+  visitorJourneys?: AnalyticsVisitorJourneyItem[];
 }
 
 // --- Team RBAC, Profiles & Per-User Workflows ---
@@ -1003,6 +1085,8 @@ export interface Ga4LiveReportSummary {
   eventCounts?: AnalyticsEventCountItem[];
   devices?: AnalyticsDevicePlatformItem[];
   realtime?: RealtimeActiveVisitorSummary;
+  referrerDetails?: AnalyticsReferrerDetailItem[];
+  ga4InterestSegments?: AnalyticsInterestSegmentItem[];
 }
 
 export interface IntegrationConfigMeta {
@@ -1343,6 +1427,13 @@ export interface LiveWebsiteVisitor {
   city?: string;
   is_returning?: boolean;
   engagement_seconds?: number;
+  referrer_url?: string;
+  referrer_host?: string;
+  trigger_label?: string;
+  utm_campaign?: string;
+  browser?: string;
+  os?: string;
+  network_hint?: string;
   started_at: string;
   last_seen_at: string;
   target_x: number;

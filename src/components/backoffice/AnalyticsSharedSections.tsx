@@ -632,7 +632,14 @@ export function LandingPagesAndEventsView({
   const filteredLanding = useMemo(() => {
     const q = search.trim().toLowerCase();
     return [...landingPages]
-      .filter((lp) => !q || lp.landingPage.toLowerCase().includes(q))
+      .filter(
+        (lp) =>
+          !q ||
+          lp.landingPage.toLowerCase().includes(q) ||
+          (lp.topReferrerDomain || '').toLowerCase().includes(q) ||
+          (lp.topTriggerLabel || '').toLowerCase().includes(q) ||
+          (lp.topInterest || '').toLowerCase().includes(q)
+      )
       .sort((a, b) => b[sortBy] - a[sortBy]);
   }, [landingPages, search, sortBy]);
 
@@ -662,7 +669,7 @@ export function LandingPagesAndEventsView({
               Landing Pages Performance
             </h3>
             <p className="text-[11px] text-slate-500">
-              Entry routes ranked by sessions, engagement duration, and key conversion rate
+              Entry routes ranked by sessions, top referring website &amp; trigger, visitor interest, and conversion rate
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -672,7 +679,7 @@ export function LandingPagesAndEventsView({
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search landing page..."
+                placeholder="Search route, origin, interest..."
                 className="rounded-lg border border-slate-200 pl-8 pr-3 py-1.5 text-xs text-slate-900 focus:border-[var(--gs-primary)] focus:outline-none"
               />
             </div>
@@ -695,6 +702,8 @@ export function LandingPagesAndEventsView({
             <thead className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="py-2.5 px-4 font-semibold">Landing Page</th>
+                <th className="py-2.5 px-4 font-semibold">Top Origin &amp; Trigger</th>
+                <th className="py-2.5 px-4 font-semibold">Primary Interest</th>
                 <th className="py-2.5 px-4 font-semibold text-right">Sessions</th>
                 <th className="py-2.5 px-4 font-semibold text-right">Active Users</th>
                 <th className="py-2.5 px-4 font-semibold text-right">New Users</th>
@@ -707,6 +716,8 @@ export function LandingPagesAndEventsView({
               {filteredLanding.length > 0 && (
                 <tr className="bg-slate-50/70 font-semibold text-slate-900">
                   <td className="py-2.5 px-4">Total ({filteredLanding.length} routes)</td>
+                  <td className="py-2.5 px-4 text-slate-500 font-normal">Top upstream source</td>
+                  <td className="py-2.5 px-4 text-slate-500 font-normal">Dominant topic</td>
                   <td className="py-2.5 px-4 text-right font-mono tabular-nums">
                     {totals.sessions.toLocaleString()}
                   </td>
@@ -729,15 +740,28 @@ export function LandingPagesAndEventsView({
               )}
               {filteredLanding.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-500">
+                  <td colSpan={9} className="py-8 text-center text-slate-500">
                     No landing page records match the current date filter.
                   </td>
                 </tr>
               ) : (
                 filteredLanding.map((lp) => (
                   <tr key={lp.landingPage} className="hover:bg-slate-50">
-                    <td className="py-2.5 px-4 font-mono text-slate-900 max-w-[260px] truncate">
+                    <td className="py-2.5 px-4 font-mono text-slate-900 max-w-[220px] truncate">
                       {lp.landingPage}
+                    </td>
+                    <td className="py-2.5 px-4 max-w-[200px]">
+                      <div className="font-medium text-slate-800 truncate">
+                        {lp.topReferrerDomain || 'Direct'}
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">
+                        {lp.topTriggerLabel || 'Direct / Bookmark'}
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-4 max-w-[190px]">
+                      <span className="inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700 truncate max-w-full">
+                        {lp.topInterest || 'Platform Overview'}
+                      </span>
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-slate-800 tabular-nums">
                       {lp.sessions.toLocaleString()}

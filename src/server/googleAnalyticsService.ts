@@ -7,9 +7,12 @@ import type {
   AnalyticsEventCountItem,
   AnalyticsGeoCityItem,
   AnalyticsGeoCountryItem,
+  AnalyticsInterestSegmentItem,
   AnalyticsLandingPageItem,
   AnalyticsPageTitleItem,
+  AnalyticsReferrerDetailItem,
   AnalyticsSummary,
+  AnalyticsTriggerType,
   Ga4LiveReportSummary,
   Ga4PropertyOption,
   RealtimeActiveVisitorSummary
@@ -136,72 +139,239 @@ export function resolveEdgeGeoFromRequest(req: Request, timezoneHint?: string): 
   };
 }
 
-export function classifyAcquisitionChannel(referrer?: string, pathWithQuery?: string): string {
-  const ref = (referrer || '').trim().toLowerCase();
-  const fullPath = (pathWithQuery || '').toLowerCase();
+export function sanitizeExternalUrl(raw?: string): string {
+  const clean = (raw || '').trim();
+  if (!clean || clean === 'direct' || clean === '(direct)' || clean === 'none') return '';
+  try {
+    const parsed = new URL(clean);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    return parsed.toString().slice(0, 400);
+  } catch {
+    return '';
+  }
+}
 
-  if (fullPath.includes('utm_medium=email') || fullPath.includes('utm_source=newsletter')) {
-    return 'Email';
+export function extractReferrerHost(rawUrl?: string): string {
+  const safe = sanitizeExternalUrl(rawUrl);
+  if (safe) {
+    try {
+      const host = new URL(safe).hostname.replace(/^www\./i, '').toLowerCase();
+      if (host === 'git-stack.org' || host === 'localhost' || host === '127.0.0.1') {
+        return '';
+      }
+      return host.slice(0, 120);
+    } catch {
+      return '';
+    }
   }
-  if (!ref || ref === 'direct' || ref === '(direct)' || ref === 'none') {
-    return 'Direct';
+  const raw = (rawUrl || '').trim().toLowerCase();
+  if (!raw || raw === 'direct' || raw === '(direct)' || raw.includes('git-stack.org') || raw.includes('localhost')) {
+    return '';
   }
-  if (
-    ref.includes('git-stack.org') ||
-    ref.includes('localhost') ||
-    ref.includes('127.0.0.1')
+  return raw.replace(/^www\./, '').split('/')[0].slice(0, 120);
+}
+
+export function parseBrowserOsFromUserAgent(uaRaw?: string): { browser: string; os: string } {
+  const ua = (uaRaw || '').trim();
+  if (!ua) return { browser: 'Unknown', os: 'Unknown' };
+  let browser = 'Browser';
+  if (/Edg\//i.test(ua)) browser = 'Microsoft Edge';
+  else if (/OPR\//i.test(ua) || /Opera/i.test(ua)) browser = 'Opera';
+  else if (/Chrome\//i.test(ua) && !/Chromium/i.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//i.test(ua)) browser = 'Firefox';
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+  else if (/curl\//i.test(ua)) browser = 'cURL / HTTP Client';
+
+  let os = 'Other OS';
+  if (/Windows NT/i.test(ua)) os = 'Windows';
+  else if (/iPhone|iPad|iPod/i.test(ua)) os = 'iOS';
+  else if (/Android/i.test(ua)) os = 'Android';
+  else if (/Mac OS X|Macintosh/i.test(ua)) os = 'macOS';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+
+  return { browser, os };
+}
+
+export function resolveNetworkOrgHint(req: Request): string {
+  const org = String(
+    req.headers['x-vercel-ip-as-org'] ||
+      req.headers['cf-iporg'] ||
+      req.headers['x-asn-org'] ||
+      req.headers['x-isp-org'] ||
+      ''
+  )
+    .trim()
+    .slice(0, 100);
+  if (org) return org;
+  const host = String(req.headers.host || '').toLowerCase();
+  if (host.includes('localhost') || host.includes('127.0.0.1')) return 'Localhost Loopback';
+  return 'Public Edge Network';
+}
+
+export function classifyTriggerDetails(
+  referrerRaw?: string,
+  pathWithQuery?: string,
+  meta?: Record<string, string>
+): {
+  referrerUrl: string;
+  referrerHost: string;
+  triggerType: AnalyticsTriggerType;
+  triggerLabel: string;
+  clickIdType: string;
+  utmSource: string;
+  utmMedium: string;
+  utmCampaign: string;
+  utmTerm: string;
+  utmContent: string;
+} {
+  const safeMeta = meta || {};
+  const referrerUrl = sanitizeExternalUrl(safeMeta.referrer_url || referrerRaw);
+  const referrerHost = (safeMeta.referrer_host || extractReferrerHost(referrerUrl || referrerRaw)).trim();
+
+  let utmSource = (safeMeta.utm_source || '').trim().slice(0, 80);
+  let utmMedium = (safeMeta.utm_medium || '').trim().slice(0, 80);
+  let utmCampaign = (safeMeta.utm_campaign || '').trim().slice(0, 120);
+  let utmTerm = (safeMeta.utm_term || '').trim().slice(0, 120);
+  let utmContent = (safeMeta.utm_content || '').trim().slice(0, 120);
+  let clickIdType = (safeMeta.click_id_type || '').trim().slice(0, 60);
+
+  if (pathWithQuery && pathWithQuery.includes('?')) {
+    try {
+      const parsed = new URL(pathWithQuery, 'https://git-stack.org');
+      const sp = parsed.searchParams;
+      utmSource = utmSource || (sp.get('utm_source') || '').trim().slice(0, 80);
+      utmMedium = utmMedium || (sp.get('utm_medium') || '').trim().slice(0, 80);
+      utmCampaign = utmCampaign || (sp.get('utm_campaign') || '').trim().slice(0, 120);
+      utmTerm = utmTerm || (sp.get('utm_term') || '').trim().slice(0, 120);
+      utmContent = utmContent || (sp.get('utm_content') || '').trim().slice(0, 120);
+      if (!clickIdType) {
+        if (sp.get('gclid')) clickIdType = 'Google Ads (gclid)';
+        else if (sp.get('fbclid')) clickIdType = 'Meta Ads (fbclid)';
+        else if (sp.get('msclkid')) clickIdType = 'Microsoft Ads (msclkid)';
+        else if (sp.get('ttclid')) clickIdType = 'TikTok Ads (ttclid)';
+        else if (sp.get('li_fat_id')) clickIdType = 'LinkedIn Ads (li_fat_id)';
+      }
+    } catch {
+      // ignore invalid query string
+    }
+  }
+
+  const h = referrerHost.toLowerCase();
+  const src = utmSource.toLowerCase();
+  const med = utmMedium.toLowerCase();
+
+  let triggerType: AnalyticsTriggerType = 'Direct';
+  let triggerLabel = 'Direct / Bookmark';
+
+  if (clickIdType) {
+    triggerType = 'Paid Click ID';
+    triggerLabel = clickIdType;
+  } else if (
+    med === 'email' ||
+    src === 'newsletter' ||
+    h.includes('mail.google') ||
+    h.includes('outlook.') ||
+    h.includes('mail.yahoo') ||
+    h.includes('larksuite')
   ) {
-    return 'Direct';
-  }
-  if (
-    ref.includes('chatgpt.com') ||
-    ref.includes('chat.openai.com') ||
-    ref.includes('perplexity.ai') ||
-    ref.includes('claude.ai') ||
-    ref.includes('gemini.google.com') ||
-    ref.includes('copilot.microsoft.com') ||
-    ref.includes('poe.com') ||
-    ref.includes('you.com')
+    triggerType = 'Email Campaign';
+    triggerLabel = utmSource ? `Email (${utmSource})` : 'Email Link';
+  } else if (
+    h.includes('chatgpt.com') ||
+    h.includes('chat.openai.com') ||
+    h.includes('perplexity.ai') ||
+    h.includes('claude.ai') ||
+    h.includes('gemini.google.com') ||
+    h.includes('copilot.microsoft.com') ||
+    h.includes('poe.com') ||
+    h.includes('you.com')
   ) {
-    return 'AI Assistant';
-  }
-  if (
-    ref.includes('mail.google.com') ||
-    ref.includes('outlook.live.com') ||
-    ref.includes('mail.yahoo.com') ||
-    ref.includes('larksuite.com') ||
-    ref.includes('email')
+    triggerType = 'AI Citation';
+    triggerLabel = `${referrerHost} Citation`;
+  } else if (
+    h.includes('google.') ||
+    h.includes('bing.com') ||
+    h.includes('duckduckgo.com') ||
+    h.includes('search.yahoo.') ||
+    h.includes('baidu.com') ||
+    h.includes('yandex.') ||
+    h.includes('ecosia.org')
   ) {
-    return 'Email';
-  }
-  if (
-    ref.includes('google.') ||
-    ref.includes('bing.com') ||
-    ref.includes('duckduckgo.com') ||
-    ref.includes('search.yahoo.') ||
-    ref.includes('baidu.com') ||
-    ref.includes('yandex.') ||
-    ref.includes('ecosia.org')
+    triggerType = 'Search Engine';
+    triggerLabel = h.includes('google.')
+      ? 'Google Search'
+      : h.includes('bing.')
+        ? 'Bing Search'
+        : h.includes('duckduckgo.')
+          ? 'DuckDuckGo Search'
+          : `${referrerHost} Search`;
+  } else if (
+    h.includes('facebook.com') ||
+    h.includes('fb.com') ||
+    h.includes('instagram.com') ||
+    h.includes('linkedin.com') ||
+    h.includes('lnkd.in') ||
+    h.includes('twitter.com') ||
+    h.includes('x.com') ||
+    h.includes('t.co') ||
+    h.includes('reddit.com') ||
+    h.includes('youtube.com') ||
+    h.includes('tiktok.com')
   ) {
-    return 'Organic Search';
+    triggerType = 'Social Post';
+    triggerLabel = h.includes('linkedin') || h.includes('lnkd.in')
+      ? 'LinkedIn'
+      : h.includes('facebook') || h.includes('fb.com')
+        ? 'Facebook'
+        : h.includes('instagram')
+          ? 'Instagram'
+          : h.includes('x.com') || h.includes('twitter') || h.includes('t.co')
+            ? 'X / Twitter'
+            : h.includes('reddit')
+              ? 'Reddit'
+              : h.includes('youtube')
+                ? 'YouTube'
+                : referrerHost;
+  } else if (utmSource) {
+    triggerType = med === 'cpc' || med === 'paid' ? 'Paid Click ID' : 'External Link';
+    triggerLabel = utmMedium ? `${utmSource} / ${utmMedium}` : utmSource;
+  } else if (referrerHost) {
+    triggerType = 'External Link';
+    triggerLabel = referrerHost;
   }
-  if (
-    ref.includes('facebook.com') ||
-    ref.includes('fb.com') ||
-    ref.includes('l.instagram.com') ||
-    ref.includes('instagram.com') ||
-    ref.includes('linkedin.com') ||
-    ref.includes('lnkd.in') ||
-    ref.includes('twitter.com') ||
-    ref.includes('x.com') ||
-    ref.includes('t.co') ||
-    ref.includes('reddit.com') ||
-    ref.includes('youtube.com') ||
-    ref.includes('tiktok.com')
-  ) {
-    return 'Organic Social';
+
+  return {
+    referrerUrl,
+    referrerHost,
+    triggerType,
+    triggerLabel,
+    clickIdType,
+    utmSource,
+    utmMedium,
+    utmCampaign,
+    utmTerm,
+    utmContent
+  };
+}
+
+export function classifyAcquisitionChannel(referrer?: string, pathWithQuery?: string): string {
+  const details = classifyTriggerDetails(referrer, pathWithQuery);
+  switch (details.triggerType) {
+    case 'Email Campaign':
+      return 'Email';
+    case 'AI Citation':
+      return 'AI Assistant';
+    case 'Search Engine':
+      return 'Organic Search';
+    case 'Social Post':
+      return 'Organic Social';
+    case 'Paid Click ID':
+      return 'Paid Search & Social';
+    case 'External Link':
+      return 'Referral';
+    default:
+      return 'Direct';
   }
-  return 'Referral';
 }
 
 export function isServiceAccountJsonString(raw: string): boolean {
@@ -491,6 +661,8 @@ export async function fetchGa4FullReport(params: {
     pageTitleRes,
     eventCountRes,
     deviceRes,
+    pageReferrerRes,
+    interestRes,
     rtTotalRes,
     rtCountryRes,
     rtCityRes,
@@ -570,6 +742,25 @@ export async function fetchGa4FullReport(params: {
       dimensions: [{ name: 'deviceCategory' }],
       metrics: [{ name: 'activeUsers' }],
       limit: 6
+    }).catch(() => ({ rows: [] })),
+    runGa4Report(accessToken, propertyOption.property_id, {
+      dateRanges: dateRangePayload,
+      dimensions: [
+        { name: 'pageReferrer' },
+        { name: 'sessionSource' },
+        { name: 'sessionMedium' },
+        { name: 'sessionCampaignName' }
+      ],
+      metrics: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'keyEvents' }],
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit: 20
+    }).catch(() => ({ rows: [] })),
+    runGa4Report(accessToken, propertyOption.property_id, {
+      dateRanges: dateRangePayload,
+      dimensions: [{ name: 'brandingInterest' }],
+      metrics: [{ name: 'activeUsers' }, { name: 'sessions' }],
+      orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+      limit: 12
     }).catch(() => ({ rows: [] })),
     runGa4Realtime(accessToken, propertyOption.property_id, {
       metrics: [{ name: 'activeUsers' }, { name: 'keyEvents' }]
@@ -753,6 +944,49 @@ export async function fetchGa4FullReport(params: {
     sampledAt: new Date().toISOString()
   };
 
+  const referrerDetails: AnalyticsReferrerDetailItem[] = (pageReferrerRes.rows || []).map((r) => {
+    const rawRef = r.dimensionValues?.[0]?.value || '';
+    const src = r.dimensionValues?.[1]?.value || '';
+    const med = r.dimensionValues?.[2]?.value || '';
+    const cmp = r.dimensionValues?.[3]?.value || '';
+    const cleanRef = rawRef === '(not set)' ? '' : rawRef;
+    const classified = classifyTriggerDetails(cleanRef, '', {
+      utm_source: src === '(direct)' || src === '(not set)' ? '' : src,
+      utm_medium: med === '(none)' || med === '(not set)' ? '' : med,
+      utm_campaign: cmp === '(not set)' ? '' : cmp
+    });
+    return {
+      referrerUrl: classified.referrerUrl,
+      referrerHost: classified.referrerHost || (src && src !== '(direct)' ? src : 'Direct'),
+      triggerType: classified.triggerType,
+      triggerLabel: classified.triggerLabel,
+      utmSource: classified.utmSource || undefined,
+      utmMedium: classified.utmMedium || undefined,
+      utmCampaign: classified.utmCampaign || undefined,
+      sessions: Number(r.metricValues?.[0]?.value || 0),
+      activeUsers: Number(r.metricValues?.[1]?.value || 0),
+      conversions: Number(r.metricValues?.[2]?.value || 0)
+    };
+  });
+
+  const rawGa4Interests = (interestRes.rows || [])
+    .map((r) => ({
+      interest: (r.dimensionValues?.[0]?.value || '').trim(),
+      users: Number(r.metricValues?.[0]?.value || 0),
+      sessions: Number(r.metricValues?.[1]?.value || 0)
+    }))
+    .filter((item) => item.interest && item.interest !== '(not set)');
+
+  const interestUserSum = rawGa4Interests.reduce((sum, i) => sum + i.users, 0) || 1;
+  const ga4InterestSegments: AnalyticsInterestSegmentItem[] = rawGa4Interests.map((item) => ({
+    interest: item.interest,
+    category: 'Google Signals Affinity',
+    source: 'ga4_signals',
+    users: item.users,
+    sessions: item.sessions,
+    sharePercent: Number(((item.users / interestUserSum) * 100).toFixed(1))
+  }));
+
   return {
     property_id: propertyOption.property_id,
     property_name: propertyOption.property_name,
@@ -780,6 +1014,8 @@ export async function fetchGa4FullReport(params: {
     pageTitles,
     eventCounts,
     devices,
-    realtime: ga4Realtime
+    realtime: ga4Realtime,
+    referrerDetails,
+    ga4InterestSegments
   };
 }

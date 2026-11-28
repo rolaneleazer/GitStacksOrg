@@ -214,6 +214,23 @@ import {
   renderCyberSecurityPdfBuffer
 } from './cyberSecurity.ts';
 import {
+  bindArtexTrafficToFinding,
+  buildArtexEvidenceZipBuffer,
+  bulkUpdateArtexFindings,
+  createArtexFinding,
+  createArtexTask,
+  filterFindingsForExport,
+  generateArtexTaskReport,
+  getArtexDashboard,
+  renderArtexFindingsCsv,
+  renderArtexFindingsMarkdown,
+  renderArtexPdfBuffer,
+  renderArtexSafeHtmlReport,
+  syncArtexFromLivePlatform,
+  updateArtexFinding,
+  verifyArtexFindingReceipt
+} from './artexReportService.ts';
+import {
   acceptFeatureBaseline,
   generateAndSendQaEodReport,
   getQaDashboardData,
@@ -6164,6 +6181,474 @@ export async function createApp(): Promise<Express> {
       });
     }
   });
+
+  // --- ARTEX Penetration Test Report & Evidence Module ---
+
+  app.get(
+    '/api/admin/artex/dashboard',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (_req, res) => {
+      try {
+        const dashboard = await getArtexDashboard();
+        res.json(dashboard);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to load ARTEX dashboard'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/artex/tasks',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const { title, goal, targetScope, coverageEnabled } = (req.body || {}) as {
+          title?: string;
+          goal?: string;
+          targetScope?: string;
+          coverageEnabled?: boolean;
+        };
+        if (!title || !title.trim()) {
+          return res.status(400).json({ error: 'Task title is required.' });
+        }
+        const task = await createArtexTask({
+          title,
+          goal: goal || 'Penetration test assessment',
+          targetScope: targetScope || 'https://www.git-stack.org',
+          coverageEnabled
+        });
+        const dashboard = await getArtexDashboard();
+        res.status(201).json({ task, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to create ARTEX task'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/artex/sync-live',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const token = getBearerToken(req);
+        const result = await syncArtexFromLivePlatform(token);
+        res.json({
+          addedCount: result.addedCount,
+          updatedCount: result.updatedCount,
+          dashboard: result.dashboard,
+          message: `Synced live platform telemetry (${result.addedCount} added, ${result.updatedCount} updated).`
+        });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to sync live platform telemetry'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/artex/findings',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const body = (req.body || {}) as Record<string, unknown>;
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const summary = typeof body.summary === 'string' ? body.summary.trim() : '';
+        const severity = typeof body.severity === 'string' ? body.severity : 'medium';
+        if (!name || !summary) {
+          return res.status(400).json({ error: 'Finding name and summary are required.' });
+        }
+        if (!['critical', 'high', 'medium', 'low', 'info'].includes(severity)) {
+          return res.status(400).json({ error: 'Invalid finding severity.' });
+        }
+        const poeNum = Number(body.poeLevel ?? 2);
+        const poeLevel = ([0, 1, 2, 3, 4].includes(poeNum) ? poeNum : 2) as 0 | 1 | 2 | 3 | 4;
+        const finding = await createArtexFinding({
+          taskId: typeof body.taskId === 'string' ? body.taskId : '',
+          name,
+          vulnclass: typeof body.vulnclass === 'string' ? body.vulnclass : 'CWE-000',
+          severity: severity as 'critical' | 'high' | 'medium' | 'low' | 'info',
+          poeLevel,
+          summary,
+          evidencePoc: typeof body.evidencePoc === 'string' ? body.evidencePoc : '',
+          evidenceQuote: typeof body.evidenceQuote === 'string' ? body.evidenceQuote : '',
+          confidenceRationale:
+            typeof body.confidenceRationale === 'string' ? body.confidenceRationale : '',
+          counterevidence: typeof body.counterevidence === 'string' ? body.counterevidence : '',
+          detailedReport: typeof body.detailedReport === 'string' ? body.detailedReport : '',
+          traffic:
+            body.traffic && typeof body.traffic === 'object'
+              ? (body.traffic as {
+                  role?: 'proof' | 'verification' | 'context' | 'reproduction';
+                  method: string;
+                  url: string;
+                  status: number;
+                  note?: string;
+                  reqHead?: string;
+                  reqBody?: string;
+                  respHead?: string;
+                  respBody?: string;
+                })
+              : undefined
+        });
+        const dashboard = await getArtexDashboard();
+        res.status(201).json({ finding, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to create ARTEX finding'
+        });
+      }
+    }
+  );
+
+  app.patch(
+    '/api/admin/artex/findings/:id',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return res.status(400).json({ error: 'Invalid finding ID.' });
+        }
+        const body = (req.body || {}) as Record<string, unknown>;
+        if (
+          body.status !== undefined &&
+          !['pending', 'confirmed', 'fixed', 'false_positive'].includes(String(body.status))
+        ) {
+          return res.status(400).json({ error: 'Invalid finding status.' });
+        }
+        if (
+          body.reportState !== undefined &&
+          !['none', 'submitted', 'accepted', 'rejected', 'duplicate'].includes(
+            String(body.reportState)
+          )
+        ) {
+          return res.status(400).json({ error: 'Invalid report stage.' });
+        }
+        if (
+          body.verificationStatus !== undefined &&
+          !['unverified', 'verified', 'blocked', 'not_assessed', 'false_positive'].includes(
+            String(body.verificationStatus)
+          )
+        ) {
+          return res.status(400).json({ error: 'Invalid verification status.' });
+        }
+
+        const finding = await updateArtexFinding(id, {
+          status: body.status as 'pending' | 'confirmed' | 'fixed' | 'false_positive' | undefined,
+          reportState: body.reportState as
+            | 'none'
+            | 'submitted'
+            | 'accepted'
+            | 'rejected'
+            | 'duplicate'
+            | undefined,
+          verificationStatus: body.verificationStatus as
+            | 'unverified'
+            | 'verified'
+            | 'blocked'
+            | 'not_assessed'
+            | 'false_positive'
+            | undefined,
+          poeLevel:
+            body.poeLevel !== undefined && [0, 1, 2, 3, 4].includes(Number(body.poeLevel))
+              ? (Number(body.poeLevel) as 0 | 1 | 2 | 3 | 4)
+              : undefined,
+          detailedReport:
+            typeof body.detailedReport === 'string' ? body.detailedReport : undefined,
+          confidenceRationale:
+            typeof body.confidenceRationale === 'string' ? body.confidenceRationale : undefined,
+          counterevidence:
+            typeof body.counterevidence === 'string' ? body.counterevidence : undefined,
+          evidenceQuote: typeof body.evidenceQuote === 'string' ? body.evidenceQuote : undefined
+        });
+
+        if (!finding) {
+          return res.status(404).json({ error: 'ARTEX finding not found.' });
+        }
+        const dashboard = await getArtexDashboard();
+        res.json({ finding, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to update ARTEX finding'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/artex/findings/bulk-update',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const body = (req.body || {}) as {
+          ids?: number[];
+          status?: 'pending' | 'confirmed' | 'fixed' | 'false_positive';
+          reportState?: 'none' | 'submitted' | 'accepted' | 'rejected' | 'duplicate';
+        };
+        const ids = Array.isArray(body.ids)
+          ? body.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+          : [];
+        if (ids.length === 0) {
+          return res.status(400).json({ error: 'At least one finding ID is required.' });
+        }
+        if (body.status && !['pending', 'confirmed', 'fixed', 'false_positive'].includes(body.status)) {
+          return res.status(400).json({ error: 'Invalid status value.' });
+        }
+        if (
+          body.reportState &&
+          !['none', 'submitted', 'accepted', 'rejected', 'duplicate'].includes(body.reportState)
+        ) {
+          return res.status(400).json({ error: 'Invalid report stage value.' });
+        }
+        const result = await bulkUpdateArtexFindings({
+          ids,
+          status: body.status,
+          reportState: body.reportState
+        });
+        const dashboard = await getArtexDashboard();
+        res.json({ updated: result.updated, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to bulk update findings'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/artex/findings/:id/traffic',
+    requireRoles('super_admin', 'editor'),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return res.status(400).json({ error: 'Invalid finding ID.' });
+        }
+        const body = (req.body || {}) as Record<string, unknown>;
+        const url = typeof body.url === 'string' ? body.url.trim() : '';
+        if (!url) {
+          return res.status(400).json({ error: 'Traffic exchange URL is required.' });
+        }
+        const role = ['proof', 'verification', 'context', 'reproduction'].includes(String(body.role))
+          ? (String(body.role) as 'proof' | 'verification' | 'context' | 'reproduction')
+          : 'proof';
+        const finding = await bindArtexTrafficToFinding(id, {
+          role,
+          method: typeof body.method === 'string' ? body.method : 'GET',
+          url,
+          status: Number(body.status || 200),
+          note: typeof body.note === 'string' ? body.note : '',
+          reqHead: typeof body.reqHead === 'string' ? body.reqHead : '',
+          reqBody: typeof body.reqBody === 'string' ? body.reqBody : '',
+          respHead: typeof body.respHead === 'string' ? body.respHead : '',
+          respBody: typeof body.respBody === 'string' ? body.respBody : ''
+        });
+        if (!finding) {
+          return res.status(404).json({ error: 'ARTEX finding not found.' });
+        }
+        const dashboard = await getArtexDashboard();
+        res.status(201).json({ finding, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to bind traffic exchange'
+        });
+      }
+    }
+  );
+
+  app.post(
+    '/api/admin/artex/findings/:id/verify',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return res.status(400).json({ error: 'Invalid finding ID.' });
+        }
+        const { result, finding } = await verifyArtexFindingReceipt(id);
+        if (!finding) {
+          return res.status(404).json({ error: 'ARTEX finding not found.' });
+        }
+        const dashboard = await getArtexDashboard();
+        res.json({ result, finding, dashboard });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to verify finding receipt'
+        });
+      }
+    }
+  );
+
+  app.get(
+    '/api/admin/artex/report',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const taskId = typeof req.query.task === 'string' ? req.query.task : undefined;
+        const save = req.query.save === '1' || req.query.save === 'true';
+        const format = typeof req.query.format === 'string' ? req.query.format : 'json';
+        const generated = await generateArtexTaskReport(taskId, save);
+        if (format === 'markdown' || format === 'md') {
+          const safeId = generated.task.id.replace(/[^a-zA-Z0-9._-]/g, '_');
+          res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+          res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="artex-report-${safeId}.md"`
+          );
+          return res.send(generated.markdown);
+        }
+        const dashboard = save ? await getArtexDashboard() : undefined;
+        res.json({
+          task: generated.task,
+          markdown: generated.markdown,
+          snapshot: generated.snapshot,
+          dashboard
+        });
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to generate ARTEX report'
+        });
+      }
+    }
+  );
+
+  app.get(
+    '/api/admin/artex/report/html',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const taskId = typeof req.query.task === 'string' ? req.query.task : undefined;
+        const generated = await generateArtexTaskReport(taskId, false);
+        const html = renderArtexSafeHtmlReport(generated.task, generated.findings, new Date());
+        const safeId = generated.task.id.replace(/[^a-zA-Z0-9._-]/g, '_');
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="artex-report-${safeId}.html"`
+        );
+        res.send(html);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to render ARTEX HTML report'
+        });
+      }
+    }
+  );
+
+  app.get(
+    '/api/admin/artex/report/pdf',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const taskId = typeof req.query.task === 'string' ? req.query.task : undefined;
+        const generated = await generateArtexTaskReport(taskId, false);
+        const pdfBuffer = await renderArtexPdfBuffer(generated.task, generated.findings, new Date());
+        const safeId = generated.task.id.replace(/[^a-zA-Z0-9._-]/g, '_');
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="artex-report-${safeId}.pdf"`
+        );
+        res.send(pdfBuffer);
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to render ARTEX PDF report'
+        });
+      }
+    }
+  );
+
+  app.get(
+    '/api/admin/artex/findings/export',
+    requireRoles('super_admin', 'editor', 'support_agent'),
+    async (req, res) => {
+      try {
+        const scopeRaw = typeof req.query.scope === 'string' ? req.query.scope : 'filtered';
+        if (!['all', 'filtered', 'selected'].includes(scopeRaw)) {
+          return res.status(400).json({ error: `Bad scope: ${scopeRaw}` });
+        }
+        const scope = scopeRaw as 'all' | 'filtered' | 'selected';
+        const format = typeof req.query.format === 'string' ? req.query.format : 'md-single';
+        if (!['md-single', 'md-zip', 'csv', 'json'].includes(format)) {
+          return res.status(400).json({ error: `Bad format: ${format}` });
+        }
+
+        let ids: number[] = [];
+        if (scope === 'selected') {
+          const rawIds = typeof req.query.ids === 'string' ? req.query.ids : '';
+          ids = rawIds
+            .split(',')
+            .map((s) => Number(s.trim()))
+            .filter((n) => Number.isInteger(n) && n > 0);
+          if (ids.length === 0) {
+            return res.status(400).json({ error: 'No findings selected for export.' });
+          }
+        }
+
+        const matched = await filterFindingsForExport({
+          scope,
+          ids,
+          severity: typeof req.query.severity === 'string' ? req.query.severity : undefined,
+          status: typeof req.query.status === 'string' ? req.query.status : undefined,
+          reportState: typeof req.query.report_state === 'string' ? req.query.report_state : undefined,
+          verificationStatus:
+            typeof req.query.verification_status === 'string'
+              ? req.query.verification_status
+              : undefined,
+          taskId: typeof req.query.task === 'string' ? req.query.task : undefined,
+          q: typeof req.query.q === 'string' ? req.query.q : undefined
+        });
+
+        const now = new Date();
+        const stamp = now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+
+        if (format === 'md-single') {
+          res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+          res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="artex-findings-${stamp}.md"`
+          );
+          return res.send(renderArtexFindingsMarkdown(matched, now));
+        }
+
+        if (format === 'md-zip') {
+          const zipBuf = buildArtexEvidenceZipBuffer(matched, now);
+          res.setHeader('Content-Type', 'application/zip');
+          res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="artex-findings-evidence-${stamp}.zip"`
+          );
+          return res.send(zipBuf);
+        }
+
+        if (format === 'csv') {
+          const csvBuf = renderArtexFindingsCsv(matched);
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          res.setHeader(
+            'Content-Disposition',
+            `attachment; filename="artex-findings-${stamp}.csv"`
+          );
+          return res.send(csvBuf);
+        }
+
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="artex-findings-${stamp}.json"`
+        );
+        return res.send(JSON.stringify(matched, null, 2));
+      } catch (err) {
+        res.status(500).json({
+          error: err instanceof Error ? err.message : 'Failed to export ARTEX findings'
+        });
+      }
+    }
+  );
 
   // --- Google Tag Manager (GTM) Telemetry, Settings & Dashboard ---
 

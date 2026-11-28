@@ -120,7 +120,17 @@ import type {
   SearchConsoleDashboardResponse,
   SearchConsoleUrlAudit,
   TrendApprovalBundle,
-  WorkspaceLayoutConfig
+  WorkspaceLayoutConfig,
+  ArtexDashboardResponse,
+  ArtexFinding,
+  ArtexFindingStatus,
+  ArtexReceiptVerificationResult,
+  ArtexReportStage,
+  ArtexSavedReportSnapshot,
+  ArtexSeverity,
+  ArtexTask,
+  ArtexTrafficRole,
+  ArtexVerificationStatus
 } from '../shared/types.ts';
 import { pushGtmEvent } from './tagManager.ts';
 
@@ -2837,5 +2847,234 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload)
     });
+  },
+
+  // --- ARTEX Penetration Test Report & Evidence Module ---
+  async getArtexDashboard() {
+    return request<ArtexDashboardResponse>('/api/admin/artex/dashboard');
+  },
+
+  async createArtexTask(payload: {
+    title: string;
+    goal: string;
+    targetScope: string;
+    coverageEnabled?: boolean;
+  }) {
+    return request<{ task: ArtexTask; dashboard: ArtexDashboardResponse }>(
+      '/api/admin/artex/tasks',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async syncArtexLive() {
+    return request<{
+      addedCount: number;
+      updatedCount: number;
+      dashboard: ArtexDashboardResponse;
+      message: string;
+    }>('/api/admin/artex/sync-live', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async createArtexFinding(payload: {
+    taskId: string;
+    name: string;
+    vulnclass?: string;
+    severity: ArtexSeverity;
+    poeLevel?: 0 | 1 | 2 | 3 | 4;
+    summary: string;
+    evidencePoc?: string;
+    evidenceQuote?: string;
+    confidenceRationale?: string;
+    counterevidence?: string;
+    detailedReport?: string;
+    traffic?: {
+      role?: ArtexTrafficRole;
+      method: string;
+      url: string;
+      status: number;
+      note?: string;
+      reqHead?: string;
+      reqBody?: string;
+      respHead?: string;
+      respBody?: string;
+    };
+  }) {
+    return request<{ finding: ArtexFinding; dashboard: ArtexDashboardResponse }>(
+      '/api/admin/artex/findings',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async updateArtexFinding(
+    id: number,
+    patch: Partial<{
+      status: ArtexFindingStatus;
+      reportState: ArtexReportStage;
+      verificationStatus: ArtexVerificationStatus;
+      poeLevel: 0 | 1 | 2 | 3 | 4;
+      detailedReport: string;
+      confidenceRationale: string;
+      counterevidence: string;
+      evidenceQuote: string;
+    }>
+  ) {
+    return request<{ finding: ArtexFinding; dashboard: ArtexDashboardResponse }>(
+      `/api/admin/artex/findings/${encodeURIComponent(String(id))}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(patch)
+      }
+    );
+  },
+
+  async bulkUpdateArtexFindings(payload: {
+    ids: number[];
+    status?: ArtexFindingStatus;
+    reportState?: ArtexReportStage;
+  }) {
+    return request<{ updated: number; dashboard: ArtexDashboardResponse }>(
+      '/api/admin/artex/findings/bulk-update',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async bindArtexTraffic(
+    findingId: number,
+    payload: {
+      role: ArtexTrafficRole;
+      method: string;
+      url: string;
+      status: number;
+      note?: string;
+      reqHead?: string;
+      reqBody?: string;
+      respHead?: string;
+      respBody?: string;
+    }
+  ) {
+    return request<{ finding: ArtexFinding; dashboard: ArtexDashboardResponse }>(
+      `/api/admin/artex/findings/${encodeURIComponent(String(findingId))}/traffic`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      }
+    );
+  },
+
+  async verifyArtexFindingReceipt(findingId: number) {
+    return request<{
+      result: ArtexReceiptVerificationResult;
+      finding: ArtexFinding;
+      dashboard: ArtexDashboardResponse;
+    }>(`/api/admin/artex/findings/${encodeURIComponent(String(findingId))}/verify`, {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+  },
+
+  async generateArtexReport(taskId?: string, saveSnapshot = false) {
+    const p = new URLSearchParams();
+    if (taskId) p.set('task', taskId);
+    if (saveSnapshot) p.set('save', '1');
+    const qs = p.toString();
+    return request<{
+      task: ArtexTask;
+      markdown: string;
+      snapshot?: ArtexSavedReportSnapshot;
+      dashboard?: ArtexDashboardResponse;
+    }>(`/api/admin/artex/report${qs ? `?${qs}` : ''}`);
+  },
+
+  async downloadArtexTaskReport(taskId: string, format: 'md' | 'html' | 'pdf') {
+    const token = getStoredToken();
+    const endpoint =
+      format === 'md'
+        ? `/api/admin/artex/report?task=${encodeURIComponent(taskId)}&format=md`
+        : `/api/admin/artex/report/${format}?task=${encodeURIComponent(taskId)}`;
+    const res = await fetch(endpoint, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error((errBody as { error?: string }).error || `Download failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const disp = res.headers.get('Content-Disposition') || '';
+    const match = disp.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `artex-report.${format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+
+  async exportArtexFindings(opts: {
+    format: 'md-single' | 'md-zip' | 'csv' | 'json';
+    scope: 'all' | 'filtered' | 'selected';
+    ids?: number[];
+    filters?: {
+      severity?: string;
+      status?: string;
+      reportState?: string;
+      verificationStatus?: string;
+      taskId?: string;
+      q?: string;
+    };
+  }) {
+    const p = new URLSearchParams();
+    p.set('format', opts.format);
+    p.set('scope', opts.scope);
+    if (opts.scope === 'selected' && opts.ids && opts.ids.length > 0) {
+      p.set('ids', opts.ids.join(','));
+    }
+    if (opts.scope === 'filtered' && opts.filters) {
+      if (opts.filters.severity && opts.filters.severity !== 'all')
+        p.set('severity', opts.filters.severity);
+      if (opts.filters.status && opts.filters.status !== 'all')
+        p.set('status', opts.filters.status);
+      if (opts.filters.reportState && opts.filters.reportState !== 'all')
+        p.set('report_state', opts.filters.reportState);
+      if (opts.filters.verificationStatus && opts.filters.verificationStatus !== 'all')
+        p.set('verification_status', opts.filters.verificationStatus);
+      if (opts.filters.taskId && opts.filters.taskId !== 'all')
+        p.set('task', opts.filters.taskId);
+      if (opts.filters.q) p.set('q', opts.filters.q);
+    }
+    const token = getStoredToken();
+    const res = await fetch(`/api/admin/artex/findings/export?${p.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error((errBody as { error?: string }).error || `Export failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const disp = res.headers.get('Content-Disposition') || '';
+    const match = disp.match(/filename="?([^"]+)"?/i);
+    const filename = match?.[1] || `artex-findings.${opts.format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 };

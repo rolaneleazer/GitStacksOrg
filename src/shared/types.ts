@@ -2528,7 +2528,7 @@ export interface DemoGuardDashboardResponse {
 
 // --- Super Admin Gemini & MCP Command Hub Types ---
 
-export type StudioModuleId = WorkspaceModuleId | 'mcp_hub';
+export type StudioModuleId = WorkspaceModuleId | 'mcp_hub' | 'artex_reports';
 
 export type McpToolAccessLevel = 'read' | 'write' | 'staged_edit';
 
@@ -2627,3 +2627,148 @@ export interface McpDashboardResponse {
   sseEndpointPath: string;
   geminiConfigured: boolean;
 }
+
+// --- ARTEX Penetration Test Report & Evidence Module Types ---
+
+export type ArtexSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type ArtexFindingStatus = 'pending' | 'confirmed' | 'fixed' | 'false_positive';
+export type ArtexReportStage = 'none' | 'submitted' | 'accepted' | 'rejected' | 'duplicate';
+export type ArtexVerificationStatus =
+  | 'unverified'
+  | 'verified'
+  | 'blocked'
+  | 'not_assessed'
+  | 'false_positive';
+
+export type ArtexAssetType =
+  | 'company'
+  | 'domain'
+  | 'ip'
+  | 'port'
+  | 'service'
+  | 'site'
+  | 'endpoint'
+  | 'parameter'
+  | 'tech'
+  | 'credential'
+  | 'data';
+
+export type ArtexTrafficRole = 'proof' | 'verification' | 'context' | 'reproduction';
+
+export interface ArtexTrafficBinding {
+  id: number;
+  role: ArtexTrafficRole;
+  method: string;
+  url: string;
+  status: number;
+  note: string;
+  reqHead: string;
+  reqBody: string;
+  respHead: string;
+  respBody: string;
+  capturedAt: string;
+}
+
+export interface ArtexFinding {
+  id: number;
+  taskId: string;
+  taskDescription: string;
+  name: string;
+  vulnclass: string;
+  severity: ArtexSeverity;
+  status: ArtexFindingStatus;
+  reportState: ArtexReportStage;
+  poeLevel: 0 | 1 | 2 | 3 | 4;
+  verificationStatus: ArtexVerificationStatus;
+  verificationNote: string;
+  confidenceRationale: string;
+  counterevidence: string;
+  evidenceQuote: string;
+  summary: string;
+  evidencePoc: string;
+  detailedReport: string;
+  evidenceVersion: number;
+  reportEvidenceVersion: number;
+  reportStale: boolean;
+  trafficBindings: ArtexTrafficBinding[];
+  assetRefs: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ArtexCoverageOutcome =
+  | 'tested_clean'
+  | 'finding_confirmed'
+  | 'needs_follow_up'
+  | 'blocked';
+
+export interface ArtexCoverageEntry {
+  surface: string;
+  riskArea: string;
+  outcome: ArtexCoverageOutcome;
+}
+
+export type ArtexCompletenessState =
+  | 'complete'
+  | 'incomplete_scan'
+  | 'timeout'
+  | 'budget_exhausted';
+
+export interface ArtexCoverageLedger {
+  enabled: boolean;
+  completenessState: ArtexCompletenessState;
+  completenessCaveat: string;
+  entries: ArtexCoverageEntry[];
+  unrecordedRiskClasses: string[];
+  gaps: string[];
+}
+
+export interface ArtexTask {
+  id: string;
+  title: string;
+  goal: string;
+  targetScope: string;
+  status: 'running' | 'done' | 'paused' | 'timeout';
+  coverageEnabled: boolean;
+  assetCounts: Partial<Record<ArtexAssetType, number>>;
+  coverage: ArtexCoverageLedger | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ArtexSavedReportSnapshot {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  generatedAt: string;
+  totalFindings: number;
+  verifiedCount: number;
+  staleCount: number;
+  severityCounts: Record<ArtexSeverity, number>;
+  markdown: string;
+}
+
+export interface ArtexDashboardResponse {
+  tasks: ArtexTask[];
+  findings: ArtexFinding[];
+  savedReports: ArtexSavedReportSnapshot[];
+  stats: {
+    totalTasks: number;
+    totalFindings: number;
+    verifiedFindings: number;
+    staleReports: number;
+    boundTrafficCount: number;
+    bySeverity: Record<ArtexSeverity, number>;
+    byReportState: Record<ArtexReportStage, number>;
+  };
+}
+
+export interface ArtexReceiptVerificationResult {
+  findingId: number;
+  verified: boolean;
+  verificationStatus: ArtexVerificationStatus;
+  poeLevel: number;
+  matchedBindingId: number | null;
+  note: string;
+}
+

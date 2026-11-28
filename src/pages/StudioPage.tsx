@@ -17,6 +17,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  FileCheck2,
   FileCode2,
   FileEdit,
   FileText,
@@ -53,6 +54,7 @@ import { ChatAutoResponsePanel } from '../components/backoffice/ChatAutoResponse
 import { CloudflareAnalyticsPanel } from '../components/backoffice/CloudflareAnalyticsPanel.tsx';
 import { ContactRegistryPanel } from '../components/backoffice/ContactRegistryPanel.tsx';
 import { CrmProspectingPanel } from '../components/backoffice/CrmProspectingPanel.tsx';
+import { ArtexReportPanel } from '../components/backoffice/ArtexReportPanel.tsx';
 import { CyberSecurityPanel } from '../components/backoffice/CyberSecurityPanel.tsx';
 import { DataExplorerPanel } from '../components/backoffice/DataExplorerPanel.tsx';
 import { DemoGuardPanel } from '../components/backoffice/DemoGuardPanel.tsx';
@@ -154,6 +156,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'resources',
     'qa',
     'cybersecurity',
+    'artex_reports',
     'demo_guard',
     'articles',
     'users',
@@ -182,6 +185,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'resources',
     'qa',
     'cybersecurity',
+    'artex_reports',
     'demo_guard',
     'profile'
   ],
@@ -195,6 +199,7 @@ const ROLE_TABS: Record<UserRole, StudioTab[]> = {
     'resources',
     'qa',
     'cybersecurity',
+    'artex_reports',
     'profile'
   ]
 };
@@ -1121,7 +1126,7 @@ export function StudioPage({
     const allowed = ROLE_TABS[currentUserRole];
     if (allowed.includes(section as StudioTab)) {
       const targetTab = section as StudioTab;
-      if (targetTab !== 'mcp_hub') {
+      if (targetTab !== 'mcp_hub' && targetTab !== 'artex_reports') {
         setWorkspaceLayout((prev) => {
           const hasCollapsedParent = prev.categories.some(
             (c) => c.collapsed && c.moduleIds.includes(targetTab)
@@ -1295,6 +1300,7 @@ export function StudioPage({
     { id: 'resources', defaultLabel: 'Vercel & Supabase Monitor', icon: Activity },
     { id: 'qa', defaultLabel: 'Product QA & Logs', icon: Bug },
     { id: 'cybersecurity', defaultLabel: 'Cybersecurity & AI Sentinel', icon: Shield },
+    { id: 'artex_reports', defaultLabel: 'ARTEX Pentest Reports', icon: FileCheck2 },
     { id: 'demo_guard', defaultLabel: 'Demo Guard & Alerts', icon: ShieldAlert },
     { id: 'articles', defaultLabel: 'Articles & Gatekeeper', icon: FileText, count: posts.length },
     { id: 'users', defaultLabel: 'User Access', icon: UserCog, count: teamUsers.length },
@@ -1318,11 +1324,14 @@ export function StudioPage({
   const activeCategory =
     (currentTab === 'mcp_hub'
       ? workspaceLayout.categories.find((c) => c.id === 'cat-command')
-      : workspaceLayout.categories.find((c) => c.moduleIds.includes(currentTab))) ||
+      : currentTab === 'artex_reports'
+        ? workspaceLayout.categories.find((c) => c.id === 'cat-system')
+        : workspaceLayout.categories.find((c) => c.moduleIds.includes(currentTab))) ||
     workspaceLayout.categories[0];
   const activeDisplayLabel =
-    (currentTab !== 'mcp_hub' ? workspaceLayout.moduleAliases[currentTab]?.trim() : '') ||
-    activeNav.defaultLabel;
+    (currentTab !== 'mcp_hub' && currentTab !== 'artex_reports'
+      ? workspaceLayout.moduleAliases[currentTab]?.trim()
+      : '') || activeNav.defaultLabel;
 
   const displayName = currentProfile?.full_name || editorEmail.split('@')[0] || 'Operator';
   const avatarInitials = displayName
@@ -1634,6 +1643,11 @@ export function StudioPage({
                 currentUserRole === 'super_admin' ? () => setActiveTab('adsense') : undefined
               }
             />
+          )}
+
+          {/* PANEL 5D-2: ARTEX PENETRATION TEST REPORT & EVIDENCE MODULE */}
+          {currentTab === 'artex_reports' && (
+            <ArtexReportPanel currentUserRole={currentUserRole} />
           )}
 
           {/* PANEL 5E: LIVE DEMO GUARD, ISOLATION SENTINEL & ADMIN PARITY */}

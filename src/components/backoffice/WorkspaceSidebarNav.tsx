@@ -85,10 +85,18 @@ export function WorkspaceSidebarNav({
   const allowedSet = useMemo(() => new Set<StudioModuleId>(allowedTabs), [allowedTabs]);
   const showSuperAdminMcpHub =
     currentUserRole === 'super_admin' && allowedSet.has('mcp_hub') && Boolean(navMap.mcp_hub);
+  const showArtexReports = allowedSet.has('artex_reports') && Boolean(navMap.artex_reports);
   const mcpHostCategoryId = useMemo(
     () =>
       layout.categories.find((c) => c.id === 'cat-command')?.id ||
       layout.categories[0]?.id ||
+      null,
+    [layout.categories]
+  );
+  const artexHostCategoryId = useMemo(
+    () =>
+      layout.categories.find((c) => c.id === 'cat-system')?.id ||
+      layout.categories[layout.categories.length - 1]?.id ||
       null,
     [layout.categories]
   );
@@ -100,30 +108,47 @@ export function WorkspaceSidebarNav({
     if (includeVirtual && showSuperAdminMcpHub && category.id === mcpHostCategoryId) {
       return ['mcp_hub', ...base];
     }
+    if (includeVirtual && showArtexReports && category.id === artexHostCategoryId) {
+      const cyberIdx = base.indexOf('cybersecurity');
+      if (cyberIdx >= 0) {
+        const next = [...base];
+        next.splice(cyberIdx + 1, 0, 'artex_reports');
+        return next;
+      }
+      return [...base, 'artex_reports'];
+    }
     return base;
   };
 
-  const getModuleLabel = (id: StudioModuleId): string =>
-    (id !== 'mcp_hub' ? layout.moduleAliases[id]?.trim() : '') ||
-    navMap[id]?.defaultLabel ||
-    (id !== 'mcp_hub' ? DEFAULT_MODULE_LABELS[id] : 'Gemini & MCP Hub') ||
-    id;
+  const getModuleLabel = (id: StudioModuleId): string => {
+    if (id === 'mcp_hub') return navMap[id]?.defaultLabel || 'Gemini & MCP Hub';
+    if (id === 'artex_reports') return navMap[id]?.defaultLabel || 'ARTEX Pentest Reports';
+    return (
+      layout.moduleAliases[id]?.trim() ||
+      navMap[id]?.defaultLabel ||
+      DEFAULT_MODULE_LABELS[id] ||
+      id
+    );
+  };
 
   const activeCategory = useMemo(() => {
     if (activeTab === 'mcp_hub') {
       return layout.categories.find((c) => c.id === mcpHostCategoryId) || layout.categories[0] || null;
+    }
+    if (activeTab === 'artex_reports') {
+      return layout.categories.find((c) => c.id === artexHostCategoryId) || layout.categories[0] || null;
     }
     return (
       layout.categories.find((c) => c.moduleIds.includes(activeTab)) ||
       layout.categories[0] ||
       null
     );
-  }, [layout.categories, activeTab, mcpHostCategoryId]);
+  }, [layout.categories, activeTab, mcpHostCategoryId, artexHostCategoryId]);
 
   const activeCategoryModules = useMemo(() => {
     if (!activeCategory) return [];
     return getCategoryVisibleModules(activeCategory, true);
-  }, [activeCategory, allowedSet, navMap, showSuperAdminMcpHub, mcpHostCategoryId]);
+  }, [activeCategory, allowedSet, navMap, showSuperAdminMcpHub, showArtexReports, mcpHostCategoryId, artexHostCategoryId]);
 
   const toggleSidebarCollapsed = () => {
     onChangeLayout(
@@ -433,7 +458,7 @@ export function WorkspaceSidebarNav({
                     const active = activeTab === modId;
                     const displayLabel = getModuleLabel(modId);
 
-                    if (editMode && modId !== 'mcp_hub') {
+                    if (editMode && modId !== 'mcp_hub' && modId !== 'artex_reports') {
                       const baseModId = modId as WorkspaceModuleId;
                       return (
                         <div
